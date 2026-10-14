@@ -10,7 +10,6 @@ from release_gate import (GateConfig, GateEngine, GatePolicy, EvalWorker, Schema
 from fakes import FakeModels, FakeQuestions, FakeRunner, make_test_policy
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEMAS = ROOT / "boundary-contracts" / "schemas"
 SURVEY = ROOT / "survey-service" / "schema"
 
 
@@ -25,7 +24,7 @@ class Clock:
 
 @pytest.fixture(scope="session")
 def schemas():
-    return SchemaSet(SCHEMAS)
+    return SchemaSet()
 
 
 @pytest.fixture(scope="session")

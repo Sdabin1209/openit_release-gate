@@ -23,6 +23,8 @@ def test_empty_policy_never_passes_even_when_everything_is_good(world):
     d = decisions[0]
     assert d["submission_id"] == sub["submission_id"] and d["gate_policy_version"] == "EMPTY"
     assert "비어 있다" in reasons(d) and "release_id" not in d
+    assert d["reject_codes"] == ["POLICY_INCOMPLETE"]
+    assert {c["result"] for c in d["checks"]} == {"SKIPPED"}      # 정책이 막으면 검사를 실행하지 않는다
     assert world.reg.reader.list_releases()[0] == []
     world.schemas.validate("GateDecision", d)
 
@@ -31,7 +33,7 @@ def test_policy_without_o11_cannot_pass(world):
     submit(world)
     pol = make_test_policy(o11_resolved=False)
     d = world.engine(pol).process_pending()[0]
-    assert d["result"] == "REJECT" and "O11" in reasons(d)
+    assert d["result"] == "REJECT" and "O11" in reasons(d) and d["reject_codes"] == ["POLICY_INCOMPLETE"]
 
 
 @pytest.mark.parametrize("mutate,needle", [
@@ -83,7 +85,7 @@ def test_missing_clinical_approval_rejects(world):
     qs = world.q.add("qs-x", 1, approved=True, clinical=False)
     submit(world, world.subject(qs=qs))
     d = world.engine(make_test_policy()).process_pending()[0]
-    assert d["result"] == "REJECT" and "CLINICAL_SAFETY" in reasons(d)
+    assert d["result"] == "REJECT" and "CLINICAL_SAFETY" in reasons(d) and d["reject_codes"] == ["CHECK_FAILED"]
     assert world.reg.store.get_work(d["submission_id"])["state"] == "DECIDED"   # GPU 평가를 요청하지 않는다
 
 
@@ -144,6 +146,7 @@ def test_unknown_subject_is_rejected_not_error(world):
     submit(world, s)
     d = world.engine(make_test_policy()).process_pending()[0]
     assert d["result"] == "REJECT" and "NOT_FOUND" in reasons(d)
+    assert set(d["reject_codes"]) == {"CHECK_FAILED", "SUBJECT_UNREADABLE"}
 
 
 def test_neighbor_unavailable_defers_without_decision(world):
@@ -210,7 +213,7 @@ def test_policy_change_requeues_policy_blocked_rejects(world):
     assert eng.process_pending() == []            # 다시 대기열로
     world.worker().run_all()
     d = eng.process_pending()[0]
-    assert d["result"] == "PASS" and d["decision_id"].endswith("-2")
+    assert d["result"] == "PASS" and d["decision_id"].endswith("-0002")
     got = world.reg.reader.find_decisions(submission_id=sub["submission_id"])[0]
     assert [x["result"] for x in got] == ["PASS", "REJECT"]    # 최신부터, 기존 기록은 지워지지 않는다
 
@@ -237,6 +240,35 @@ def test_same_subject_judged_once(world):
     b = submit(world, s)
     assert a == b
     assert len(world.reg.store.submission_ids()) == 1
+
+
+def test_question_sets_in_lineage_is_reference_only(world):
+    """lineage.question_sets는 상세에 기록할 뿐 반려 근거가 아니다(D42)."""
+    qs = world.q.add("qs-new", 1)
+    a = world.m.add("lora-a", "9", "LORA_A", lineage={
+        "dataset": {"id": "ds", "version": "1", "content_hash": "sha256:" + "0" * 64}, "training_run_id": "r",
+        "turn_engine_version": "0.1.0", "model_runtime_version": "0.1.0",
+        "question_sets": [{"id": "qs-old", "version": "1", "content_hash": "sha256:" + "2" * 64}]})
+    submit(world, world.subject(qs=qs, a=a))
+    eng = world.engine(make_test_policy())
+    eng.process_pending()
+    world.worker().run_all()
+    d = eng.process_pending()[0]
+    assert d["result"] == "PASS"
+    detail = [c for c in d["checks"] if c["kind"] == "QUESTION_MODEL_COMPAT"][0]["detail"]
+    assert "학습에 쓰지 않은 문항 세트" in detail
+
+
+def test_current_decision_is_first_and_pass_forbids_codes(world):
+    sub = submit(world)
+    world.engine(GatePolicy.empty()).process_pending()
+    eng = world.engine(make_test_policy())
+    eng.process_pending()
+    world.worker().run_all()
+    eng.process_pending()
+    ds, _ = world.reg.reader.find_decisions(submission_id=sub["submission_id"])
+    assert ds[0]["result"] == "PASS" and "reject_codes" not in ds[0]
+    assert (ds[0]["decided_at"], ds[0]["decision_id"]) > (ds[1]["decided_at"], ds[1]["decision_id"])
 
 
 def test_adapter_tamper_detected_when_opening(world):

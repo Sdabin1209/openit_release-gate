@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import jsonschema
+import boundary_contracts
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 
@@ -12,14 +13,16 @@ from boundary_contracts.errors import BoundaryError
 
 
 class SchemaSet:
-    def __init__(self, schema_dir: str | Path):
-        self.dir = Path(schema_dir)
+    def __init__(self, schema_dir: str | Path | None = None):
+        """기본은 boundary_contracts 패키지에 포함된 스키마(boundary_contracts.schema_dir())."""
+        self.dir = Path(schema_dir) if schema_dir else boundary_contracts.schema_dir()
         if not (self.dir / "_common.schema.json").is_file():
             raise BoundaryError("UNAVAILABLE", f"계약 스키마 디렉터리를 읽을 수 없다: {self.dir}")
         self._raw: dict[str, dict] = {}
         resources = []
         for p in sorted(self.dir.glob("*.schema.json")):
-            doc = json.loads(p.read_text(encoding="utf-8"))
+            doc = boundary_contracts.load_schema(p.name[: -len(".schema.json")]) if self.dir == boundary_contracts.schema_dir() \
+                else json.loads(p.read_text(encoding="utf-8"))
             self._raw[p.name[: -len(".schema.json")]] = doc
             resources.append((p.name, Resource.from_contents(doc, default_specification=DRAFT202012)))
         self._registry = Registry().with_resources(resources)

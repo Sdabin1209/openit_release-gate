@@ -88,6 +88,13 @@ class FakeQuestions:
         self._chk()
         return list(self.reviews.get((ref["id"], ref["version"]), []))
 
+    def list_ids(self, *, cursor=None, limit=100):
+        self._chk()
+        ids = sorted({i for (i, _) in self.banks})
+        start = int(cursor or 0)
+        page = ids[start:start + limit]
+        return page, (str(start + limit) if start + limit < len(ids) else None)
+
     def get_change(self, ref):
         return None
 
@@ -134,6 +141,13 @@ class FakeModels:
         if (package_id, version) not in self.manifests:
             raise BoundaryError("NOT_FOUND", "패키지 없음")
         return self.manifests[(package_id, version)]
+
+    def list_ids(self, *, cursor=None, limit=100):
+        self._chk()
+        ids = sorted({p for (p, _) in self.manifests})
+        start = int(cursor or 0)
+        page = ids[start:start + limit]
+        return page, (str(start + limit) if start + limit < len(ids) else None)
 
     def list_versions(self, package_id):
         self._chk()

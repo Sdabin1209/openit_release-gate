@@ -6,9 +6,20 @@ from release_gate import CandidateCollector, GatePolicy
 from fakes import make_test_policy
 
 
-def collector(world):
-    return CandidateCollector(world.q, world.m, world.reg.service, question_set_ids=["qs-main"],
-                              lora_a_ids=["lora-a"], lora_b_ids=["lora-b"])
+def collector(world, configured=False):
+    if configured:
+        return CandidateCollector(world.q, world.m, world.reg.service, question_set_ids=["qs-main"],
+                                  lora_a_ids=["lora-a"], lora_b_ids=["lora-b"])
+    return CandidateCollector(world.q, world.m, world.reg.service)   # list_ids로 찾는다
+
+
+def test_collector_configured_ids_only(world):
+    world.q.add("qs-main", 1)
+    world.q.add("qs-other", 1)
+    world.m.add("lora-a", "1", "LORA_A")
+    world.m.add("lora-b", "1", "LORA_B")
+    assert len(collector(world, configured=True).run_once()) == 1
+    assert len(collector(world).run_once()) == 2          # list_ids는 qs-other도 찾는다
 
 
 def test_collector_submits_new_combination_once(world):

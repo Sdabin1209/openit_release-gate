@@ -153,9 +153,8 @@ class ContractCompat:
 
 
 class QuestionModelCompat:
-    """문항-모델 호환: 두 어댑터가 한 기반 모델 위에서 함께 서빙될 수 있는지.
-    문항 세트가 모델의 학습 범위 안인지는 I2(데이터셋)가 있어야 알 수 있어 게이트 입력에 없다(CR-0005).
-    그 부분은 ACCEPTANCE_EVAL(보지 못한 문항 평가)이 맡는다."""
+    """문항-모델 호환: 두 어댑터가 한 기반 모델 위에서 함께 서빙될 수 있는지(구조 호환만 반려 근거).
+    lineage.question_sets는 참고 정보로 상세에만 적는다. 문항-모델 적합성은 ACCEPTANCE_EVAL(D32)이 맡는다(D42)."""
     kind, inline = "QUESTION_MODEL_COMPAT", True
 
     def run(self, ctx: CheckContext) -> CheckOutcome:
@@ -170,7 +169,20 @@ class QuestionModelCompat:
             bad.append("두 어댑터의 runtime_contract_version이 다르다")
         if ctx.data.bank is None:
             bad.append("문항 세트를 읽지 못했다")
-        return CheckOutcome("FAIL", " | ".join(bad)) if bad else CheckOutcome("PASS")
+        if bad:
+            return CheckOutcome("FAIL", " | ".join(bad))
+        # 참고 정보(CR-0005): 학습에 쓴 문항 세트(lineage.question_sets). 반려 근거로 쓰지 않는다.
+        qs = ctx.data.subject["question_set"]
+        notes = []
+        for role, m in ms.items():
+            trained = m.get("lineage", {}).get("question_sets")
+            if trained is None:
+                notes.append(f"{role}: 학습 문항 세트 정보 없음")
+            elif any(t.get("id") == qs["id"] and t.get("version") == qs["version"] for t in trained):
+                notes.append(f"{role}: 학습에 쓴 문항 세트")
+            else:
+                notes.append(f"{role}: 학습에 쓰지 않은 문항 세트(보지 못한 문항 평가 대상)")
+        return CheckOutcome("PASS", "참고: " + "; ".join(notes))
 
 
 class ClinicalSafety:

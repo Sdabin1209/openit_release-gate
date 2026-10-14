@@ -40,9 +40,22 @@ def _csv(name: str) -> list[str]:
     return [x.strip() for x in os.environ.get(name, "").split(",") if x.strip()]
 
 
+def _write_tokens() -> dict:
+    """GATE_WRITE_TOKENS="<역할>=<토큰>,<역할>=<토큰>". 토큰은 역할에 묶인다(CONVENTIONS 9절)."""
+    out = {}
+    for item in _csv("GATE_WRITE_TOKENS"):
+        role, _, tok = item.partition("=")
+        if not role or not tok:
+            raise SystemExit("GATE_WRITE_TOKENS 형식: 역할=토큰,역할=토큰")
+        out[tok] = role
+    if not out:
+        raise SystemExit("환경 변수 GATE_WRITE_TOKENS이(가) 필요하다")
+    return out
+
+
 def serve() -> None:
     logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    schemas = SchemaSet(_env("GATE_BOUNDARY_SCHEMAS_DIR"))
+    schemas = SchemaSet()
     survey = SurveySchema(_env("GATE_SURVEY_SCHEMA_DIR"))
     config = GateConfig(supported_runtime_contract_version=int(_env("GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION", str(survey.contract_version))),
                         turn_engine_version=_env("GATE_TURN_ENGINE_VERSION", "unset"),
@@ -54,8 +67,8 @@ def serve() -> None:
     if questions is not None and models is not None:
         engine = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry())
         tasks.append(engine.process_pending)
-        collector = CandidateCollector(questions, models, reg.service, question_set_ids=_csv("GATE_WATCH_QUESTION_SETS"),
-                                       lora_a_ids=_csv("GATE_WATCH_LORA_A"), lora_b_ids=_csv("GATE_WATCH_LORA_B"))
+        collector = CandidateCollector(questions, models, reg.service, question_set_ids=_csv("GATE_WATCH_QUESTION_SETS") or None,
+                                       lora_a_ids=_csv("GATE_WATCH_LORA_A") or None, lora_b_ids=_csv("GATE_WATCH_LORA_B") or None)
         tasks.insert(0, collector.run_once)
         judging = "enabled"
     if policy.problems():
@@ -63,7 +76,7 @@ def serve() -> None:
     status = lambda: {"gate_policy_version": policy.version, "can_pass": policy.can_pass, "judging": judging}
     Loop(float(_env("GATE_POLL_SECONDS", "60")), tasks).start()
     srv = GateHTTPServer(("0.0.0.0", int(_env("PORT", "8080"))), reg, read_token=_env("GATE_READ_TOKEN"),
-                         write_token=_env("GATE_WRITE_TOKEN"), status=status)
+                         write_tokens=_write_tokens(), status=status)
     log.info("gate-service 시작: policy=%s judging=%s", policy.version, judging)
     srv.serve_forever()
 

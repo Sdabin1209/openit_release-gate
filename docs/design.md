@@ -29,14 +29,15 @@
 | ReleaseReader (I4) | `reader.py` | 읽기. 읽기 전용 저장소로도 동작 |
 | HTTP 면 | `app.py`, `main.py` | `/healthz`, `/readyz`, 토큰 인증, 주기 작업 |
 
-의존은 `boundary_contracts`(sdk Protocol, errors, canonical, 스키마), 문진 스키마(`CONTRACT_VERSION`, `QuestionBank`)뿐이다. turn-engine·model-runtime은 워커의 실행기 쪽에서만 쓰며 이 리포지토리에는 아직 들어 있지 않다.
+의존은 `boundary_contracts` v1.0.0(sdk Protocol, errors, canonical, 패키지에 든 스키마), 문진 스키마(`CONTRACT_VERSION`, `QuestionBank`)뿐이다. turn-engine·model-runtime은 워커의 실행기 쪽에서만 쓰며 이 리포지토리에는 아직 들어 있지 않다.
 
 ## 2. 통과 기준 (gate_policy, D38)
 
 - 통과 기준은 코드에 없다. `GatePolicy`(`policy.py`)가 JSON 파일(`GATE_POLICY_FILE`)에서 읽는다. 파일이 없거나 비면 `EMPTY`이고 **통과를 낼 수 없다**. 깨진 파일은 시작 실패다(조용히 EMPTY가 되지 않는다).
 - 정책이 통과를 낼 수 있으려면(`problems()`가 비어야 한다): `gate_policy_version` 있음, `o11_resolved=true`, `required_checks`에 `CLINICAL_SAFETY`(D30)와 `CONTRACT_COMPAT`와 `ACCEPTANCE_EVAL` 포함, `ACCEPTANCE_EVAL.thresholds`가 비어 있지 않고 형식이 맞음. 하나라도 어기면 정책 때문에 REJECT한다. 확인: `tests/test_gate_flow.py`.
 - 패키지에는 기본 정책 파일이 없다(`test_no_shipped_policy_can_pass`). 시험용 정책은 `tests/fakes.py::make_test_policy`에만 있고 버전 이름이 `test-`로 시작한다.
-- 정책이 막힌 상태의 접수도 판정을 남긴다: 서비스가 직접 하는 싼 검사(저장소 읽기만)를 참고용으로 실행해 `checks`를 채우고, `result=REJECT`, `reject_reasons`에 정책 사유를 적고, `ext["release-gate"].policy_blocked=true`를 단다. GPU 평가는 요청하지 않는다. 정책 버전이 바뀌면 이런 접수만 다시 판정한다(새 `GateDecision`이 추가되고 이전 것은 남는다). CR-0002, CR-0003.
+- 정책이 막힌 상태의 접수도 판정을 남긴다: 검사는 실행하지 않고(I1·I3도 읽지 않는다) `checks`를 모두 `SKIPPED`로 적고, `result=REJECT`, `reject_codes=[POLICY_INCOMPLETE]`, `reject_reasons`에 정책 사유를 적는다(D42). 정책 버전이 바뀌면 `POLICY_INCOMPLETE` 반려만 다시 판정한다(새 `GateDecision`이 같은 `submission_id`에 추가되고 이전 것은 남는다). 현재 판정은 `decided_at`이 가장 늦은 것(같으면 `decision_id`가 큰 것)이고, 판정 ID의 번호는 0 채움(`-0002`)이며 같은 접수 안에서 `decided_at`이 거꾸로 가지 않게 한다. `find_decisions`는 최신부터라 첫 항목이 현재 판정이다.
+- 반려 코드: 검사 실패는 `CHECK_FAILED`, 문항 세트·매니페스트·어댑터를 읽지 못함(NOT_FOUND, 해시 불일치)은 `SUBJECT_UNREADABLE`(둘 다일 수 있다). PASS 판정에는 `reject_codes`가 없다.
 - 정책 변경은 서비스 재시작으로 반영한다(제안). 판정 중이던 접수는 정책 버전이 다르면 처음부터 다시 한다.
 
 ## 3. 검사 프레임워크
@@ -45,8 +46,8 @@
 
 | 검사 | 실행 위치 | 내용 |
 | --- | --- | --- |
-| CONTRACT_COMPAT | 서비스(inline) | 참조 해시 일치(문항 세트, 두 매니페스트), 문항 세트가 문진 스키마(`QuestionBank`) 적합, 문진 스키마 정수 버전 = 게이트가 지원하는 값, 매니페스트 스키마 적합·MAJOR 지원·`runtime_contract_version` 일치·role 일치·`serving_config_hash`(CR-0007), 학습 때 turn-engine/model-runtime 버전 = 게이트 기준(정책 `require_lineage_runtime_match`, 기본 true. 제안) |
-| QUESTION_MODEL_COMPAT | 서비스(inline) | 두 어댑터의 기반 모델·계약 버전 일치, 문항 세트가 읽힘. 문항-모델 범위 적합은 정의할 근거가 없다(CR-0005) |
+| CONTRACT_COMPAT | 서비스(inline) | 참조 해시 일치(문항 세트, 두 매니페스트), 문항 세트가 문진 스키마(`QuestionBank`) 적합, 문진 스키마 정수 버전 = 게이트가 지원하는 값, 매니페스트 스키마 적합·MAJOR 지원·`runtime_contract_version` 일치·role 일치·`serving_config_hash == canonical.sha256_hash(serving_config)`(D42), 학습 때 turn-engine/model-runtime 버전 = 게이트 기준(정책 `require_lineage_runtime_match`, 기본 true. 제안) |
+| QUESTION_MODEL_COMPAT | 서비스(inline) | 반려 근거는 구조 호환뿐: 두 어댑터의 기반 모델·계약 버전 일치, 문항 세트가 읽힘. `lineage.question_sets`(선택)는 참고 정보로 상세에만 적고(학습에 쓴 문항 세트인지) 반려 근거로 쓰지 않는다. 적합성은 ACCEPTANCE_EVAL(D32)이 맡는다(D42) |
 | CLINICAL_SAFETY | 서비스(inline) | 그 문항 세트 버전(id, version, content_hash)의 `ReviewRecord` 중 `APPROVED`이고 `clinical_basis_approved=true`인 것이 있어야 한다(D30). 제안: 그 뒤에 더 늦은 비승인 검수가 있으면 불통과(재검수는 새 레코드이므로). 모델 출력의 안전 지표는 O11 전까지 **자리만** 있다: 정책이 `safety_metrics`를 주면 평가기가 없어 FAIL |
 | ACCEPTANCE_EVAL | 워커 실행, 서비스가 임계치 적용 | 워커가 낸 `metrics`를 정책 `thresholds`(`min`/`max`)와 비교. 측정값이 없는 지표는 FAIL. 보지 못한 문항 평가(D32)가 수행되지 않았으면 FAIL(정책 `require_unseen_question_eval`, 기본 true) |
 
@@ -80,7 +81,7 @@ EVAL_REQUESTED ──(워커가 임대 후 실행)──▶ EVAL_DONE ──(서
 PASS일 때만 만든다. `commit_decision` 한 번에: 판정 기록, 릴리스 매니페스트, 묶음 파일(문항 세트 JSON, 어댑터 디렉터리 두 개)을 저장한다.
 
 - 어댑터는 `ModelRegistry.open_adapter`로 풀어 `directory_hash`가 매니페스트의 `adapter_hash`와 같은지 다시 확인하고 복사해 묶는다. 서비스는 I1·I3 없이 I4만으로 필요한 것을 얻는다(확인: `test_runtime_does_not_need_neighbors_after_release`).
-- `ReleaseManifest.content_hash` = `canonical.content_hash`. 어댑터 해시와 serving_config는 현재 `ext["release-gate"].adapters`에 둔다(CR-0001).
+- `ReleaseManifest.content_hash` = `canonical.content_hash`. 어댑터 해시와 serving_config는 정식 필드 `adapters.{LORA_A,LORA_B}.{adapter_hash, serving_config, serving_config_hash}`에 복사해 담는다(D42). 서비스는 I3 없이 I9 `load`에 넘길 값을 얻는다. `ext`는 쓰지 않는다.
 - `load_bundle`은 모두 검증한다: 매니페스트 해시, 판정이 PASS이고 그 릴리스를 가리킴(아니면 FAILED_PRECONDITION), 문항 세트 해시 = 참조의 `content_hash`, 어댑터별 `directory_hash` = 매니페스트 값. 어긋나면 INTEGRITY_ERROR. 확인: 변조 시험.
 - 저장 디스크 구조: `<data>/registry.sqlite3`, `<data>/releases/<release_id>/{question_bank.json, adapters/LORA_A, adapters/LORA_B}`. 파일은 임시 디렉터리에 쓴 뒤 트랜잭션 안에서 이름을 바꾼다.
 
@@ -90,7 +91,7 @@ PASS일 때만 만든다. `commit_decision` 한 번에: 판정 기록, 릴리스
 - 활성화: PASS 릴리스만(아니면 FAILED_PRECONDITION). 활성화 전에 묶음 무결성을 확인한다. 이미 활성인 릴리스를 다시 활성화하면 현재 포인터를 그대로 돌려준다(버전이 늘지 않는다).
 - 롤백: `from`이 현재 활성이고 `to`가 검증을 통과하는 PASS 릴리스이면 APPLIED(포인터 `cause=ROLLBACK`). 영수증은 포인터 변경과 **같은 트랜잭션**에 저장한다. 아니면 REJECTED와 사유를 영수증으로 남긴다(예외가 아님). 같은 `request_id`는 저장된 영수증을 그대로 돌려주고, 같은 ID에 다른 내용이면 CONFLICT. 판단과 변경에 같은 시점의 포인터를 쓰고, 그 사이 바뀌었으면 변경이 거부되어 처음부터 다시 판단한다.
 - 읽기 가용성: I4는 읽기 전용 SQLite 연결(`open_release_reader`)로 서비스 프로세스 없이 읽는다(WAL). 쓰는 경로(`switch_pointer` 등)는 읽기 전용에서 PERMISSION_DENIED. 확인: `test_sqlite_read_only_reader_survives_without_service`.
-- 활성 포인터 변경 권한: HTTP 면의 쓰기 토큰과 역할 허용 목록(CR-0004). 저장소를 쓰는 프로세스는 gate-service와 gate-worker(작업 상태만)다.
+- 활성 포인터 변경 권한: HTTP 면의 쓰기 토큰은 **역할에 묶여 있다**(`GATE_WRITE_TOKENS=역할=토큰,...`). 본문의 `requested_by_role`이 토큰의 역할과 다르면 PERMISSION_DENIED이고 생략하면 토큰의 역할을 쓴다. 역할 허용 목록은 `GateConfig`(접수 operator·release-gate-collector·question-authoring·model-lab, 활성화 operator, 롤백 ops-feedback·operator). 프로세스 안에서 쓰는 SDK(메모리 구현)는 인자로 받은 역할을 허용 목록에만 대조한다. 저장소를 쓰는 프로세스는 gate-service와 gate-worker(작업 상태만)다.
 
 ## 8. 판정 기록의 내부 설계
 
@@ -100,7 +101,7 @@ PASS일 때만 만든다. `commit_decision` 한 번에: 판정 기록, 릴리스
 
 ## 9. 후보 수집기
 
-감시할 문항 세트 ID, LORA_A·LORA_B 패키지 ID를 설정으로 받는다(I1·I3에 ID 나열 호출이 없다, CR-0006). 주기마다 (문항 세트의 검수 완료 최신) × (패키지별 최신 버전)의 조합을 `submit_candidate(role="release-gate-collector")`로 낸다. 중복은 게이트가 걸러 같은 조합은 한 번만 판정된다. 최신이 아닌 조합(예: 옛 모델과 새 문항)은 사람이 I5로 제출한다(제안). 일시 오류는 다음 주기로 미룬다.
+I1·I3의 `list_ids`로 문항 세트와 패키지를 찾고(설정으로 ID 목록을 주면 그것만 본다), 패키지의 LORA_A/LORA_B는 매니페스트의 role로 가른다. 최신 버전은 `created_at`이 가장 늦은 것으로 본다. 주기마다 (문항 세트의 검수 완료 최신) × (LORA_A 최신) × (LORA_B 최신)의 조합을 `submit_candidate(role="release-gate-collector")`로 낸다. 중복은 게이트가 걸러 같은 조합은 한 번만 판정된다. 최신이 아닌 조합(예: 옛 모델과 새 문항)은 사람이 I5로 제출한다(제안). 일시 오류는 다음 주기로 미룬다.
 
 ## 10. 오류와 로깅
 

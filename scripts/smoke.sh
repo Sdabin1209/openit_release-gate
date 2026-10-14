@@ -4,9 +4,9 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER="${DOCKER:-$(command -v docker.exe || command -v docker)}"
-tag="release-gate:smoke"; name="release-gate-smoke-$$"; port="${SMOKE_PORT:-$((20000 + RANDOM % 10000))}"
+tag="release-gate:smoke"; name="release-gate-smoke-$$"
 commit="$(git -C "$here" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-ctx="$("$here/scripts/stage_context.sh")"
+ctx="$(PYTHON="${PYTHON:-$here/.venv/bin/python}" "$here/scripts/stage_context.sh" 2>/dev/null)"
 cver="$(cat "$ctx/survey-schema/CONTRACT_VERSION")"
 pver="$(PYTHONPATH="$here" python3 -c 'import re,pathlib;print(re.search(r"PIPELINE_SCHEMA_VERSION = \"(.+?)\"",pathlib.Path("'"$here"'/release_gate/__init__.py").read_text()).group(1))')"
 cleanup() { "$DOCKER" rm -f "$name" >/dev/null 2>&1 || true; }
@@ -15,8 +15,11 @@ trap cleanup EXIT
 "$DOCKER" build -q -t "$tag" -f "$here/Dockerfile" \
   --build-arg COMMIT="$commit" --build-arg CONTRACT_VERSION="$cver" --build-arg PIPELINE_SCHEMA_VERSION="$pver" \
   "$(wslpath -w "$ctx" 2>/dev/null || echo "$ctx")" >/dev/null
-"$DOCKER" run -d --name "$name" -p "$port:8080" -e GATE_READ_TOKEN=smoke-read -e GATE_WRITE_TOKEN=smoke-write "$tag" >/dev/null
+"$DOCKER" run -d --name "$name" -p 127.0.0.1::8080 -e GATE_READ_TOKEN=smoke-read -e GATE_WRITE_TOKENS=operator=smoke-write "$tag" >/dev/null
 
+# 호스트 포트는 Docker가 배정한다(다른 영역의 스모크와 겹치지 않게 고정 포트를 쓰지 않는다)
+port="$("$DOCKER" port "$name" 8080/tcp | head -1 | tr -d '\r' | sed 's/.*://')"
+[ -n "$port" ] || { echo "FAIL: 포트 배정 실패"; exit 1; }
 ok=""
 for _ in $(seq 1 30); do
   if curl -fsS "http://127.0.0.1:$port/healthz" >/dev/null 2>&1; then ok=1; break; fi

@@ -13,7 +13,7 @@ from . import PIPELINE_SCHEMA_VERSION
 from .checks import CheckContext, CheckRegistry, SubjectLoader
 from .config import GateConfig
 from .policy import GatePolicy
-from .reader import EXT_KEY, verify_in_tempdir
+from .reader import verify_in_tempdir
 from .schemas import SchemaSet, SurveySchema
 from .store import ReleaseParts, Store
 from .util import Clock, subject_of, ts, utc_now
@@ -22,7 +22,7 @@ from .util import Clock, subject_of, ts, utc_now
 def assert_decision_rule(d: dict) -> None:
     """GateDecision 규칙: PASS이면 모든 검사가 PASS이고 release_id가 있다. REJECT이면 사유가 있고 release_id가 없다."""
     if d["result"] == "PASS":
-        if "release_id" not in d or "reject_reasons" in d or any(c["result"] != "PASS" for c in d["checks"]):
+        if "release_id" not in d or "reject_reasons" in d or "reject_codes" in d or any(c["result"] != "PASS" for c in d["checks"]):
             raise BoundaryError("INVALID_RECORD", "PASS 판정 규칙 위반")
     elif "release_id" in d or not d.get("reject_reasons"):
         raise BoundaryError("INVALID_RECORD", "REJECT 판정 규칙 위반")
@@ -161,7 +161,7 @@ class GateEngine:
         n = 0
         for sid in self.store.submission_ids(("DECIDED",)):
             d = self.store.latest_decision(sid)
-            if d and d["result"] == "REJECT" and (d.get("ext") or {}).get(EXT_KEY, {}).get("policy_blocked") \
+            if d and d["result"] == "REJECT" and "POLICY_INCOMPLETE" in d.get("reject_codes", []) \
                     and d["gate_policy_version"] != self.policy.version:
                 def fn(w: dict) -> Optional[dict]:
                     return {"state": "RECEIVED"} if w.get("state") == "DECIDED" else None
@@ -183,18 +183,19 @@ class GateEngine:
 
     def _inline_stage(self, sid: str) -> Optional[dict]:
         subject = subject_of(self.store.get_submission(sid)["subject"])
-        data = self.loader.load(subject)
         problems = self.policy.problems()
-        if self.policy.required_checks:
-            kinds = [k for k in self.policy.required_checks if k in self.checks.inline_kinds()]
-        else:
-            kinds = self.checks.inline_kinds()  # 정책이 비어 있어도 기록용으로 싼 검사는 남긴다. 통과는 못 낸다.
+        if problems:  # 정책이 통과를 낼 수 없으면 검사를 실행하지 않는다. 조합이 나쁘다는 뜻이 아니다.
+            skipped = [{"kind": k, "result": "SKIPPED", "detail": "정책이 불완전해 실행하지 않았다"}
+                       for k in (self.checks.inline_kinds() or ["CONTRACT_COMPAT"])]
+            return self._reject(sid, subject, skipped, problems, codes=["POLICY_INCOMPLETE"])
+        data = self.loader.load(subject)
         ctx = self._ctx(data)
-        results = [(k, self.checks.get(k).run(ctx)) for k in kinds]
+        results = [(k, self.checks.get(k).run(ctx)) for k in self.policy.required_checks
+                   if k in self.checks.inline_kinds()]
         recs = [o.to_record(k) for k, o in results]
-        reasons = list(problems) + [f"{k}: {o.detail or '실패'}" for k, o in results if o.result == "FAIL"]
+        reasons = [f"{k}: {o.detail or '실패'}" for k, o in results if o.result == "FAIL"]
         if reasons:
-            return self._reject(sid, subject, recs, reasons, policy_blocked=bool(problems))
+            return self._reject(sid, subject, recs, reasons, data=data)
         self.store.update_work(sid, lambda w: {"state": "EVAL_REQUESTED", "inline_checks": recs,
                                                "policy_version": self.policy.version}
                                if w["state"] == "RECEIVED" else None)
@@ -212,22 +213,33 @@ class GateEngine:
         reasons = [f"{r['kind']}: {r.get('detail') or '실패'}" for r in recs if r["result"] == "FAIL"]
         reasons += [f"{p}" for p in data.problems]
         if reasons:
-            return self._reject(sid, subject, recs, reasons, policy_blocked=False)
+            return self._reject(sid, subject, recs, reasons, data=data)
         return self._pass(sid, subject, data, recs)
 
     # 기록
     def _base(self, sid: str, subject: dict, recs: list, result: str) -> dict:
-        n = len(self.store.find_decisions(submission_id=sid, limit=1000)[0]) + 1
-        return {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "decision_id": f"gd-{sid[4:]}-{n}",
-                "decided_at": ts(self.clock()), "gate_policy_version": self.policy.version, "subject": subject,
+        prev = self.store.find_decisions(submission_id=sid, limit=1000)[0]
+        n = len(prev) + 1
+        at = ts(self.clock())
+        if prev and prev[0]["decided_at"] > at:
+            at = prev[0]["decided_at"]  # 현재 판정 = decided_at이 가장 늦은 것. 같은 접수 안에서는 시각이 거꾸로 가지 않게 한다
+        # decision_id는 번호를 0 채움해 같은 시각이어도 나중 판정이 큰 값이 되게 한다
+        return {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "decision_id": f"gd-{sid[4:]}-{n:04d}",
+                "decided_at": at, "gate_policy_version": self.policy.version, "subject": subject,
                 "runtime_contract_version": self.config.supported_runtime_contract_version, "result": result,
                 "checks": recs, "approver": {"role": self.config.approver_role}, "submission_id": sid}
 
-    def _reject(self, sid, subject, recs, reasons, *, policy_blocked: bool) -> dict:
+    def _reject(self, sid, subject, recs, reasons, *, data=None, codes=None) -> dict:
         d = self._base(sid, subject, recs, "REJECT")
         d["reject_reasons"] = reasons
-        if policy_blocked:
-            d["ext"] = {EXT_KEY: {"policy_blocked": True}}
+        if codes is None:
+            codes = []
+            if any(r["result"] == "FAIL" for r in recs):
+                codes.append("CHECK_FAILED")
+            if data is not None and data.problems:
+                codes.append("SUBJECT_UNREADABLE")
+            codes = codes or ["CHECK_FAILED"]
+        d["reject_codes"] = codes
         self.schemas.validate("GateDecision", d)
         assert_decision_rule(d)
         self.store.commit_decision(d, {"state": "DECIDED", "decision_id": d["decision_id"],
@@ -236,7 +248,7 @@ class GateEngine:
 
     def _pass(self, sid, subject, data, recs) -> dict:
         if not self.policy.can_pass:  # 방어: 여기까지 와도 정책이 통과를 낼 수 없으면 반려
-            return self._reject(sid, subject, recs, self.policy.problems(), policy_blocked=True)
+            return self._reject(sid, subject, recs, self.policy.problems(), codes=["POLICY_INCOMPLETE"])
         d = self._base(sid, subject, recs, "PASS")
         rid = "rel-" + sid[4:]
         d["release_id"] = rid
@@ -249,9 +261,9 @@ class GateEngine:
                 except BoundaryError as e:
                     if e.retryable:
                         raise
-                    return self._reject(sid, subject, recs, [f"{role} 어댑터를 열지 못했다: {e.code}"], policy_blocked=False)
+                    return self._reject(sid, subject, recs, [f"{role} 어댑터를 열지 못했다: {e.code}"], codes=["SUBJECT_UNREADABLE"])
                 if canonical.directory_hash(p) != m["adapter_hash"]:
-                    return self._reject(sid, subject, recs, [f"{role} 어댑터 내용이 adapter_hash와 다르다"], policy_blocked=False)
+                    return self._reject(sid, subject, recs, [f"{role} 어댑터 내용이 adapter_hash와 다르다"], codes=["SUBJECT_UNREADABLE"])
                 adapters[role] = Path(p)
                 ext_adapters[role] = {"adapter_hash": m["adapter_hash"], "serving_config": m["serving_config"],
                                       "serving_config_hash": m["serving_config_hash"]}
@@ -261,7 +273,7 @@ class GateEngine:
                    "runtime_contract_version": self.config.supported_runtime_contract_version,
                    "turn_engine_version": self.config.turn_engine_version,
                    "model_runtime_version": self.config.model_runtime_version,
-                   "ext": {EXT_KEY: {"adapters": ext_adapters, "gate_policy_version": self.policy.version}}}
+                   "adapters": ext_adapters}
             man["content_hash"] = canonical.content_hash(man)
             self.schemas.validate("GateDecision", d)
             assert_decision_rule(d)

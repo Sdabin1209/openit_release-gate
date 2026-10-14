@@ -11,9 +11,6 @@ from boundary_contracts.sdk import ReleaseBundle
 
 from .store import ROLES, Store
 
-EXT_KEY = "release-gate"
-
-
 def verify_release(store: Store, release_id: str, dest: Path) -> ReleaseBundle:
     """릴리스 묶음을 dest에 풀고 모든 해시를 검증한다. 통과하지 않은 릴리스는 FAILED_PRECONDITION."""
     manifest = store.get_release(release_id)
@@ -31,7 +28,7 @@ def verify_release(store: Store, release_id: str, dest: Path) -> ReleaseBundle:
     bank, adapters = store.read_release_parts(release_id, Path(dest))
     if canonical.sha256_hash(bank) != manifest["question_set"]["content_hash"]:
         raise BoundaryError("INTEGRITY_ERROR", f"묶음의 문항 세트 해시가 매니페스트와 다르다: {release_id}")
-    expected = (manifest.get("ext") or {}).get(EXT_KEY, {}).get("adapters", {})
+    expected = manifest.get("adapters", {})
     for role in ROLES:
         if role not in adapters or role not in expected:
             raise BoundaryError("INTEGRITY_ERROR", f"묶음에 {role} 어댑터가 없다: {release_id}")

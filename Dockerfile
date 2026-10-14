@@ -1,5 +1,5 @@
-# 빌드 컨텍스트는 scripts/stage_context.sh 가 만든 .build/ctx 이다(계약 패키지와 문진 스키마를 함께 담는다).
-# CI에서는 같은 구성을 Git 태그로 받아 채운다(D18). 직접 빌드: scripts/smoke.sh
+# 빌드 컨텍스트는 scripts/stage_context.sh 가 만든 .build/ctx 이다: boundary-contracts v1.0.0 태그 시점 소스로 만든
+# wheel(wheels/)과 문진 스키마. 이미지 안에서는 ssh로 git을 받지 않는다. 직접 빌드: scripts/smoke.sh
 FROM python:3.12-slim
 
 ARG COMMIT=unknown
@@ -14,7 +14,6 @@ LABEL org.opencontainers.image.revision="${COMMIT}" \
       org.openit.model-runtime-version="${MODEL_RUNTIME_VERSION}"
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 \
-    GATE_BOUNDARY_SCHEMAS_DIR=/opt/contracts/boundary/schemas \
     GATE_SURVEY_SCHEMA_DIR=/opt/contracts/survey-schema \
     GATE_DATA_DIR=/data \
     GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION=${CONTRACT_VERSION} \
@@ -23,16 +22,14 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 \
     PORT=8080
 
 RUN useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin gate \
- && mkdir -p /data /opt/contracts/boundary /opt/contracts/survey-schema && chown gate /data
+ && mkdir -p /data /opt/contracts/survey-schema && chown gate /data
 WORKDIR /src
 COPY release-gate/requirements.lock ./release-gate/requirements.lock
 RUN pip install -r release-gate/requirements.lock
-COPY boundary-contracts ./boundary-contracts
+COPY wheels ./wheels
 COPY survey-schema /opt/contracts/survey-schema
 COPY release-gate ./release-gate
-RUN pip install --no-deps ./boundary-contracts ./release-gate \
- && cp -r boundary-contracts/schemas /opt/contracts/boundary/schemas \
- && rm -rf /src
+RUN pip install --no-deps ./wheels/*.whl ./release-gate && rm -rf /src
 
 USER gate
 WORKDIR /data

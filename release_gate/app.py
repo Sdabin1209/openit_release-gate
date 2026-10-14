@@ -5,10 +5,11 @@ GET  /readyz                 저장소와 스키마가 준비됨(인증 없음)
 GET  /v1/active-pointer      읽기 토큰
 GET  /v1/releases/<id>       읽기 토큰
 GET  /v1/decisions/<id>      읽기 토큰
-POST /v1/submissions         쓰기 토큰. {"subject": {...}, "requested_by_role": "..."}
-POST /v1/activate            쓰기 토큰. {"release_id": "...", "requested_by_role": "..."}
+POST /v1/submissions         쓰기 토큰. {"subject": {...}, "requested_by_role": "..."(선택, 기록용)}
+POST /v1/activate            쓰기 토큰. {"release_id": "...", "requested_by_role": "..."(선택)}
 POST /v1/rollback            쓰기 토큰. RollbackRequest
-인증은 Authorization: Bearer <토큰>. 토큰은 서비스 사이 호출 규약(CONVENTIONS 6절)이다.
+인증은 Authorization: Bearer <토큰>. 쓰기 토큰은 역할에 묶여 있다(CONVENTIONS 9절): 본문의 역할이 토큰의 역할과
+다르면 PERMISSION_DENIED이고, 역할은 토큰에서 가져온다.
 """
 from __future__ import annotations
 
@@ -24,17 +25,17 @@ from boundary_contracts.errors import BoundaryError
 from .registry import Registry
 
 log = logging.getLogger("gate")
-_STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 400, "CONFLICT": 409,
-           "INTEGRITY_ERROR": 500, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
+_STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, "CONFLICT": 409,
+           "INTEGRITY_ERROR": 422, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
 
 
 class GateHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, addr, registry: Registry, *, read_token: str, write_token: str,
+    def __init__(self, addr, registry: Registry, *, read_token: str, write_tokens: dict,
                  status: Callable[[], dict]):
         super().__init__(addr, _Handler)
-        self.registry, self.read_token, self.write_token, self.status = registry, read_token, write_token, status
+        self.registry, self.read_token, self.write_tokens, self.status = registry, read_token, dict(write_tokens), status
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -55,6 +56,20 @@ class _Handler(BaseHTTPRequestHandler):
         got = self.headers.get("Authorization", "")
         if not got.startswith("Bearer ") or not hmac.compare_digest(got[7:], token):
             raise BoundaryError("PERMISSION_DENIED", "토큰이 없거나 맞지 않는다")
+
+    def _write_role(self, claimed) -> str:
+        """쓰기 토큰에 묶인 역할을 돌려준다. 본문이 다른 역할을 주장하면 PERMISSION_DENIED."""
+        got = self.headers.get("Authorization", "")
+        role = None
+        if got.startswith("Bearer "):
+            for tok, r in self.server.write_tokens.items():
+                if hmac.compare_digest(got[7:], tok):
+                    role = r
+        if role is None:
+            raise BoundaryError("PERMISSION_DENIED", "토큰이 없거나 맞지 않는다")
+        if claimed is not None and claimed != role:
+            raise BoundaryError("PERMISSION_DENIED", "본문의 역할이 토큰의 역할과 다르다")
+        return role
 
     def _body(self) -> dict:
         try:
@@ -105,12 +120,12 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         def go():
             r, path = self.server.registry, self.path.split("?")[0]
-            self._auth(self.server.write_token)
             b = self._body()
+            role = self._write_role(b.get("requested_by_role"))
             if path == "/v1/submissions":
-                return 202, r.service.submit_candidate(b.get("subject"), requested_by_role=b.get("requested_by_role"))
+                return 202, r.service.submit_candidate(b.get("subject"), requested_by_role=role)
             if path == "/v1/activate":
-                return 200, r.service.activate(str(b.get("release_id", "")), requested_by_role=b.get("requested_by_role"))
+                return 200, r.service.activate(str(b.get("release_id", "")), requested_by_role=role)
             if path == "/v1/rollback":
                 return 200, r.service.request_rollback(b)
             raise BoundaryError("NOT_FOUND", f"경로가 없다: {path}")

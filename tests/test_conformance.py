@@ -134,6 +134,8 @@ def test_reader_basics(world):
     assert code(rd.get_decision, "gd-none") == "NOT_FOUND"
     d = rd.get_decision(m["gate_decision_id"])
     assert d["result"] == "PASS" and d["release_id"] == r1
+    assert set(m["adapters"]) == {"LORA_A", "LORA_B"} and "ext" not in m
+    assert m["adapters"]["LORA_A"]["serving_config_hash"] == canonical.sha256_hash(m["adapters"]["LORA_A"]["serving_config"])
     assert code(rd.load_bundle, "rel-none", dest=world.m.root / "n") == "NOT_FOUND"
     items, nxt = rd.list_releases(limit=1)
     assert [x["release_id"] for x in items] == [r2] and nxt
