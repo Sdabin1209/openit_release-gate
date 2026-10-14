@@ -4,9 +4,9 @@
 
 ```
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ../boundary-contracts -e '.[test]'      # 또는 pip install -r requirements.lock
+pip install -e ../boundary-contracts -e '.[test]'      # 운영·CI는 requirements.txt(v1.0.0 태그 고정)
 python -m pytest -q                                      # 단위, 적합성(메모리·SQLite), HTTP
-scripts/smoke.sh                                         # 이미지 빌드와 /healthz·/readyz 확인(WSL에서는 docker.exe)
+scripts/smoke.sh                                         # v1.0.0 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(WSL은 docker.exe)
 ```
 
 ## 환경 변수 (gate-service)
@@ -14,13 +14,13 @@ scripts/smoke.sh                                         # 이미지 빌드와 /
 | 이름 | 뜻 |
 | --- | --- |
 | `GATE_DATA_DIR` | 레지스트리 디렉터리(볼륨). 기본 `/data` |
-| `GATE_BOUNDARY_SCHEMAS_DIR`, `GATE_SURVEY_SCHEMA_DIR` | 계약 스키마(이미지에 포함) |
+| `GATE_SURVEY_SCHEMA_DIR` | 문진 스키마(이미지에 포함). 경계 계약 스키마는 boundary-contracts 패키지에 들어 있다 |
 | `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION` | 빌드 때 고정한 문진 스키마 정수 버전 |
 | `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` | 릴리스 매니페스트에 기록되는 값. 학습 때 버전과 일치 검사에 쓰임 |
 | `GATE_POLICY_FILE` | gate_policy JSON. 없으면 EMPTY(통과 불가) |
-| `GATE_READ_TOKEN`, `GATE_WRITE_TOKEN` | 필수. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
+| `GATE_READ_TOKEN`, `GATE_WRITE_TOKENS` | 필수. `GATE_WRITE_TOKENS=operator=<토큰>,ops-feedback=<토큰>`처럼 역할에 묶는다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
 | `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`. 둘 다 있어야 판정과 수집이 켜진다 |
-| `GATE_WATCH_QUESTION_SETS`, `GATE_WATCH_LORA_A`, `GATE_WATCH_LORA_B` | 수집기가 볼 ID(쉼표) |
+| `GATE_WATCH_QUESTION_SETS`, `GATE_WATCH_LORA_A`, `GATE_WATCH_LORA_B` | 선택. 주면 수집기가 그 ID만 본다(없으면 list_ids) |
 | `GATE_POLL_SECONDS`, `PORT` | 주기(기본 60), 포트(기본 8080) |
 
 워커: `GATE_DATA_DIR`(같은 레지스트리), `GATE_RUNNER_FACTORY`, `GATE_WORKER_ID`, `GATE_POLL_SECONDS`. 실행 `gate-worker`.

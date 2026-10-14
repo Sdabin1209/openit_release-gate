@@ -13,9 +13,10 @@
 - 이웃 영역의 실제 I1·I3 SDK 연결(`GATE_I1_FACTORY`/`GATE_I3_FACTORY`). 지금은 `tests/fakes.py` 대역으로만 시험했다.
 - 워커와 서비스를 다른 서버에 둘 때의 저장소 선택(SQLite 공유 볼륨이 아닌 네트워크 DB). 미정.
 - 정책 핫 리로드(지금은 재시작).
+- 읽기 토큰은 아직 하나다(역할 구분 없음).
 
-## 막힌 것 / 확인 필요 (docs/change-requests)
-CR-0001 매니페스트에 어댑터 해시·serving_config 없음(임시로 ext 사용), CR-0002 반려 사유 코드, CR-0003 한 조합의 다중 판정, CR-0004 역할 이름, CR-0005 QUESTION_MODEL_COMPAT 근거, CR-0006 I1·I3 목록 호출, CR-0007 serving_config_hash 정의.
+## 변경 요청
+CR-0001~0007은 헤드가 모두 결정했고(D42, boundary-contracts v1.0.0) 구현에 반영했다. 열린 요청은 없다. 파일은 기록으로 남긴다.
 
 ## 확인하지 못한 것
 - 실제 neighbor SDK와의 연동, 실제 GPU 평가, 실제 model-runtime의 `serving_config_hash` 정의(CR-0007).

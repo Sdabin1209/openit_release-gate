@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 0.2.0 (2026-10-15) boundary-contracts v1.0.0 반영(D42)
+
+- `ReleaseManifest.adapters` 정식 필드 사용, ext 제거. `GateDecision.reject_codes`와 `SKIPPED` 사용, policy_blocked ext 제거.
+- 쓰기 토큰을 역할에 묶음(`GATE_WRITE_TOKENS`). 오류의 HTTP 상태를 CONVENTIONS 9절에 맞춤(INTEGRITY_ERROR, UNSUPPORTED_VERSION은 422).
+- 현재 판정 규칙(판정 ID 번호 0 채움, 같은 접수 안에서 decided_at 비감소). 수집기가 `list_ids` 사용(설정 목록도 허용). `lineage.question_sets`는 참고 정보로만 기록.
+- 스키마는 boundary_contracts 패키지에서 읽음. 이미지는 v1.0.0 태그의 wheel로 설치. 스모크 시험은 Docker가 배정한 호스트 포트를 씀. `requirements.txt` 추가.
+
 ## 0.1.0 (2026-10-15)
 
 - 설계 문서(`design.md`), 경계 문서(`boundary.md`), 런북, 변경 요청 7건(CR-0001~0007).

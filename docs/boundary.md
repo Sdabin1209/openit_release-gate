@@ -9,7 +9,7 @@
 | 이름 | 형태 | 비고 |
 | --- | --- | --- |
 | I4 ReleaseReader | `release_gate.ReleaseReaderImpl` (`boundary_contracts.sdk.ReleaseReader` Protocol 구현) | 실제: `open_release_reader(data_dir)`(읽기 전용). 메모리: `memory_registry(...).reader` |
-| I5 GateService | `release_gate.GateServiceImpl` (`GateService` Protocol 구현), HTTP 면 | `POST /v1/submissions`, `/v1/activate`, `/v1/rollback`. 메모리: `memory_registry(...).service` |
+| I5 GateService | `release_gate.GateServiceImpl` (`GateService` Protocol 구현), HTTP 면 | `POST /v1/submissions`, `/v1/activate`, `/v1/rollback`(쓰기 토큰은 역할에 묶임, 오류 상태 코드는 CONVENTIONS 9절). 메모리: `memory_registry(...).service` |
 | 읽기 HTTP | `GET /v1/active-pointer`, `/v1/releases/<id>`, `/v1/decisions/<id>` | 읽기 토큰 |
 | 상태 | `GET /healthz`, `GET /readyz` | 인증 없음 |
 
@@ -17,14 +17,14 @@
 
 ## 생산하는 계약
 
-`GateDecision`, `ReleaseManifest`, `GateSubmission`, `ActivePointer`, `RollbackReceipt`(전부 쓰기 전에 스키마 검증). 부가 정보는 `ext["release-gate"]`: 릴리스의 `adapters`와 `gate_policy_version`, 정책 때문에 반려된 판정의 `policy_blocked`(CR-0001, CR-0002 처리 전의 임시 위치).
+`GateDecision`(`reject_codes`, `SKIPPED` 포함), `ReleaseManifest`(`adapters` 포함), `GateSubmission`, `ActivePointer`, `RollbackReceipt`. 전부 쓰기 전에 boundary-contracts v1.0.0 스키마로 검증한다. `ext`는 쓰지 않는다.
 
 ## 소비하는 것과 지원 버전
 
 | 입력 | 쓰는 것 | 지원 버전 |
 | --- | --- | --- |
-| I1 QuestionReader | `get_question_bank`, `get_reviews` (`latest`, `list_versions`는 수집기) | 문진 스키마 정수 버전: 이미지를 빌드할 때 고정한 값(`GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION`, 현재 1)이 배포된 스키마의 `CONTRACT_VERSION`과 같아야 한다. 다르면 CONTRACT_COMPAT가 반려한다 |
-| I3 ModelRegistry | `get_manifest`, `open_adapter` (`list_versions`는 수집기) | 경계 계약 MAJOR 1 (`pipeline_schema_version` `1.x`) |
+| I1 QuestionReader | `get_question_bank`, `get_reviews` (`latest`, `list_ids`는 수집기) | 문진 스키마 정수 버전: 이미지를 빌드할 때 고정한 값(`GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION`, 현재 1)이 배포된 스키마의 `CONTRACT_VERSION`과 같아야 한다. 다르면 CONTRACT_COMPAT가 반려한다 |
+| I3 ModelRegistry | `get_manifest`, `open_adapter` (`list_ids`, `list_versions`는 수집기) | 경계 계약 `1.0` (MAJOR 1). `list_ids`, `lineage.question_sets`(참고) 사용 |
 | I8 turn-engine, I9 model-runtime | 워커의 평가 실행기에서만. 버전 문자열은 릴리스 매니페스트에 기록 | 환경 변수 `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` |
 | I5 호출 | 후보 제출, 활성화, `RollbackRequest` | 경계 계약 MAJOR 1 |
 
