@@ -25,3 +25,9 @@
 ## 세션을 끝낼 때
 
 `docs/STATUS.md`에 한 일, 남은 일, 막힌 것을 적는다.
+
+## 개발 명령
+
+- 환경: `python3 -m venv .venv && . .venv/bin/activate && pip install -e ../boundary-contracts -e '.[test]'`
+- 시험: `python -m pytest -q`. 이미지: `scripts/smoke.sh`(WSL은 docker.exe).
+- 통과 기준을 코드나 기본 파일에 넣지 않는다(D38). 시험용 정책은 `tests/` 안에서만, 버전 이름에 `test`를 붙여 만든다.

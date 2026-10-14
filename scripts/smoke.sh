@@ -4,7 +4,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER="${DOCKER:-$(command -v docker.exe || command -v docker)}"
-tag="release-gate:smoke"; name="release-gate-smoke-$$"; port="${SMOKE_PORT:-18080}"
+tag="release-gate:smoke"; name="release-gate-smoke-$$"; port="${SMOKE_PORT:-$((20000 + RANDOM % 10000))}"
 commit="$(git -C "$here" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 ctx="$("$here/scripts/stage_context.sh")"
 cver="$(cat "$ctx/survey-schema/CONTRACT_VERSION")"

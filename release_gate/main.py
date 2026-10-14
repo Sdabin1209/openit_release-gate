@@ -44,7 +44,7 @@ def serve() -> None:
     logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     schemas = SchemaSet(_env("GATE_BOUNDARY_SCHEMAS_DIR"))
     survey = SurveySchema(_env("GATE_SURVEY_SCHEMA_DIR"))
-    config = GateConfig(supported_runtime_contract_version=survey.contract_version,
+    config = GateConfig(supported_runtime_contract_version=int(_env("GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION", str(survey.contract_version))),
                         turn_engine_version=_env("GATE_TURN_ENGINE_VERSION", "unset"),
                         model_runtime_version=_env("GATE_MODEL_RUNTIME_VERSION", "unset"))
     policy = GatePolicy.from_file(os.environ.get("GATE_POLICY_FILE"))
