@@ -4,7 +4,7 @@
 # GATE_LIB_WHEELS_DIR 가 있으면 그 안의 *.whl(turn-engine, model-runtime 등 배포된 wheel)을 함께 담는다.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-tag="${BOUNDARY_CONTRACTS_TAG:-v1.3.0}"
+tag="${BOUNDARY_CONTRACTS_TAG:-v1.3.3}"
 ctx="$here/.build/ctx"
 rm -rf "$ctx" "$here/.build/bc-src"
 mkdir -p "$ctx/wheels" "$ctx/survey-schema" "$ctx/release-gate" "$here/.build/bc-src"

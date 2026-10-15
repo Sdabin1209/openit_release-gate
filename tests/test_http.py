@@ -213,3 +213,65 @@ def test_approval_without_engine_is_unavailable(world):
         assert st == 503 and body["code"] == "UNAVAILABLE"
     finally:
         srv.shutdown()
+
+
+def test_submission_views_over_http(world, server):
+    """GET /v1/submissions, /v1/submissions/{id} (D68): 스키마, 상태 대응, 필터, 페이지, 404, 읽기 토큰."""
+    sv = lambda v: world.schemas.validate("SubmissionView", v)
+    ok = call(server, "/v1/submissions", {"subject": world.subject()}, "wt")[1]              # 1: 통과할 제출
+    bad_qs = world.q.add("qs-nc", 1, approved=True, clinical=False)
+    bad = call(server, "/v1/submissions", {"subject": world.subject(qs=bad_qs)}, "wt")[1]    # 2: 자동 반려
+    rej = call(server, "/v1/submissions", {"subject": world.subject(qs=world.q.add("qs-r", 1))}, "wt")[1]   # 3: 사람 반려
+    wait = call(server, "/v1/submissions", {"subject": world.subject(qs=world.q.add("qs-w", 1))}, "wt")[1]  # 4: 대기
+    pend = call(server, "/v1/submissions", {"subject": world.subject(qs=world.q.add("qs-p", 1))}, "wt")[1]  # 5: 검사 전
+    # 검사 전
+    assert call(server, f"/v1/submissions/{ok['submission_id']}", token="rt")[1]["status"] == "PENDING_CHECK"
+    eng = world.engine()
+    sid = {k: v["submission_id"] for k, v in dict(ok=ok, bad=bad, rej=rej, wait=wait, pend=pend).items()}
+    for k in ("ok", "bad", "rej", "wait"):          # 'pend'는 일부러 검사하지 않는다
+        eng.advance(sid[k])
+    eng.decide({"submission_id": sid["ok"], "decision": "APPROVE", "approver_id": "t", "approver_role": "release-approver"},
+               token_role="release-approver")
+    eng.decide({"submission_id": sid["rej"], "decision": "REJECT", "reason": "x", "approver_id": "t",
+                "approver_role": "release-approver"}, token_role="release-approver")
+    want = {"ok": "PASSED", "bad": "REJECTED_AUTO", "rej": "REJECTED_HUMAN", "wait": "AWAITING_APPROVAL", "pend": "PENDING_CHECK"}
+    for k, st_ in want.items():
+        st, v = call(server, f"/v1/submissions/{sid[k]}", token="rt")
+        assert st == 200 and v["status"] == st_ and v["submission_id"] == sid[k], (k, v)
+        sv(v)
+    v = call(server, f"/v1/submissions/{sid['ok']}", token="rq")[1]               # 다른 읽기 역할도 가능
+    assert v["release_id"].startswith("rel-") and v["decision_id"] and v["approval_id"].startswith("ap-")
+    assert v["subject"] == ok["subject"] and v["submitted_by_role"] == "operator"
+    v = call(server, f"/v1/submissions/{sid['bad']}", token="rt")[1]
+    assert v["decision_id"] and v["approval_id"] is None and v["release_id"] is None
+    v = call(server, f"/v1/submissions/{sid['wait']}", token="rt")[1]
+    assert v["decision_id"] is None and v["updated_at"]
+    # 목록: 최신부터, 모두 스키마 통과
+    st, page = call(server, "/v1/submissions", token="rt")
+    assert st == 200 and [x["submission_id"] for x in page["items"]] == [sid[k] for k in ("pend", "wait", "rej", "bad", "ok")]
+    assert page["next_cursor"] is None
+    for x in page["items"]:
+        sv(x)
+    # 필터
+    for k, st_ in want.items():
+        items = call(server, f"/v1/submissions?status={st_}", token="rt")[1]["items"]
+        assert [x["submission_id"] for x in items] == [sid[k]]
+    assert call(server, "/v1/submissions?status=NOPE", token="rt")[0] == 400
+    # 페이지
+    p1 = call(server, "/v1/submissions?limit=2", token="rt")[1]
+    assert [x["submission_id"] for x in p1["items"]] == [sid["pend"], sid["wait"]] and p1["next_cursor"]
+    late = call(server, "/v1/submissions", {"subject": world.subject(qs=world.q.add("qs-late", 1))}, "wt")[1]  # 새 제출이 생겨도
+    p2 = call(server, "/v1/submissions?limit=2&cursor=" + p1["next_cursor"], token="rt")[1]
+    assert [x["submission_id"] for x in p2["items"]] == [sid["rej"], sid["bad"]] and p2["next_cursor"]       # 페이지가 밀리지 않는다
+    p3 = call(server, "/v1/submissions?limit=2&cursor=" + p2["next_cursor"], token="rt")[1]
+    assert [x["submission_id"] for x in p3["items"]] == [sid["ok"]] and p3["next_cursor"] is None
+    assert call(server, "/v1/submissions?limit=501", token="rt")[0] == 400
+    assert call(server, "/v1/submissions?limit=0", token="rt")[0] == 400
+    assert call(server, "/v1/submissions?cursor=zz", token="rt")[0] == 400
+    assert call(server, "/v1/submissions?status=PASSED&limit=1", token="rt")[1]["next_cursor"] is None
+    assert len(call(server, "/v1/submissions", token="rt")[1]["items"]) == 6 and late["submission_id"]
+    # 404, 인증
+    st, e = call(server, "/v1/submissions/sub-none", token="rt")
+    assert st == 404 and e["code"] == "NOT_FOUND"
+    assert call(server, "/v1/submissions", token="wt")[0] == 403 and call(server, "/v1/submissions", token="bad")[0] == 403
+    assert call(server, f"/v1/submissions/{sid['ok']}", token="wt")[0] == 403

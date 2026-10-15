@@ -71,6 +71,7 @@ class Store:
     def put_submission(self, record: dict, subject_key: str) -> tuple[dict, bool]: ...
     def get_submission(self, submission_id: str) -> dict: ...
     def submission_ids(self, states: Optional[tuple] = None) -> list[str]: ...
+    def submission_seqs(self) -> list[tuple]: ...   # (seq, submission_id), 오래된 것부터. seq는 접수 순서로 늘어난다
     def get_work(self, submission_id: str) -> dict: ...
     def update_work(self, submission_id: str, fn: Callable[[dict], Optional[dict]]) -> dict: ...
     # 판정과 릴리스
@@ -138,6 +139,10 @@ class MemoryStore(Store):
     def submission_ids(self, states=None):
         with self._lock:
             return [s for s in self._subs if states is None or self._work[s]["state"] in states]
+
+    def submission_seqs(self):
+        with self._lock:
+            return [(i + 1, sid) for i, sid in enumerate(self._subs)]
 
     def get_work(self, submission_id):
         with self._lock:
@@ -383,6 +388,9 @@ class SqliteStore(Store):
     def submission_ids(self, states=None):
         rows = self._q("SELECT submission_id, state FROM submissions ORDER BY seq")
         return [r[0] for r in rows if states is None or r[1] in states]
+
+    def submission_seqs(self):
+        return [(r[0], r[1]) for r in self._q("SELECT seq, submission_id FROM submissions ORDER BY seq")]
 
     def get_work(self, submission_id):
         rows = self._q("SELECT work FROM submissions WHERE submission_id=?", (submission_id,))

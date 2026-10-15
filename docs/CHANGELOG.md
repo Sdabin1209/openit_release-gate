@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 0.7.0 (2026-10-15) 제출 목록·조회 (D68, boundary-contracts v1.3.3)
+
+- `GET /v1/submissions?status=&limit=&cursor=`, `GET /v1/submissions/{id}`: `SubmissionView`(내부 상태를 PENDING_CHECK, AWAITING_APPROVAL, REJECTED_AUTO, REJECTED_HUMAN, PASSED로 대응). 읽기 토큰으로 호출. 스키마 검증, 필터, 페이지, 404 시험. boundary-contracts v1.3.3.
+
 ## 0.6.0 (2026-10-15) 출고를 사람 승인으로 (D53, boundary-contracts v1.3.0)
 
 - **임계치 기반 자동 PASS 제거.** 자동 검사는 계약·문항-모델 호환, 임상 승인 기록, 평가 보고서(`EvaluationReport`) 존재·형식(`ACCEPTANCE_EVAL`은 형식 검사일 뿐)이다. 어긋나면 FAIL로 반려, 모두 통과하면 `AWAITING_APPROVAL`.

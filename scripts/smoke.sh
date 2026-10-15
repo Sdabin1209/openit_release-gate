@@ -28,6 +28,8 @@ curl -fsS -H 'Authorization: Bearer smoke-read' http://127.0.0.1:$port/v1/active
   || { echo "FAIL: 활성 포인터 읽기"; exit 1; }
 curl -fsS -H 'Authorization: Bearer smoke-read' http://127.0.0.1:$port/v1/releases | grep -q '"items": \[\]' \
   || { echo "FAIL: 릴리스 목록 읽기"; exit 1; }
+curl -fsS -H 'Authorization: Bearer smoke-read' "http://127.0.0.1:$port/v1/submissions?status=AWAITING_APPROVAL" | grep -q '"items": \[\]' \
+  || { echo "FAIL: 제출 목록 읽기"; exit 1; }
 code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Authorization: Bearer smoke-read' -d '{}' http://127.0.0.1:$port/v1/activate)"
 [ "$code" = 403 ] || { echo "FAIL: 읽기 토큰으로 쓰기가 됐다($code)"; exit 1; }
 uid="$("$DOCKER" exec "$name" id -u | tr -d '\r')"; [ "$uid" != 0 ] || { echo "FAIL: root로 실행 중"; exit 1; }

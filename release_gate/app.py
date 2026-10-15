@@ -2,7 +2,7 @@
 
 읽기(읽기 토큰): GET /v1/active-pointer {"item"}, /v1/releases, /v1/releases/<id>, /v1/releases/<id>/bundle (tar),
   /v1/decisions?question_set_id=&question_set_version=&lora_a_id=&lora_a_version=&lora_b_id=&lora_b_version=&submission_id=,
-  /v1/decisions/<id>, /v1/submissions/<id>/review-report (D53, 승인 요청 보고서). 목록은 {"items", "next_cursor"}이고 쿼리 cursor, limit(기본 100, 최대 500).
+  /v1/decisions/<id>, /v1/submissions (SubmissionView 목록, status 필터, D68), /v1/submissions/<id>, /v1/submissions/<id>/review-report (D53, 승인 요청 보고서). 목록은 {"items", "next_cursor"}이고 쿼리 cursor, limit(기본 100, 최대 500).
 쓰기(쓰기 토큰): POST /v1/submissions, /v1/activate, /v1/rollback, /v1/approvals(역할 release-approver, D53). 읽기 토큰으로는 403.
 상태: GET /healthz, /readyz (인증 없음).
 토큰은 역할에 묶여 있다(CONVENTIONS 9절): 쓰기 요청 본문의 역할이 토큰의 역할과 다르면 PERMISSION_DENIED.
@@ -164,6 +164,12 @@ class _Handler(BaseHTTPRequestHandler):
                     return 200, r.reader.get_release(rest[0])
                 if len(rest) == 2 and rest[1] == "bundle":
                     return "bundle", rest[0]
+            if path == "/v1/submissions":
+                cursor, limit = self._page(q)
+                items, nxt = r.service.list_submissions(status=q.get("status", [None])[0], cursor=cursor, limit=limit)
+                return 200, {"items": items, "next_cursor": nxt}
+            if path.startswith("/v1/submissions/") and path.count("/") == 3:
+                return 200, r.service.get_submission(path.rsplit("/", 1)[1])
             if path.startswith("/v1/submissions/") and path.endswith("/review-report"):
                 sid = path[len("/v1/submissions/"):-len("/review-report")]
                 if sid and "/" not in sid:

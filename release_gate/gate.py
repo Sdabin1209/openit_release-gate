@@ -15,6 +15,7 @@ from .config import GateConfig
 from .policy import GatePolicy
 from .reader import verify_in_tempdir
 from .review import build_review_report
+from .views import list_submission_views, submission_view
 from .schemas import SchemaSet, SurveySchema
 from .store import ReleaseParts, Store
 from .util import Clock, subject_of, ts, utc_now
@@ -85,6 +86,14 @@ class GateServiceImpl:
         self.schemas.validate("GateSubmission", rec)
         existing, _ = self.store.put_submission(rec, key)
         return existing
+
+    def get_submission(self, submission_id: str) -> dict:
+        """GET /v1/submissions/{id}: SubmissionView. 없으면 NOT_FOUND."""
+        return submission_view(self.store, submission_id)
+
+    def list_submissions(self, *, status=None, cursor=None, limit=100) -> tuple:
+        """GET /v1/submissions: SubmissionView 목록(최신부터)과 next_cursor."""
+        return list_submission_views(self.store, status=status, cursor=cursor, limit=limit)
 
     def get_review_report(self, submission_id: str) -> dict:
         """GET /v1/submissions/{id}/review-report. 자동 검사가 끝난 제출만(아니면 CONFLICT, HTTP 409)."""
@@ -215,7 +224,7 @@ class GateEngine:
         recs, reasons = self._run_checks(data)
         if reasons:
             return self._reject(sid, subject, recs, reasons, data=data)
-        work = {"state": "AWAITING_APPROVAL", "auto_checks": recs, "policy_version": self.policy.version,
+        work = {"state": "AWAITING_APPROVAL", "awaiting_at": ts(self.clock()), "auto_checks": recs, "policy_version": self.policy.version,
                 "candidate_reports": data.eval_reports}
         self.store.update_work(sid, lambda w: work if w["state"] == "RECEIVED" else None)
         return None

@@ -34,7 +34,7 @@ curl -H "Authorization: Bearer $READ" http://gate:8080/v1/submissions/$SID/revie
 curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'","decision":"APPROVE","approver_id":"trainer-1","approver_role":"release-approver","reason":"지표 검토함","report_hash":"sha256:…"}' http://gate:8080/v1/approvals
 ```
 
-승인 대기 목록은 `/readyz`의 `awaiting_approval`(개수)로 본다. 승인 결정은 `GATE_I1_FACTORY`, `GATE_I3_FACTORY`가 연결되어 있어야 한다(어댑터를 받아 릴리스에 묶는다). 연결이 없으면 503이다. 승인 결정 때 I3가 안 되면 아무것도 기록되지 않으므로 같은 요청을 다시 보낸다.
+승인 대기 목록은 `GET /v1/submissions?status=AWAITING_APPROVAL`(읽기 토큰)로 본다. `/readyz`의 `awaiting_approval`은 개수다. 승인 결정은 `GATE_I1_FACTORY`, `GATE_I3_FACTORY`가 연결되어 있어야 한다(어댑터를 받아 릴리스에 묶는다). 연결이 없으면 503이다. 승인 결정 때 I3가 안 되면 아무것도 기록되지 않으므로 같은 요청을 다시 보낸다.
 
 ## gate_policy (선택)
 
