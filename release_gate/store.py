@@ -25,6 +25,7 @@ class ReleaseParts:
     manifest: dict
     question_bank: dict
     adapters: Mapping[str, Path]  # role -> 원본 디렉터리(저장소가 복사해 간다)
+    eval_reports: Optional[Mapping[str, dict]] = None  # role -> EvaluationReport. 다음 승인 보고서의 기준값으로 쓴다
 
 
 def ref_key(ref: dict) -> str:
@@ -73,7 +74,10 @@ class Store:
     def get_work(self, submission_id: str) -> dict: ...
     def update_work(self, submission_id: str, fn: Callable[[dict], Optional[dict]]) -> dict: ...
     # 판정과 릴리스
-    def commit_decision(self, decision: dict, work: dict, release: Optional[ReleaseParts] = None) -> dict: ...
+    def commit_decision(self, decision: dict, work: dict, release: Optional[ReleaseParts] = None,
+                        approval: Optional[dict] = None) -> dict: ...
+    def get_approval(self, submission_id: str) -> Optional[dict]: ...
+    def get_release_reports(self, release_id: str) -> dict: ...
     def get_decision(self, decision_id: str) -> dict: ...
     def latest_decision(self, submission_id: str) -> Optional[dict]: ...
     def find_decisions(self, *, question_set=None, lora_a=None, lora_b=None, submission_id=None,
@@ -89,9 +93,6 @@ class Store:
     def get_receipt(self, request_id: str) -> Optional[tuple]: ...
     def put_receipt(self, request_id: str, request_hash: str, receipt: dict) -> tuple: ...
     def ping(self) -> None: ...
-    # 워커 상태(운영 정보. 계약 레코드가 아니다)
-    def put_heartbeat(self, worker_id: str, info: dict, at: float) -> None: ...
-    def heartbeats(self) -> list[dict]: ...
 
 
 # --------------------------------------------------------------------------- 메모리
@@ -109,18 +110,11 @@ class MemoryStore(Store):
         self._release_files: dict[str, tuple[dict, dict]] = {}   # id -> (bank, {role: {relpath: bytes}})
         self._pointers: list[dict] = []
         self._receipts: dict[str, tuple] = {}
+        self._approvals: dict[str, dict] = {}
+        self._release_reports: dict[str, dict] = {}
 
     def ping(self) -> None:
         return None
-
-    def put_heartbeat(self, worker_id, info, at):
-        with self._lock:
-            self._beats = getattr(self, "_beats", {})
-            self._beats[worker_id] = {"worker_id": worker_id, "at": at, **info}
-
-    def heartbeats(self):
-        with self._lock:
-            return list(getattr(self, "_beats", {}).values())
 
     def put_submission(self, record, subject_key):
         with self._lock:
@@ -159,12 +153,23 @@ class MemoryStore(Store):
                 return new
             return cur
 
-    def commit_decision(self, decision, work, release=None):
+    def get_approval(self, submission_id):
+        with self._lock:
+            a = self._approvals.get(submission_id)
+            return json.loads(json.dumps(a)) if a else None
+
+    def get_release_reports(self, release_id):
+        with self._lock:
+            return json.loads(json.dumps(self._release_reports.get(release_id, {})))
+
+    def commit_decision(self, decision, work, release=None, approval=None):
         with self._lock:
             did = decision["decision_id"]
             if did in self._decision_by_id:
                 _same(self._decisions[self._decision_by_id[did]], decision, did)
                 return self._decisions[self._decision_by_id[did]]
+            if approval is not None and approval["submission_id"] in self._approvals:
+                raise BoundaryError("CONFLICT", f"이미 승인 결정이 있다: {approval['submission_id']}")
             if release is not None:
                 rid = release.manifest["release_id"]
                 if rid in self._release_by_id:
@@ -175,8 +180,11 @@ class MemoryStore(Store):
                     files[role] = {p.relative_to(src).as_posix(): p.read_bytes()
                                    for p in sorted(src.rglob("*")) if p.is_file()}
                 self._release_files[rid] = (json.loads(json.dumps(release.question_bank)), files)
+                self._release_reports[rid] = json.loads(json.dumps(dict(release.eval_reports or {})))
                 self._release_by_id[rid] = len(self._releases)
                 self._releases.append(json.loads(json.dumps(release.manifest)))
+            if approval is not None:
+                self._approvals[approval["submission_id"]] = json.loads(json.dumps(approval))
             self._decision_by_id[did] = len(self._decisions)
             self._decisions.append(json.loads(json.dumps(decision)))
             self._work[decision["submission_id"]] = json.loads(json.dumps(work))
@@ -287,7 +295,7 @@ CREATE TABLE IF NOT EXISTS decisions(seq INTEGER PRIMARY KEY AUTOINCREMENT, deci
   submission_id TEXT NOT NULL, qs TEXT NOT NULL, la TEXT NOT NULL, lb TEXT NOT NULL, record TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS releases(seq INTEGER PRIMARY KEY AUTOINCREMENT, release_id TEXT UNIQUE NOT NULL, record TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pointer_history(pointer_version INTEGER PRIMARY KEY, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS heartbeats(worker_id TEXT PRIMARY KEY, at REAL NOT NULL, info TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS approvals(submission_id TEXT PRIMARY KEY, approval_id TEXT UNIQUE NOT NULL, record TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS receipts(request_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, record TEXT NOT NULL);
 """
 
@@ -319,19 +327,6 @@ class SqliteStore(Store):
                 self._c.execute("SELECT 1 FROM pointer_history LIMIT 1").fetchall()
         except sqlite3.Error as e:
             raise BoundaryError("UNAVAILABLE", f"레지스트리를 읽을 수 없다: {e}") from e
-
-    def put_heartbeat(self, worker_id, info, at):
-        self._w()
-        with self._Txn(self) as c:
-            c.execute("INSERT OR REPLACE INTO heartbeats(worker_id, at, info) VALUES(?,?,?)",
-                      (worker_id, at, json.dumps(info)))
-
-    def heartbeats(self):
-        try:
-            rows = self._q("SELECT worker_id, at, info FROM heartbeats")
-        except BoundaryError:
-            return []  # 오래된 레지스트리(테이블 없음)
-        return [{"worker_id": w, "at": a, **json.loads(i)} for w, a, i in rows]
 
     def _w(self):
         if self.read_only:
@@ -418,12 +413,23 @@ class SqliteStore(Store):
         tmp = self.root / "releases" / f".tmp-{rid}"
         shutil.rmtree(tmp, ignore_errors=True)
         (tmp / "adapters").mkdir(parents=True)
+        (tmp / "eval_reports.json").write_text(json.dumps(dict(release.eval_reports or {}), ensure_ascii=False), encoding="utf-8")
         (tmp / "question_bank.json").write_text(json.dumps(release.question_bank, ensure_ascii=False), encoding="utf-8")
         for role, src in release.adapters.items():
             shutil.copytree(src, tmp / "adapters" / role)
         return tmp
 
-    def commit_decision(self, decision, work, release=None):
+    def get_approval(self, submission_id):
+        rows = self._q("SELECT record FROM approvals WHERE submission_id=?", (submission_id,))
+        return json.loads(rows[0][0]) if rows else None
+
+    def get_release_reports(self, release_id):
+        try:
+            return json.loads((self.root / "releases" / release_id / "eval_reports.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}  # 기준 보고서가 없는 릴리스(비교 기준 없음)
+
+    def commit_decision(self, decision, work, release=None, approval=None):
         self._w()
         did = decision["decision_id"]
         staged = None
@@ -433,6 +439,9 @@ class SqliteStore(Store):
                 if row:
                     _same(json.loads(row[0]), decision, did)
                     return decision
+                if approval is not None:
+                    c.execute("INSERT INTO approvals(submission_id, approval_id, record) VALUES(?,?,?)",
+                              (approval["submission_id"], approval["approval_id"], json.dumps(approval, ensure_ascii=False)))
                 if release is not None:
                     staged = self._stage_release(release)
                     c.execute("INSERT INTO releases(release_id,record) VALUES(?,?)",

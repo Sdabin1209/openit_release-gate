@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from release_gate import (GateConfig, GateEngine, GatePolicy, EvalWorker, SchemaSet, SurveySchema,
+from release_gate import (GateConfig, GateEngine, GatePolicy, SchemaSet, SurveySchema,
                           memory_registry, sqlite_registry)
-from fakes import FakeModels, FakeQuestions, FakeRunner, make_test_policy
+from fakes import FakeModels, FakeQuestions
 
 ROOT = Path(__file__).resolve().parents[2]
 SURVEY = ROOT / "survey-service" / "schema"
@@ -53,7 +53,7 @@ class World:
         self.clock = Clock()
 
     def engine(self, policy=None):
-        pol = GatePolicy.from_dict(policy) if isinstance(policy, dict) else (policy or GatePolicy.empty())
+        pol = GatePolicy.from_dict(policy) if isinstance(policy, dict) else (policy or GatePolicy.default())
         return GateEngine(self.reg.store, self.schemas, self.survey, self.config, pol, self.q, self.m,
                           clock=self.clock)
 
@@ -63,18 +63,23 @@ class World:
         b = b or self.m.add("lora-b", "1", "LORA_B")
         return {"question_set": qs, "lora_a": self.m.ref(a), "lora_b": self.m.ref(b)}
 
-    def worker(self, runner=None, **kw):
-        return EvalWorker(self.reg.store, runner or FakeRunner(), worker_id="w1", clock=self.clock, **kw)
+    def approve(self, sid, decision="APPROVE", reason=None, approver="trainer-1", **extra):
+        """승인자(release-approver)의 결정. (GateApproval, created)."""
+        body = {"submission_id": sid, "decision": decision, "approver_id": approver, "approver_role": "release-approver"}
+        if reason:
+            body["reason"] = reason
+        body.update(extra)
+        return self.engine().decide(body, token_role="release-approver")
 
     def make_release(self, subject=None, role="operator") -> str:
-        """시험 정책으로 PASS까지 진행하고 release_id를 돌려준다."""
+        """자동 검사 -> 승인(APPROVE)까지 진행하고 release_id를 돌려준다."""
         sub = self.reg.service.submit_candidate(subject or self.subject(), requested_by_role=role)
-        eng = self.engine(make_test_policy())
+        eng = self.engine()
         eng.process_pending()
-        self.worker().run_all()
-        decisions = eng.process_pending()
-        assert decisions and decisions[-1]["result"] == "PASS", decisions
-        return decisions[-1]["release_id"]
+        self.approve(sub["submission_id"])
+        d = self.reg.store.latest_decision(sub["submission_id"])
+        assert d["result"] == "PASS", d
+        return d["release_id"]
 
 
 @pytest.fixture

@@ -1,6 +1,7 @@
 """이웃 영역 입력의 시험용 대역. boundary_contracts.sdk의 Protocol(I1 QuestionReader, I3 ModelRegistry)을 따른다."""
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -104,11 +105,12 @@ class FakeModels:
         self.root = root
         self.manifests: dict[tuple, dict] = {}
         self.dirs: dict[tuple, Path] = {}
+        self.reports: dict[str, bytes] = {}
         self.down = False
 
     def add(self, package_id: str, version: str, role: str, *, files: dict | None = None,
             runtime_contract_version=1, engine="0.1.0", runtime="0.1.0", base=("base-1", "r1"),
-            created_at="2026-10-14T00:00:00Z", **over) -> dict:
+            created_at="2026-10-14T00:00:00Z", metrics=None, report=True, **over) -> dict:
         d = self.root / f"{package_id}-{version}"
         d.mkdir(parents=True, exist_ok=True)
         for name, data in (files or {"adapter.bin": f"{package_id}{version}".encode(), "cfg/x.json": b"{}"}).items():
@@ -121,9 +123,12 @@ class FakeModels:
              "serving_config": sc, "serving_config_hash": canonical.sha256_hash(sc),
              "lineage": {"dataset": {"id": "ds", "version": "1", "content_hash": "sha256:" + "0" * 64},
                          "training_run_id": "run-1", "turn_engine_version": engine, "model_runtime_version": runtime},
-             "eval_report_ref": "eval-rep-1"}
+             "eval_report_ref": f"eval-{package_id}-{version}"}
         m.update(over)
         m["content_hash"] = canonical.content_hash(m)
+        if report:
+            self.reports[m["eval_report_ref"]] = json.dumps(
+                make_eval_report(m, metrics=metrics, created_at=created_at)).encode()
         self.manifests[(package_id, version)] = m
         self.dirs[(package_id, version)] = d
         return m
@@ -164,27 +169,29 @@ class FakeModels:
         return Path(dest)
 
     def get_eval_report(self, ref):
-        return b"report"
+        self._chk()
+        if ref not in self.reports:
+            raise BoundaryError("NOT_FOUND", "평가 보고서 없음")
+        return self.reports[ref]
 
 
-class FakeRunner:
-    """AcceptanceRunner 대역."""
-
-    def __init__(self, metrics=None, unseen=True, evidence="eval-0001", raises=None):
-        self.metrics = {"acc": 0.9} if metrics is None else metrics
-        self.unseen, self.evidence, self.raises, self.calls = unseen, evidence, raises, 0
-
-    def run(self, job):
-        self.calls += 1
-        if self.raises:
-            raise self.raises
-        return {"evidence_ref": self.evidence, "metrics": self.metrics, "unseen_question_eval": self.unseen}
+DEFAULT_METRICS = [
+    {"name": "risk_signal_recall", "group": "SAFETY", "slice": {"kind": "ALL", "value": "ALL"}, "value": 0.97, "n": 120,
+     "higher_is_better": True, "unit": "ratio"},
+    {"name": "fallback_rate", "group": "PROTECTION", "value": 0.02, "n": 120, "higher_is_better": False, "unit": "ratio"},
+    {"name": "value_exact_match", "group": "ACCURACY", "slice": {"kind": "SEEN_UNSEEN", "value": "UNSEEN"}, "value": 0.61,
+     "n": 40, "higher_is_better": True, "unit": "ratio"},
+]
 
 
-def make_test_policy(version="test-policy-1", **over) -> dict:
-    """시험 전용 정책. 이름에 test를 표시한다. 이 값은 tests/ 밖에 두지 않는다."""
-    p = {"gate_policy_version": version, "o11_resolved": True,
-         "required_checks": ["CONTRACT_COMPAT", "QUESTION_MODEL_COMPAT", "ACCEPTANCE_EVAL", "CLINICAL_SAFETY"],
-         "checks": {"ACCEPTANCE_EVAL": {"thresholds": {"acc": {"min": 0.5}}}}}
-    p.update(over)
-    return p
+def make_eval_report(manifest: dict, *, metrics=None, created_at="2026-10-14T00:00:00Z") -> dict:
+    """ModelPackageManifest에 맞는 EvaluationReport(시험용). 합격 여부나 임계치는 담지 않는다."""
+    rep = {"pipeline_schema_version": "1.3", "report_id": manifest["eval_report_ref"], "created_at": created_at,
+           "role": manifest["role"],
+           "package": {"id": manifest["package_id"], "version": manifest["version"],
+                       "content_hash": manifest["content_hash"]},
+           "evaluation_backend": {"name": "transformers+peft", "version": "0.1", "constrained_decoding": False},
+           "decoding": {"temperature": 0.0, "seed": 0},
+           "metrics": json.loads(json.dumps(DEFAULT_METRICS if metrics is None else metrics))}
+    rep["content_hash"] = canonical.content_hash(rep)
+    return rep

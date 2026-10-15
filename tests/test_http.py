@@ -12,8 +12,9 @@ from release_gate.app import GateHTTPServer
 
 @pytest.fixture
 def server(world):
-    srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "survey-service", "rq": "question-authoring"}, write_tokens={"wt": "operator", "wo": "ops-feedback", "wq": "question-authoring"},
-                         status=lambda: {"gate_policy_version": "EMPTY", "can_pass": False})
+    srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "survey-service", "rq": "question-authoring"}, write_tokens={"wt": "operator", "wo": "ops-feedback", "wq": "question-authoring",
+                                                                    "wa": "release-approver"},
+                         status=lambda: {"gate_policy_version": "human-approval-1"}, engine=world.engine())
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{srv.server_address[1]}"
     srv.shutdown()
@@ -44,7 +45,7 @@ def call(base, path, body=None, token=None):
 def test_health_ready_no_auth(server):
     assert call(server, "/healthz") == (200, {"status": "ok"})
     st, body = call(server, "/readyz")
-    assert st == 200 and body["status"] == "ready" and body["can_pass"] is False
+    assert st == 200 and body["status"] == "ready"
 
 
 def test_auth_split_between_read_and_write(world, server):
@@ -160,3 +161,55 @@ def test_bundle_of_non_pass_release_is_412(world, server):
     else:
         world.reg.store._c.execute("UPDATE decisions SET record=?", (json.dumps(dict(d, result="REJECT")),))
     assert raw(server, f"/v1/releases/{rid}/bundle", "rt")[0] == 412
+
+
+def test_review_report_and_approval_over_http(world, server):
+    sub = call(server, "/v1/submissions", {"subject": world.subject()}, "wt")[1]
+    sid = sub["submission_id"]
+    st, body = call(server, f"/v1/submissions/{sid}/review-report", token="rt")
+    assert st == 409 and body["details"]["reason"] == "NOT_READY"               # 자동 검사 전
+    assert call(server, "/v1/submissions/sub-none/review-report", token="rt")[0] == 404
+    world.engine().process_pending()
+    assert call(server, f"/v1/submissions/{sid}/review-report", token="wt")[0] == 403    # 읽기 토큰만
+    st, rr = call(server, f"/v1/submissions/{sid}/review-report", token="rt")
+    assert st == 200 and rr["submission_id"] == sid and rr["comparisons"]
+    world.schemas.validate("ReviewReport", rr)
+    from boundary_contracts import canonical
+    h = canonical.sha256_hash(rr)
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "trainer-1", "approver_role": "release-approver"}
+    # 권한: 읽기 토큰, 다른 역할의 쓰기 토큰, 역할 주장 불일치
+    assert call(server, "/v1/approvals", body, "rt")[0] == 403
+    assert call(server, "/v1/approvals", body, "wt")[0] == 403
+    assert call(server, "/v1/approvals", dict(body, approver_role="operator"), "wa")[0] == 403
+    assert call(server, "/v1/approvals", dict(body, report_hash="sha256:" + "3" * 64), "wa")[1]["details"]["reason"] == "STALE_REPORT"
+    st, ap = call(server, "/v1/approvals", dict(body, report_hash=h), "wa")
+    assert st == 201 and ap["decision"] == "APPROVE" and ap["report_hash"] == h and ap["approver_role"] == "release-approver"
+    world.schemas.validate("GateApproval", ap)
+    st2, ap2 = call(server, "/v1/approvals", body, "wa")
+    assert st2 == 200 and ap2 == ap                                              # 멱등
+    st3, e = call(server, "/v1/approvals", dict(body, decision="REJECT", reason="번복"), "wa")
+    assert st3 == 409 and e["code"] == "CONFLICT"
+    d = call(server, f"/v1/decisions?submission_id={sid}", token="rt")[1]["items"][0]
+    assert d["result"] == "PASS" and d["approval_id"] == ap["approval_id"]
+    rid = d["release_id"]
+    assert call(server, "/v1/activate", {"release_id": rid}, "wt")[0] == 200       # PASS 릴리스만 활성화된다
+
+
+def test_approval_needs_engine_and_valid_body(world, server):
+    assert call(server, "/v1/approvals", {"submission_id": "sub-none", "decision": "APPROVE", "approver_id": "t",
+                                          "approver_role": "release-approver"}, "wa")[0] == 404
+    assert call(server, "/v1/approvals", {"decision": "APPROVE"}, "wa")[0] == 400
+    assert call(server, "/v1/approvals", {"submission_id": "x", "decision": "APPROVE", "approval_id": "ap-1",
+                                          "approver_id": "t"}, "wa")[0] == 400
+
+
+def test_approval_without_engine_is_unavailable(world):
+    srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "r"}, write_tokens={"wa": "release-approver"},
+                         status=lambda: {})
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        st, body = call(f"http://127.0.0.1:{srv.server_address[1]}", "/v1/approvals",
+                        {"submission_id": "x", "decision": "APPROVE", "approver_id": "t"}, "wa")
+        assert st == 503 and body["code"] == "UNAVAILABLE"
+    finally:
+        srv.shutdown()

@@ -1,11 +1,11 @@
-"""검사 플러그인. 검사 종류마다 하나의 Check를 CheckRegistry에 붙인다.
+"""자동 검사 플러그인. 검사 종류마다 하나의 Check를 CheckRegistry에 붙인다.
 
-inline=True인 검사는 서비스가 직접 실행한다(저장소 읽기만 함). inline=False(ACCEPTANCE_EVAL)는 GPU 서버의 워커가
-실행하고, 서비스는 워커가 저장소에 남긴 결과를 받아 임계치만 적용한다(D40).
-어떤 검사가 필수인지와 임계치는 GatePolicy가 정한다. 이 파일에는 임계치 숫자가 없다.
+D53: 자동 검사는 기술 호환과 보고서 확인뿐이고 합격 임계치는 없다. ACCEPTANCE_EVAL은 후보의 평가 보고서
+(EvaluationReport)가 있고 형식·해시·대상이 맞는지만 확인한다. 출고는 사람(HUMAN_APPROVAL)이 정한다.
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Optional, Protocol
@@ -46,14 +46,16 @@ class SubjectData:
     reviews: list = field(default_factory=list)
     reviews_ok: bool = False
     manifests: dict = field(default_factory=dict)  # "LORA_A"/"LORA_B" -> ModelPackageManifest
+    eval_reports: dict = field(default_factory=dict)  # "LORA_A"/"LORA_B" -> EvaluationReport(파싱된 dict)
+    report_problems: list = field(default_factory=list)  # 보고서를 못 읽었거나 형식이 틀린 사유
     problems: list = field(default_factory=list)
 
 
 class SubjectLoader:
     """I1·I3로 판정 대상을 읽는다. UNAVAILABLE은 그대로 올려 나중에 다시 시도하게 한다."""
 
-    def __init__(self, questions: QuestionReader, models: ModelRegistry):
-        self.questions, self.models = questions, models
+    def __init__(self, questions: QuestionReader, models: ModelRegistry, schemas: SchemaSet):
+        self.questions, self.models, self.schemas = questions, models, schemas
 
     def load(self, subject: dict) -> SubjectData:
         d = SubjectData(subject)
@@ -88,7 +90,38 @@ class SubjectLoader:
                 d.problems.append(f"{role} 매니페스트의 해시가 참조와 다르다")
                 continue
             d.manifests[role] = m
+            self._load_report(d, role, ref, m)
         return d
+
+    def _load_report(self, d: SubjectData, role: str, ref: dict, m: dict) -> None:
+        """manifest.eval_report_ref의 EvaluationReport를 읽고 해시·형식·대상을 확인한다(UNAVAILABLE은 올린다)."""
+        try:
+            raw = self.models.get_eval_report(m["eval_report_ref"])
+        except BoundaryError as e:
+            if e.retryable:
+                raise
+            d.report_problems.append(f"{role}: 평가 보고서 {m['eval_report_ref']}를 읽지 못했다({e.code})")
+            return
+        try:
+            rep = json.loads(raw)
+            if not isinstance(rep, dict):
+                raise ValueError("객체가 아니다")
+        except (ValueError, TypeError) as e:
+            d.report_problems.append(f"{role}: 평가 보고서가 JSON이 아니다({e})")
+            return
+        try:
+            self.schemas.validate("EvaluationReport", rep)
+        except BoundaryError as e:
+            d.report_problems.append(f"{role}: {e.message}")
+            return
+        if canonical.content_hash(rep) != rep["content_hash"]:
+            d.report_problems.append(f"{role}: 평가 보고서의 content_hash가 맞지 않는다")
+        elif rep["role"] != role:
+            d.report_problems.append(f"{role}: 평가 보고서의 role이 {rep['role']}이다")
+        elif not same_ref(rep["package"], ref):
+            d.report_problems.append(f"{role}: 평가 보고서가 가리키는 패키지가 제출한 모델과 다르다")
+        else:
+            d.eval_reports[role] = rep
 
 
 @dataclass
@@ -98,7 +131,6 @@ class CheckContext:
     config: GateConfig
     schemas: SchemaSet
     survey: SurveySchema
-    eval_result: Optional[dict] = None
 
 
 class Check(Protocol):
@@ -187,8 +219,7 @@ class QuestionModelCompat:
 
 class ClinicalSafety:
     """D30: 그 문항 세트 버전에 clinical_basis_approved가 true인 APPROVED ReviewRecord가 있어야 한다.
-    제안: 승인 기록 뒤에 더 늦은 시각의 비승인 기록이 있으면 통과시키지 않는다(재검수는 새 레코드이므로).
-    모델 출력의 안전 지표는 O11이 정한다. 정책에 지표가 생기기 전에는 검사 자리(SAFETY_METRICS_SLOT)만 둔다."""
+    제안: 승인 기록 뒤에 더 늦은 시각의 비승인 기록이 있으면 통과시키지 않는다(재검수는 새 레코드이므로)."""
     kind, inline = "CLINICAL_SAFETY", True
 
     def run(self, ctx: CheckContext) -> CheckOutcome:
@@ -211,42 +242,24 @@ class ClinicalSafety:
         newest = mine[-1]
         if newest not in approved:
             return CheckOutcome("FAIL", f"승인 뒤에 더 늦은 비승인 검수({newest['review_id']})가 있다")
-        metrics = ctx.policy.params(self.kind).get("safety_metrics")
-        if metrics:
-            return CheckOutcome("FAIL", "정책에 안전 지표가 있으나 평가기가 연결되지 않았다(O11)")
-        return CheckOutcome("PASS", f"검수 {approved[-1]['review_id']}; 모델 출력 안전 지표: 미정(O11)")
+        return CheckOutcome("PASS", f"검수 {approved[-1]['review_id']}")
 
 
 class AcceptanceEval:
-    """승인 평가. 실행은 워커가 하고(ctx.eval_result), 이 검사는 정책 임계치를 적용한다."""
-    kind, inline = "ACCEPTANCE_EVAL", False
+    """평가 보고서 확인(형식 검사일 뿐이다, D53). 두 모델의 EvaluationReport가 있고 해시·형식·대상이 맞아야 PASS.
+    지표 값이 좋은지 나쁜지는 보지 않는다. 그것은 승인자가 ReviewReport를 보고 정한다."""
+    kind, inline = "ACCEPTANCE_EVAL", True
 
     def run(self, ctx: CheckContext) -> CheckOutcome:
-        r = ctx.eval_result
-        if r is None:
-            return CheckOutcome("FAIL", "승인 평가 결과가 없다")
-        ref = r.get("evidence_ref")
-        ref = ref if isinstance(ref, str) and _ID.match(ref) else None
-        if r.get("error"):
-            return CheckOutcome("FAIL", f"승인 평가 실행 실패: {r['error']}", ref)
-        th = ctx.policy.params(self.kind).get("thresholds") or {}
-        if not th:
-            return CheckOutcome("FAIL", "정책에 임계치가 없다", ref)
-        metrics = r.get("metrics") or {}
-        bad = []
-        for name, t in sorted(th.items()):
-            v = metrics.get(name)
-            if not isinstance(v, (int, float)) or isinstance(v, bool):
-                bad.append(f"{name}: 측정값 없음")
-                continue
-            if "min" in t and v < t["min"]:
-                bad.append(f"{name}={v} < min {t['min']}")
-            if "max" in t and v > t["max"]:
-                bad.append(f"{name}={v} > max {t['max']}")
-        if ctx.policy.params(self.kind).get("require_unseen_question_eval", True) \
-                and r.get("unseen_question_eval") is not True:
-            bad.append("보지 못한 문항 평가(D32)가 수행되지 않았다")
-        return CheckOutcome("FAIL", "; ".join(bad), ref) if bad else CheckOutcome("PASS", "", ref)
+        d = ctx.data
+        bad = list(d.report_problems)
+        for role in ("LORA_A", "LORA_B"):
+            if role not in d.eval_reports and not any(p.startswith(role) for p in bad):
+                bad.append(f"{role}: 평가 보고서가 없다")
+        if bad:
+            return CheckOutcome("FAIL", " | ".join(bad))
+        ids = ", ".join(f"{r}={d.eval_reports[r]['report_id']}" for r in ("LORA_A", "LORA_B"))
+        return CheckOutcome("PASS", f"평가 보고서 확인(형식만): {ids}")
 
 
 class CheckRegistry:

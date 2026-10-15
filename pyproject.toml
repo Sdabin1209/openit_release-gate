@@ -14,7 +14,7 @@ test = ["pytest"]
 
 [project.scripts]
 gate-service = "release_gate.main:serve"
-gate-worker = "release_gate.main:work"
+
 
 [tool.setuptools]
 packages = ["release_gate"]

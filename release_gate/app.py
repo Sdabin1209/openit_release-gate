@@ -2,8 +2,8 @@
 
 읽기(읽기 토큰): GET /v1/active-pointer {"item"}, /v1/releases, /v1/releases/<id>, /v1/releases/<id>/bundle (tar),
   /v1/decisions?question_set_id=&question_set_version=&lora_a_id=&lora_a_version=&lora_b_id=&lora_b_version=&submission_id=,
-  /v1/decisions/<id>. 목록은 {"items", "next_cursor"}이고 쿼리 cursor, limit(기본 100, 최대 500).
-쓰기(쓰기 토큰): POST /v1/submissions, /v1/activate, /v1/rollback. 읽기 토큰으로는 403.
+  /v1/decisions/<id>, /v1/submissions/<id>/review-report (D53, 승인 요청 보고서). 목록은 {"items", "next_cursor"}이고 쿼리 cursor, limit(기본 100, 최대 500).
+쓰기(쓰기 토큰): POST /v1/submissions, /v1/activate, /v1/rollback, /v1/approvals(역할 release-approver, D53). 읽기 토큰으로는 403.
 상태: GET /healthz, /readyz (인증 없음).
 토큰은 역할에 묶여 있다(CONVENTIONS 9절): 쓰기 요청 본문의 역할이 토큰의 역할과 다르면 PERMISSION_DENIED.
 """
@@ -34,8 +34,9 @@ class GateHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, addr, registry: Registry, *, read_tokens: dict, write_tokens: dict,
-                 status: Callable[[], dict]):
+                 status: Callable[[], dict], engine=None):
         super().__init__(addr, _Handler)
+        self.engine = engine  # 승인 결정(decide)에 필요하다. I1·I3가 연결되지 않으면 None
         self.registry, self.read_tokens, self.write_tokens, self.status = registry, dict(read_tokens), dict(write_tokens), status
 
 
@@ -163,6 +164,10 @@ class _Handler(BaseHTTPRequestHandler):
                     return 200, r.reader.get_release(rest[0])
                 if len(rest) == 2 and rest[1] == "bundle":
                     return "bundle", rest[0]
+            if path.startswith("/v1/submissions/") and path.endswith("/review-report"):
+                sid = path[len("/v1/submissions/"):-len("/review-report")]
+                if sid and "/" not in sid:
+                    return 200, r.service.get_review_report(sid)
             if path == "/v1/decisions":
                 cursor, limit = self._page(q)
                 items, nxt = r.reader.find_decisions(
@@ -181,6 +186,13 @@ class _Handler(BaseHTTPRequestHandler):
             if self._role_of(self.server.write_tokens) is None:
                 raise BoundaryError("PERMISSION_DENIED", "쓰기 토큰이 없거나 맞지 않는다")  # 본문을 읽기 전에 거부
             b = self._body()
+            if path == "/v1/approvals":
+                role = self._write_role(b.get("approver_role"))
+                eng = self.server.engine
+                if eng is None:
+                    raise BoundaryError("UNAVAILABLE", "승인 결정에는 I1·I3 연결이 필요하다(GATE_I1_FACTORY, GATE_I3_FACTORY)")
+                rec, created = eng.decide(b, token_role=role)
+                return (201 if created else 200), rec
             role = self._write_role(b.get("requested_by_role"))
             if path == "/v1/submissions":
                 return 202, r.service.submit_candidate(b.get("subject"), requested_by_role=role)

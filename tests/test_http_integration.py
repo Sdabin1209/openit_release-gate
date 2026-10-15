@@ -5,7 +5,6 @@ import pytest
 
 from boundary_contracts.clients import HttpModelRegistry, HttpQuestionReader
 from release_gate import CandidateCollector, factories
-from fakes import make_test_policy
 from http_neighbors import NeighborServer
 
 
@@ -31,11 +30,13 @@ def test_collect_judge_bundle_over_http(world, neighbors, tmp_path):
     from release_gate.checks import CheckRegistry
     from release_gate import GatePolicy
     eng = GateEngine(world.reg.store, world.schemas, world.survey, world.config,
-                     GatePolicy.from_dict(make_test_policy()), qc, mc, CheckRegistry(), clock=world.clock)
-    assert eng.process_pending() == []
-    world.worker().run_all()
-    d = eng.process_pending()[0]
-    assert d["result"] == "PASS", d.get("reject_reasons")
+                     GatePolicy.default(), qc, mc, CheckRegistry(), clock=world.clock)
+    assert eng.process_pending() == []                    # 자동 검사 통과 -> 승인 요청
+    assert any(r.endswith("/eval-reports/eval-lora-a-1") or "/eval-reports/" in r for r in neighbors.requests)
+    ap, _ = eng.decide({"submission_id": subs[0]["submission_id"], "decision": "APPROVE", "approver_id": "t1",
+                        "approver_role": "release-approver"}, token_role="release-approver")
+    d = world.reg.store.latest_decision(subs[0]["submission_id"])
+    assert d["result"] == "PASS" and d["approval_id"] == ap["approval_id"]
     assert any(r.endswith("/adapter") for r in neighbors.requests)       # 어댑터를 HTTP로 받아 릴리스에 묶었다
     b = world.reg.reader.load_bundle(d["release_id"], dest=tmp_path / "b")
     assert b.manifest["adapters"]["LORA_A"]["adapter_hash"] == world.m.manifests[("lora-a", "1")]["adapter_hash"]

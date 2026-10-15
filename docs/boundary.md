@@ -2,14 +2,14 @@
 
 ## 소유하는 저장소
 
-릴리스 레지스트리(`GATE_DATA_DIR`: SQLite `registry.sqlite3`와 `releases/` 디렉터리). 쓰는 프로세스는 이 영역의 gate-service(판정, 릴리스, 포인터, 접수)와 gate-worker(접수의 작업 상태만)다. 다른 영역에는 읽기만 준다(I4, 읽기 전용 연결 또는 읽기 토큰).
+릴리스 레지스트리(`GATE_DATA_DIR`: SQLite `registry.sqlite3`와 `releases/` 디렉터리). 쓰는 프로세스는 이 영역의 gate-service(접수, 자동 검사, 승인 결정, 판정, 릴리스, 포인터)와 같은 코드의 run-once 잡(`collect`, `judge`)이다. 다른 영역에는 읽기만 준다(I4, 읽기 전용 연결 또는 읽기 토큰).
 
 ## 제공하는 SDK와 서비스
 
 | 이름 | 형태 | 비고 |
 | --- | --- | --- |
 | I4 ReleaseReader | `release_gate.ReleaseReaderImpl` (`boundary_contracts.sdk.ReleaseReader` Protocol 구현) | 실제: `open_release_reader(data_dir)`(읽기 전용). 메모리: `memory_registry(...).reader` |
-| I5 GateService | `release_gate.GateServiceImpl` (`GateService` Protocol 구현), HTTP 면 | `POST /v1/submissions`, `/v1/activate`, `/v1/rollback`(쓰기 토큰은 역할에 묶임, 오류 상태 코드는 CONVENTIONS 9절). 메모리: `memory_registry(...).service` |
+| I5 GateService | `release_gate.GateServiceImpl` (`GateService` Protocol 구현), HTTP 면 | `POST /v1/submissions`, `/v1/activate`, `/v1/rollback`, `GET /v1/submissions/{id}/review-report`, `POST /v1/approvals`(쓰기 토큰은 역할에 묶임, 오류 상태 코드는 CONVENTIONS 9절). 메모리: `memory_registry(...).service` |
 | I4 읽기 HTTP (HTTP.md) | `GET /v1/active-pointer` (`{"item"}`), `/v1/releases`, `/v1/releases/<id>`, `/v1/releases/<id>/bundle`(tar: manifest.json, question_bank.json, adapters/LORA_A/…, adapters/LORA_B/…; PASS 아니면 412, 해시 불일치 422), `/v1/decisions?question_set_id=&question_set_version=&lora_a_id=&lora_a_version=&lora_b_id=&lora_b_version=&submission_id=`, `/v1/decisions/<id>` | 읽기 토큰(역할별). 목록은 `{items, next_cursor}`, `cursor`/`limit`(기본 100, 최대 500), 최신부터. 서버도 번들을 보내기 전에 모든 해시를 검증한다 |
 | 상태 | `GET /healthz`, `GET /readyz` | 인증 없음 |
 
@@ -25,7 +25,7 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 | --- | --- | --- |
 | I1 QuestionReader | `get_question_bank`, `get_reviews` (`latest`, `list_ids`는 수집기) | 문진 스키마 정수 버전: 이미지를 빌드할 때 고정한 값(`GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION`, 현재 1)이 배포된 스키마의 `CONTRACT_VERSION`과 같아야 한다. 다르면 CONTRACT_COMPAT가 반려한다 |
 | I3 ModelRegistry | `get_manifest`, `open_adapter` (`list_ids`, `list_versions`는 수집기) | 경계 계약 `1.0` (MAJOR 1). `list_ids`, `lineage.question_sets`(참고) 사용 |
-| I8 turn-engine, I9 model-runtime | 워커의 평가 실행기에서만. 버전 문자열은 릴리스 매니페스트에 기록 | 환경 변수 `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` |
+| I8 turn-engine, I9 model-runtime | 코드는 쓰지 않는다. 설치된 패키지의 버전 문자열만 읽어 릴리스 매니페스트에 기록하고 호환 검사에 쓴다 | 환경 변수 `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` |
 | I5 호출 | 후보 제출, 활성화, `RollbackRequest` | 경계 계약 MAJOR 1 |
 
 입력은 `boundary_contracts.sdk`의 Protocol을 따르는 객체로만 받는다(생성자 인자 또는 설정의 팩토리 `module:callable`). 운영에서는 HTTP 클라이언트(`HttpQuestionReader`, `HttpModelRegistry`, boundary-contracts v1.2.0)를 만드는 `release_gate.factories`를 고른다. 시험에서는 `tests/`의 대역(직접 호출)과 HTTP 서버+실제 클라이언트 두 경로를 모두 쓴다. 이웃 코드를 가져오지 않는다.
@@ -35,18 +35,18 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 | 장애 | 영향 |
 | --- | --- |
 | gate-service 중단 | 활성 포인터와 릴리스 읽기는 유지된다(읽기 전용 연결). 새 판정, 활성화, 롤백이 멈춘다. survey-service는 마지막 포인터와 이미 받은 묶음을 계속 쓴다 |
-| gate-worker 또는 GPU 서버 중단 | 판정이 `EVAL_REQUESTED`에서 기다린다. 이미 있는 릴리스와 포인터는 그대로다. 임대는 만료되면 다른 워커가 가져간다 |
+| 승인자가 결정하지 않음 | 제출이 `AWAITING_APPROVAL`에서 기다린다. 이미 있는 릴리스와 포인터는 그대로다 |
 | I1 또는 I3 중단 | 새 판정이 다음 주기로 미뤄진다(접수는 유지). 이미 만든 릴리스는 묶음에 내용이 있어 영향 없다 |
 | 레지스트리 파일 손상 | `load_bundle`/활성화가 INTEGRITY_ERROR. 롤백은 손상된 대상으로 되돌리기를 REJECTED로 거부한다 |
-| 정책 비어 있음 | 모든 판정이 REJECT. 서비스는 정상(`/readyz`의 `can_pass=false`) |
 
-## 설정 계약: gate_policy와 승인 평가 실행기
+## 출고 승인 계약 (D53)
 
-이웃(deploy)이 맞춰야 하는 이 영역의 설정이다.
-- 정책 JSON: 형식은 `release_gate/schemas/gate_policy.schema.json`, 설명은 `docs/runbook.md`의 "gate_policy". 필수 키 `gate_policy_version`, `o11_resolved`, `required_checks`. 비어 있거나 `o11_resolved=false`이거나 임계치가 없으면 통과 불가(`reject_codes=POLICY_INCOMPLETE`). 틀린 형식은 서비스가 시작하지 않는다.
-- 실행기: `GATE_RUNNER_FACTORY=모듈:함수`(인자 없음, `run(job)` 객체), 호출 형태·오류 처리·NotConfigured 동작은 `docs/runner_protocol.md`. 실행기가 없으면 접수는 `EVAL_REQUESTED`에서 기다리고 `/readyz`의 `eval.state`가 `runner_not_configured` 또는 `no_worker`다.
-- 시험용 정책·실행기(이름에 `test`)는 `GATE_ALLOW_TEST=1`이 아니면 거부된다.
+- 자동 검사는 기술 호환(`CONTRACT_COMPAT`, `QUESTION_MODEL_COMPAT`), 평가 보고서 존재·형식(`ACCEPTANCE_EVAL`, 형식 검사일 뿐), 임상 승인 기록(`CLINICAL_SAFETY`, D30)이다. 어긋나면 FAIL로 반려한다. 모두 통과하면 제출이 `AWAITING_APPROVAL`이 된다. **합격 임계치는 없다.**
+- `GET /v1/submissions/{id}/review-report`(읽기 토큰): `ReviewReport`. 자동 검사 전이면 409(`details.reason=NOT_READY`).
+- `POST /v1/approvals`(쓰기 역할 `release-approver`만): 본문은 `GateApproval`에서 `approval_id`·`decided_at`을 뺀 것(`report_hash`는 선택). 새 기록은 201, 같은 결정의 반복은 200, 다른 결정은 409, 보낸 `report_hash`가 현재 보고서와 다르면 409(`details.reason=STALE_REPORT`). 이 호출에는 I1·I3 연결이 필요하다.
+- 결정이 APPROVE면 `HUMAN_APPROVAL` PASS가 든 `GateDecision`(PASS, `approval_id`)과 릴리스를 만들고, REJECT면 `HUMAN_APPROVAL` FAIL인 REJECT 판정을 남긴다. 승인 없이 PASS가 되는 경로는 없다.
+- 정책 파일(선택)은 `gate_policy_version`과 `CONTRACT_COMPAT.require_lineage_runtime_match`뿐이다(`docs/runbook.md`).
 
 ## 하지 않는 것
 
-문항·모델을 만들거나 고치지 않는다. 문진 스키마와 `boundary-contracts`를 수정하지 않는다(변경 요청은 `docs/change-requests/`). 안전 지표와 통과 임계치를 정하지 않는다(O11).
+문항·모델을 만들거나 고치지 않는다. 문진 스키마와 `boundary-contracts`를 수정하지 않는다(변경 요청은 `docs/change-requests/`). 합격선을 정하지 않는다. 출고는 승인자가 정한다(D53).

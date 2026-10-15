@@ -14,6 +14,7 @@ from .checks import CheckContext, CheckRegistry, SubjectLoader
 from .config import GateConfig
 from .policy import GatePolicy
 from .reader import verify_in_tempdir
+from .review import build_review_report
 from .schemas import SchemaSet, SurveySchema
 from .store import ReleaseParts, Store
 from .util import Clock, subject_of, ts, utc_now
@@ -22,9 +23,12 @@ from .util import Clock, subject_of, ts, utc_now
 def assert_decision_rule(d: dict) -> None:
     """GateDecision 규칙: PASS이면 모든 검사가 PASS이고 release_id가 있다. REJECT이면 사유가 있고 release_id가 없다."""
     if d["result"] == "PASS":
-        if "release_id" not in d or "reject_reasons" in d or "reject_codes" in d or any(c["result"] != "PASS" for c in d["checks"]):
-            raise BoundaryError("INVALID_RECORD", "PASS 판정 규칙 위반")
-    elif "release_id" in d or not d.get("reject_reasons"):
+        # D53: 승인 없이 PASS 금지. HUMAN_APPROVAL이 PASS이고 승인 ID가 있어야 한다.
+        if ("release_id" not in d or "reject_reasons" in d or "reject_codes" in d or "approval_id" not in d
+                or any(c["result"] != "PASS" for c in d["checks"])
+                or not any(c["kind"] == "HUMAN_APPROVAL" for c in d["checks"])):
+            raise BoundaryError("INVALID_RECORD", "PASS 판정 규칙 위반(승인 없는 PASS 포함)")
+    elif "release_id" in d or not d.get("reject_reasons") or not d.get("reject_codes"):
         raise BoundaryError("INVALID_RECORD", "REJECT 판정 규칙 위반")
 
 
@@ -33,6 +37,36 @@ def _check_role(role: str, allowed: frozenset, what: str) -> None:
         raise BoundaryError("INVALID_RECORD", "requested_by_role이 비어 있다")
     if role not in allowed:
         raise BoundaryError("PERMISSION_DENIED", f"역할 {role}은 {what} 권한이 없다")
+
+
+def review_report_for(store: Store, schemas: SchemaSet, clock: Clock, sid: str) -> dict:
+    """승인 요청 보고서. 활성 릴리스가 바뀌지 않았으면 저장된 것(같은 generated_at, 같은 해시)을 그대로 돌려주고,
+    바뀌었으면 새 기준으로 다시 만들어 저장한다. 해시가 바뀌므로 이전 보고서를 본 승인은 STALE_REPORT가 된다."""
+    sub = store.get_submission(sid)                  # NOT_FOUND
+    w = store.get_work(sid)
+    if "candidate_reports" not in w:
+        raise BoundaryError("CONFLICT", f"자동 검사가 끝나지 않았거나 보고서가 없는 제출이다: {sid}",
+                            {"reason": "NOT_READY", "state": w["state"]})
+    ptr = store.get_pointer()
+    active = ptr["release_id"] if ptr else None
+    rr = w.get("review_report")
+    if rr is not None and (w["state"] != "AWAITING_APPROVAL" or rr["active_release_id"] == active):
+        return rr
+    baseline = store.get_release_reports(active) if active else {}
+    rr = build_review_report(submission_id=sid, subject=subject_of(sub["subject"]), generated_at=ts(clock()),
+                             checks=w["auto_checks"], candidate=w["candidate_reports"], active_release_id=active,
+                             baseline=baseline)
+    schemas.validate("ReviewReport", rr)
+
+    def fn(x: dict):
+        if x["state"] != "AWAITING_APPROVAL":
+            return None
+        cur = x.get("review_report")
+        if cur is not None and cur["active_release_id"] == active:
+            return None  # 다른 요청이 먼저 만들었다
+        x["review_report"] = rr
+        return x
+    return store.update_work(sid, fn).get("review_report", rr)
 
 
 class GateServiceImpl:
@@ -51,6 +85,10 @@ class GateServiceImpl:
         self.schemas.validate("GateSubmission", rec)
         existing, _ = self.store.put_submission(rec, key)
         return existing
+
+    def get_review_report(self, submission_id: str) -> dict:
+        """GET /v1/submissions/{id}/review-report. 자동 검사가 끝난 제출만(아니면 CONFLICT, HTTP 409)."""
+        return review_report_for(self.store, self.schemas, self.clock, submission_id)
 
     def _pointer(self, expected: int, release_id: str, cause: str, rollback: Optional[tuple] = None) -> Optional[dict]:
         """expected 버전에서 다음 버전으로 원자적으로 바꾼다. 그 사이 바뀌었으면 None.
@@ -129,8 +167,13 @@ class GateServiceImpl:
 GateService = GateServiceImpl
 
 
+def _sub_hex(sid: str) -> str:
+    return sid[4:]
+
+
 class GateEngine:
-    """접수 -> 판정. advance()는 멱등이며 여러 번 불러도 같은 판정을 한 번만 남긴다."""
+    """접수 -> 자동 검사 -> 승인 요청(AWAITING_APPROVAL) -> 사람의 결정 -> 판정(D53).
+    advance()는 멱등이며 여러 번 불러도 같은 판정을 한 번만 남긴다. 승인 없이 PASS를 만드는 경로는 없다."""
 
     def __init__(self, store: Store, schemas: SchemaSet, survey: SurveySchema, config: GateConfig,
                  policy: GatePolicy, questions: QuestionReader, models: ModelRegistry,
@@ -138,14 +181,14 @@ class GateEngine:
         self.store, self.schemas, self.survey, self.config = store, schemas, survey, config
         self.policy, self.models, self.clock = policy, models, clock
         self.checks = checks or CheckRegistry()
-        self.loader = SubjectLoader(questions, models)
+        self.loader = SubjectLoader(questions, models, schemas)
 
-    # 진입점
+    # --- 자동 검사
     def process_pending(self) -> list[dict]:
-        """대기 중인 접수를 한 걸음씩 진행하고 새로 남긴 판정을 돌려준다. UNAVAILABLE이면 그 접수는 다음 주기로 미룬다."""
-        self.requeue_policy_blocked()
+        """자동 검사 전의 접수를 진행하고 (반려로) 끝난 판정을 돌려준다. 통과한 접수는 AWAITING_APPROVAL로 간다.
+        I1·I3가 UNAVAILABLE이면 그 접수는 다음 주기로 미룬다."""
         out = []
-        for sid in self.store.submission_ids(("RECEIVED", "EVAL_DONE")):
+        for sid in self.store.submission_ids(("RECEIVED",)):
             try:
                 d = self.advance(sid)
             except BoundaryError as e:
@@ -156,129 +199,145 @@ class GateEngine:
                 out.append(d)
         return out
 
-    def requeue_policy_blocked(self) -> int:
-        """정책이 비어 있거나 불완전해서 반려된 접수를, 정책 버전이 바뀐 뒤에 다시 판정하게 한다(새 판정이 추가된다)."""
-        n = 0
-        for sid in self.store.submission_ids(("DECIDED",)):
-            d = self.store.latest_decision(sid)
-            if d and d["result"] == "REJECT" and "POLICY_INCOMPLETE" in d.get("reject_codes", []) \
-                    and d["gate_policy_version"] != self.policy.version:
-                def fn(w: dict) -> Optional[dict]:
-                    return {"state": "RECEIVED"} if w.get("state") == "DECIDED" else None
-                self.store.update_work(sid, fn)
-                n += 1
-        return n
-
     def advance(self, sid: str) -> Optional[dict]:
+        if self.store.get_work(sid)["state"] == "RECEIVED":
+            return self._auto_stage(sid)
+        return None
+
+    def _run_checks(self, data):
+        ctx = CheckContext(data, self.policy, self.config, self.schemas, self.survey)
+        results = [(k, self.checks.get(k).run(ctx)) for k in self.policy.required_checks if self.checks.get(k)]
+        return [o.to_record(k) for k, o in results], [f"{k}: {o.detail or '실패'}" for k, o in results if o.result == "FAIL"]
+
+    def _auto_stage(self, sid: str) -> Optional[dict]:
+        subject = subject_of(self.store.get_submission(sid)["subject"])
+        data = self.loader.load(subject)
+        recs, reasons = self._run_checks(data)
+        if reasons:
+            return self._reject(sid, subject, recs, reasons, data=data)
+        work = {"state": "AWAITING_APPROVAL", "auto_checks": recs, "policy_version": self.policy.version,
+                "candidate_reports": data.eval_reports}
+        self.store.update_work(sid, lambda w: work if w["state"] == "RECEIVED" else None)
+        return None
+
+    # --- 사람의 결정 (POST /v1/approvals)
+    def decide(self, body: dict, *, token_role: str) -> tuple:
+        """(GateApproval, created). 같은 submission_id에 같은 결정이면 (기존, False), 다른 결정이면 CONFLICT."""
+        if token_role not in self.config.approver_roles:
+            raise BoundaryError("PERMISSION_DENIED", f"역할 {token_role}은 출고 결정 권한이 없다")
+        if not isinstance(body, dict):
+            raise BoundaryError("INVALID_RECORD", "본문이 객체가 아니다")
+        for k in ("approval_id", "decided_at"):
+            if k in body:
+                raise BoundaryError("INVALID_RECORD", f"{k}는 서버가 채운다")
+        if body.get("approver_role") not in (None, token_role):
+            raise BoundaryError("PERMISSION_DENIED", "approver_role이 토큰의 역할과 다르다")
+        sid = body.get("submission_id")
+        if not isinstance(sid, str) or not sid:
+            raise BoundaryError("INVALID_RECORD", "submission_id가 없다")
+        self.store.get_submission(sid)  # NOT_FOUND
+        sent_hash = body.get("report_hash")
+        rec = {k: v for k, v in body.items() if k not in ("report_hash",)}
+        rec.update({"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "approval_id": "ap-" + _sub_hex(sid),
+                    "approver_role": token_role, "decided_at": ts(self.clock())})
+        existing = self.store.get_approval(sid)
+        if existing:
+            return self._same_or_conflict(existing, rec)
         w = self.store.get_work(sid)
-        if w["state"] == "RECEIVED":
-            return self._inline_stage(sid)
-        if w["state"] == "EVAL_DONE":
-            return self._compose(sid, w)
-        return None
+        if w["state"] != "AWAITING_APPROVAL":
+            raise BoundaryError("FAILED_PRECONDITION", f"승인을 받을 수 있는 상태가 아니다: {w['state']}",
+                                {"state": w["state"]})
+        report = review_report_for(self.store, self.schemas, self.clock, sid)
+        h = canonical.sha256_hash(report)
+        if sent_hash is not None and sent_hash != h:
+            raise BoundaryError("CONFLICT", "STALE_REPORT: 승인자가 본 보고서와 현재 보고서가 다르다",
+                                {"reason": "STALE_REPORT", "current_report_hash": h})
+        rec["report_hash"] = h
+        self.schemas.validate("GateApproval", rec)  # decision 값, 반려 사유 필수 등
+        try:
+            self._finish(sid, rec, w)
+        except BoundaryError as e:
+            if e.details.get("state") == "RECHECK_FAILED":  # 자동 검사부터 다시 해서 반려 판정을 남기게 한다
+                self.store.update_work(sid, lambda x: {"state": "RECEIVED"} if x["state"] == "AWAITING_APPROVAL" else None)
+            if e.code == "CONFLICT" and (ex := self.store.get_approval(sid)):   # 동시 요청이 먼저 기록했다
+                return self._same_or_conflict(ex, rec)
+            raise
+        return rec, True
 
-    # 1단계: 서비스가 직접 하는 검사
-    def _ctx(self, data, eval_result=None) -> CheckContext:
-        return CheckContext(data, self.policy, self.config, self.schemas, self.survey, eval_result)
+    @staticmethod
+    def _same_or_conflict(existing: dict, rec: dict) -> tuple:
+        if existing["decision"] == rec["decision"] and existing.get("reason") == rec.get("reason"):
+            return existing, False
+        raise BoundaryError("CONFLICT", "이 제출에는 이미 다른 결정이 있다", {"reason": "DIFFERENT_DECISION"})
 
-    def _inline_stage(self, sid: str) -> Optional[dict]:
+    def _finish(self, sid: str, approval: dict, w: dict) -> None:
         subject = subject_of(self.store.get_submission(sid)["subject"])
-        problems = self.policy.problems()
-        if problems:  # 정책이 통과를 낼 수 없으면 검사를 실행하지 않는다. 조합이 나쁘다는 뜻이 아니다.
-            skipped = [{"kind": k, "result": "SKIPPED", "detail": "정책이 불완전해 실행하지 않았다"}
-                       for k in (self.checks.inline_kinds() or ["CONTRACT_COMPAT"])]
-            return self._reject(sid, subject, skipped, problems, codes=["POLICY_INCOMPLETE"])
+        recs = list(w["auto_checks"])
+        human = {"kind": "HUMAN_APPROVAL", "evidence_ref": approval["approval_id"],
+                 "result": "PASS" if approval["decision"] == "APPROVE" else "FAIL",
+                 "detail": f"{approval['approver_role']}:{approval['approver_id']}"
+                           + (f" - {approval['reason']}" if approval.get("reason") else "")}
+        if approval["decision"] == "REJECT":
+            d = self._base(sid, subject, recs + [human], "REJECT")
+            d.update({"reject_reasons": [f"승인자 반려: {approval['reason']}"], "reject_codes": ["CHECK_FAILED"],
+                      "approver": {"role": approval["approver_role"], "id": approval["approver_id"]},
+                      "approval_id": approval["approval_id"]})
+            return self._commit(sid, d, approval)
+        # APPROVE: 승인 직전에 자동 검사를 다시 한다(그 사이 임상 승인이 철회되었을 수 있다, D30)
         data = self.loader.load(subject)
-        ctx = self._ctx(data)
-        results = [(k, self.checks.get(k).run(ctx)) for k in self.policy.required_checks
-                   if k in self.checks.inline_kinds()]
-        recs = [o.to_record(k) for k, o in results]
-        reasons = [f"{k}: {o.detail or '실패'}" for k, o in results if o.result == "FAIL"]
+        fresh, reasons = self._run_checks(data)
         if reasons:
-            return self._reject(sid, subject, recs, reasons, data=data)
-        self.store.update_work(sid, lambda w: {"state": "EVAL_REQUESTED", "inline_checks": recs,
-                                               "policy_version": self.policy.version}
-                               if w["state"] == "RECEIVED" else None)
-        return None
-
-    # 2단계: 워커 결과를 받아 정책 임계치를 적용
-    def _compose(self, sid: str, w: dict) -> Optional[dict]:
-        if w.get("policy_version") != self.policy.version:
-            self.store.update_work(sid, lambda x: {"state": "RECEIVED"} if x["state"] == "EVAL_DONE" else None)
-            return None  # 정책이 바뀌었으면 처음부터 다시
-        subject = subject_of(self.store.get_submission(sid)["subject"])
-        data = self.loader.load(subject)
-        out = self.checks.get("ACCEPTANCE_EVAL").run(self._ctx(data, w.get("eval_result")))
-        recs = list(w.get("inline_checks", [])) + [out.to_record("ACCEPTANCE_EVAL")]
-        reasons = [f"{r['kind']}: {r.get('detail') or '실패'}" for r in recs if r["result"] == "FAIL"]
-        reasons += [f"{p}" for p in data.problems]
-        if reasons:
-            return self._reject(sid, subject, recs, reasons, data=data)
-        return self._pass(sid, subject, data, recs)
-
-    # 기록
-    def _base(self, sid: str, subject: dict, recs: list, result: str) -> dict:
-        prev = self.store.find_decisions(submission_id=sid, limit=1000)[0]
-        n = len(prev) + 1
-        at = ts(self.clock())
-        if prev and prev[0]["decided_at"] > at:
-            at = prev[0]["decided_at"]  # 현재 판정 = decided_at이 가장 늦은 것. 같은 접수 안에서는 시각이 거꾸로 가지 않게 한다
-        # decision_id는 번호를 0 채움해 같은 시각이어도 나중 판정이 큰 값이 되게 한다
-        return {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "decision_id": f"gd-{sid[4:]}-{n:04d}",
-                "decided_at": at, "gate_policy_version": self.policy.version, "subject": subject,
-                "runtime_contract_version": self.config.supported_runtime_contract_version, "result": result,
-                "checks": recs, "approver": {"role": self.config.approver_role}, "submission_id": sid}
-
-    def _reject(self, sid, subject, recs, reasons, *, data=None, codes=None) -> dict:
-        d = self._base(sid, subject, recs, "REJECT")
-        d["reject_reasons"] = reasons
-        if codes is None:
-            codes = []
-            if any(r["result"] == "FAIL" for r in recs):
-                codes.append("CHECK_FAILED")
-            if data is not None and data.problems:
-                codes.append("SUBJECT_UNREADABLE")
-            codes = codes or ["CHECK_FAILED"]
-        d["reject_codes"] = codes
-        self.schemas.validate("GateDecision", d)
-        assert_decision_rule(d)
-        self.store.commit_decision(d, {"state": "DECIDED", "decision_id": d["decision_id"],
-                                       "policy_version": self.policy.version})
-        return d
-
-    def _pass(self, sid, subject, data, recs) -> dict:
-        if not self.policy.can_pass:  # 방어: 여기까지 와도 정책이 통과를 낼 수 없으면 반려
-            return self._reject(sid, subject, recs, self.policy.problems(), codes=["POLICY_INCOMPLETE"])
-        d = self._base(sid, subject, recs, "PASS")
-        rid = "rel-" + sid[4:]
-        d["release_id"] = rid
+            raise BoundaryError("FAILED_PRECONDITION", "승인 직전 자동 검사가 다시 실패했다: " + "; ".join(reasons),
+                                {"state": "RECHECK_FAILED"})
+        d = self._base(sid, subject, fresh + [human], "PASS")
+        d["release_id"] = "rel-" + _sub_hex(sid)
+        d["approver"] = {"role": approval["approver_role"], "id": approval["approver_id"]}
+        d["approval_id"] = approval["approval_id"]
         with tempfile.TemporaryDirectory(prefix="bundle-") as tmp:
             adapters, ext_adapters = {}, {}
             for role, key in (("LORA_A", "lora_a"), ("LORA_B", "lora_b")):
                 m, ref = data.manifests[role], subject[key]
-                try:
-                    p = self.models.open_adapter(ref["id"], ref["version"], dest=Path(tmp) / role)
-                except BoundaryError as e:
-                    if e.retryable:
-                        raise
-                    return self._reject(sid, subject, recs, [f"{role} 어댑터를 열지 못했다: {e.code}"], codes=["SUBJECT_UNREADABLE"])
+                p = self.models.open_adapter(ref["id"], ref["version"], dest=Path(tmp) / role)  # 실패는 그대로 올린다
                 if canonical.directory_hash(p) != m["adapter_hash"]:
-                    return self._reject(sid, subject, recs, [f"{role} 어댑터 내용이 adapter_hash와 다르다"], codes=["SUBJECT_UNREADABLE"])
+                    raise BoundaryError("INTEGRITY_ERROR", f"{role} 어댑터 내용이 adapter_hash와 다르다")
                 adapters[role] = Path(p)
                 ext_adapters[role] = {"adapter_hash": m["adapter_hash"], "serving_config": m["serving_config"],
                                       "serving_config_hash": m["serving_config_hash"]}
-            man = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "release_id": rid, "created_at": d["decided_at"],
-                   "gate_decision_id": d["decision_id"], "question_set": subject["question_set"],
-                   "lora_a": subject["lora_a"], "lora_b": subject["lora_b"],
+            man = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "release_id": d["release_id"],
+                   "created_at": d["decided_at"], "gate_decision_id": d["decision_id"],
+                   "question_set": subject["question_set"], "lora_a": subject["lora_a"], "lora_b": subject["lora_b"],
                    "runtime_contract_version": self.config.supported_runtime_contract_version,
                    "turn_engine_version": self.config.turn_engine_version,
-                   "model_runtime_version": self.config.model_runtime_version,
-                   "adapters": ext_adapters}
+                   "model_runtime_version": self.config.model_runtime_version, "adapters": ext_adapters}
             man["content_hash"] = canonical.content_hash(man)
-            self.schemas.validate("GateDecision", d)
-            assert_decision_rule(d)
             self.schemas.validate("ReleaseManifest", man)
-            self.store.commit_decision(d, {"state": "DECIDED", "decision_id": d["decision_id"],
-                                           "policy_version": self.policy.version},
-                                       ReleaseParts(man, data.bank, adapters))
+            self._commit(sid, d, approval, ReleaseParts(man, data.bank, adapters, data.eval_reports))
+
+    def _commit(self, sid, d, approval, release=None):
+        self.schemas.validate("GateDecision", d)
+        assert_decision_rule(d)
+        self.store.commit_decision(d, {"state": "DECIDED", "decision_id": d["decision_id"],
+                                       "policy_version": self.policy.version}, release, approval)
+        return d
+
+    # --- 판정 기록
+    def _base(self, sid: str, subject: dict, recs: list, result: str) -> dict:
+        n = len(self.store.find_decisions(submission_id=sid, limit=1000)[0]) + 1
+        return {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "decision_id": f"gd-{_sub_hex(sid)}-{n:04d}",
+                "decided_at": ts(self.clock()), "gate_policy_version": self.policy.version, "subject": subject,
+                "runtime_contract_version": self.config.supported_runtime_contract_version, "result": result,
+                "checks": recs, "approver": {"role": self.config.approver_role}, "submission_id": sid}
+
+    def _reject(self, sid, subject, recs, reasons, *, data=None) -> dict:
+        """자동 검사 실패로 끝내는 반려(사람 승인 전)."""
+        d = self._base(sid, subject, recs, "REJECT")
+        d["reject_reasons"] = reasons
+        codes = ["CHECK_FAILED"] if any(r["result"] == "FAIL" for r in recs) else []
+        if data is not None and data.problems:
+            codes.append("SUBJECT_UNREADABLE")
+        d["reject_codes"] = codes or ["CHECK_FAILED"]
+        self.schemas.validate("GateDecision", d)
+        assert_decision_rule(d)
+        self.store.commit_decision(d, {"state": "DECIDED", "decision_id": d["decision_id"],
+                                       "policy_version": self.policy.version})
         return d

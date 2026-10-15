@@ -7,7 +7,6 @@ import pytest
 
 from release_gate import main as gate_main
 from conftest import SURVEY
-from fakes import make_test_policy
 
 
 @pytest.fixture
@@ -62,9 +61,10 @@ def test_judge_once(job_env, capsys, monkeypatch, tmp_path):
     gate_main.collect(job_env)
     capsys.readouterr()
     pf = tmp_path / "policy.json"
-    pf.write_text(json.dumps(make_test_policy()))
+    pf.write_text(json.dumps({"gate_policy_version": "p-1"}))
     assert gate_main.judge(dict(job_env, policy_file=str(pf))) == 0
-    assert json.loads(capsys.readouterr().out)["decisions"] == []       # 워커 평가 대기
+    assert json.loads(capsys.readouterr().out)["decisions"] == []       # 판정 없음: 승인 요청(AWAITING_APPROVAL)으로 간다
+    assert [gate_main.GatePolicy.from_file(pf).version] == ["p-1"]
 
 
 def test_broken_config_file_fails(tmp_path):

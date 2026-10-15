@@ -103,4 +103,8 @@ class NeighborServer:
                             tf.add(p, arcname=p.relative_to(src).as_posix(), recursive=False)
                 return 200, "application/x-tar", buf.getvalue()
             return self._j(self.m.get_manifest(g[1], g[2]))
+        if g := m(r"/v1/eval-reports/([^/]+)"):
+            if g[1] not in self.m.reports:
+                raise BoundaryError("NOT_FOUND", "평가 보고서가 없다")
+            return 200, "application/octet-stream", self.m.reports[g[1]]
         raise BoundaryError("NOT_FOUND", "경로가 없다")

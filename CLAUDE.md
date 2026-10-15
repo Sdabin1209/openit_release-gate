@@ -30,4 +30,4 @@
 
 - 환경: `python3 -m venv .venv && . .venv/bin/activate && pip install -e ../boundary-contracts -e '.[test]'`
 - 시험: `python -m pytest -q`. 이미지: `scripts/smoke.sh`(WSL은 docker.exe).
-- 통과 기준을 코드나 기본 파일에 넣지 않는다(D38). 시험용 정책은 `tests/` 안에서만, 버전 이름에 `test`를 붙여 만든다.
+- 출고는 사람이 정한다(D53): 자동 PASS를 만들지 않는다. 합격 임계치를 코드나 정책에 넣지 않는다. PASS는 `release-approver`의 APPROVE 뒤에만 나온다.

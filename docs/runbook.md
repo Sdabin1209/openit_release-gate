@@ -1,4 +1,4 @@
-# 런북: gate-service / gate-worker
+# 런북: gate-service
 
 ## 개발과 시험
 
@@ -20,40 +20,36 @@ scripts/smoke.sh                                         # v1.0.0 태그의 whee
 | `GATE_POLICY_FILE` | gate_policy JSON. 없으면 EMPTY(통과 불가) |
 | `GATE_READ_TOKENS`, `GATE_WRITE_TOKENS` | 필수. `역할=토큰,역할=토큰` 형식으로 역할에 묶는다. 읽기 예: `survey-service=…,ops-feedback=…,question-authoring=…,model-lab=…`, 쓰기 예: `operator=…,ops-feedback=…,question-authoring=…,model-lab=…`. 읽기 토큰은 쓰기 경로에서 403, 쓰기 토큰은 읽기 면에서 403이다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
 | `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`(설정 파일의 `i1_factory`, `i3_factory`가 우선). 둘 다 있어야 판정이 켜진다. HTTP 클라이언트는 `release_gate.factories:http_question_reader`, `release_gate.factories:http_model_registry`(`boundary_contracts.clients`, v1.2.0에서 확인). 이 둘은 `GATE_I1_URL`, `GATE_I1_TOKEN`, `GATE_I3_URL`, `GATE_I3_TOKEN`(선택 `*_TIMEOUT`)을 읽는다 |
-| `GATE_ALLOW_TEST` | `1`이면 이름에 test가 있는 정책·실행기를 허용(시험 환경 전용, 기본 거부) |
 | `GATE_POLL_SECONDS`, `PORT` | 주기(기본 60), 포트(기본 8080) |
 
-워커: `GATE_DATA_DIR`(같은 레지스트리), `GATE_RUNNER_FACTORY`, `GATE_WORKER_ID`, `GATE_POLL_SECONDS`. 실행 `gate-worker`.
 
-## gate_policy (통과 기준)
+## 출고 흐름과 승인 (D53)
 
-`GATE_POLICY_FILE`(또는 `judge`의 설정 `policy_file`)의 JSON이다. 형식은 `release_gate/schemas/gate_policy.schema.json`(JSON Schema)이 정하고, 읽을 때 이 스키마로 검증해 틀리면 `PolicyError`로 **시작하지 않는다**(조용히 비정책으로 넘어가지 않는다). 파일이 없거나 비어 있으면 EMPTY 정책이고 **통과를 낼 수 없다**(모든 판정이 `POLICY_INCOMPLETE`로 반려). 임시로 느슨한 기준을 두지 않는다(D38).
+자동 PASS는 없다. 제출 -> 자동 검사(계약 호환, 문항-모델 호환, 평가 보고서 존재·형식, 임상 승인 기록) -> 하나라도 어긋나면 FAIL로 반려 -> 모두 통과하면 `AWAITING_APPROVAL` -> 승인자(역할 `release-approver`, 학습 담당자)가 보고서를 보고 결정 -> APPROVE면 PASS 판정과 릴리스, REJECT면 반려. 활성화(`POST /v1/activate`, 역할 `operator`)는 PASS 릴리스만 받는다.
 
-```json
-{
-  "gate_policy_version": "2026-11-v1",
-  "o11_resolved": true,
-  "required_checks": ["CONTRACT_COMPAT", "QUESTION_MODEL_COMPAT", "ACCEPTANCE_EVAL", "CLINICAL_SAFETY"],
-  "checks": {
-    "ACCEPTANCE_EVAL": {"thresholds": {"<지표 이름>": {"min": 0.0, "max": 1.0}},
-                        "require_unseen_question_eval": true},
-    "CLINICAL_SAFETY": {"safety_metrics": []},
-    "CONTRACT_COMPAT": {"require_lineage_runtime_match": true}
-  }
-}
+```
+# 승인 요청 보고서 보기 (읽기 토큰)
+curl -H "Authorization: Bearer $READ" http://gate:8080/v1/submissions/$SID/review-report
+# 결정 (쓰기 토큰, 역할 release-approver). report_hash는 선택: 보낸 값이 현재 보고서와 다르면 409 STALE_REPORT
+curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'","decision":"APPROVE","approver_id":"trainer-1","approver_role":"release-approver","reason":"지표 검토함","report_hash":"sha256:…"}' http://gate:8080/v1/approvals
 ```
 
-| 키 | 필수 | 뜻 |
-| --- | --- | --- |
-| `gate_policy_version` | 예 | 비지 않은 문자열. 판정 기록에 남는다. 내용을 바꾸면 바꾼다. `test`가 들어 있으면 운영 모드에서 거부 |
-| `o11_resolved` | 예 | O11(승인 평가 임계치와 모델 출력 안전 지표)이 사용자 결정으로 정해져 반영되었다는 선언. `false`이면 나머지가 모두 맞아도 통과 불가 |
-| `required_checks` | 예 | 필수 검사(중복 없음). **`CONTRACT_COMPAT`, `CLINICAL_SAFETY`, `ACCEPTANCE_EVAL`은 반드시 포함**해야 통과를 낼 수 있다. `QUESTION_MODEL_COMPAT`은 선택 |
-| `checks.ACCEPTANCE_EVAL.thresholds` | 통과를 내려면 예 | 지표 이름 -> `{min, max}` 중 하나 이상(수). 실행기가 낸 `metrics`에 이름이 없으면 FAIL |
-| `checks.ACCEPTANCE_EVAL.require_unseen_question_eval` | 아니오(기본 true) | 보지 못한 문항 평가(D32)를 요구 |
-| `checks.CLINICAL_SAFETY.safety_metrics` | 아니오 | 모델 출력 안전 지표 이름(O11). 평가기가 연결되기 전에는 비운다. 값이 있는데 평가기가 없으면 FAIL |
-| `checks.CONTRACT_COMPAT.require_lineage_runtime_match` | 아니오(기본 true) | 학습 때 turn-engine·model-runtime 버전이 게이트 설치 버전과 같아야 한다 |
+승인 대기 목록은 `/readyz`의 `awaiting_approval`(개수)로 본다. 승인 결정은 `GATE_I1_FACTORY`, `GATE_I3_FACTORY`가 연결되어 있어야 한다(어댑터를 받아 릴리스에 묶는다). 연결이 없으면 503이다. 승인 결정 때 I3가 안 되면 아무것도 기록되지 않으므로 같은 요청을 다시 보낸다.
 
-스키마를 지켜도 위 "필수" 조건을 못 채우면 `GatePolicy.problems()`가 사유를 내고 판정은 `POLICY_INCOMPLETE`로 반려된다(`/readyz`의 `can_pass=false`). 정책 변경은 서비스 재시작으로 반영하고, 정책 때문에 반려된 접수는 새 정책 버전으로 자동 재판정된다. 시험용 정책은 `GATE_ALLOW_TEST=1`인 시험 환경에서만 쓴다. 승인 평가 실행기는 `docs/runner_protocol.md`.
+## gate_policy (선택)
+
+`GATE_POLICY_FILE`(또는 `judge` 설정의 `policy_file`)의 JSON이다. 통과 임계치는 없다. 형식은 `release_gate/schemas/gate_policy.schema.json`이 정하고 틀리면 `PolicyError`로 **시작하지 않는다**. 파일이 없으면 기본 정책이다.
+
+```json
+{"gate_policy_version": "human-approval-2", "checks": {"CONTRACT_COMPAT": {"require_lineage_runtime_match": true}}}
+```
+
+| 키 | 뜻 |
+| --- | --- |
+| `gate_policy_version` | 판정 기록에 남는 정책 버전(기본 `human-approval-1`) |
+| `checks.CONTRACT_COMPAT.require_lineage_runtime_match` | 학습 때 turn-engine·model-runtime 버전이 게이트 설치 버전과 같아야 한다(기본 true) |
+
+**이전 형식(`o11_resolved`, `required_checks`, `checks.ACCEPTANCE_EVAL.thresholds`)의 파일은 거부된다.** 지워야 한다. 자동 검사 네 가지는 정책이 줄일 수 없다.
 
 ## 후보 수집기: run-once 잡 (D39)
 
@@ -81,14 +77,14 @@ scripts/smoke.sh                                         # v1.0.0 태그의 whee
 
 ## 상태 확인
 
-- `GET /healthz`: 프로세스가 살아 있음. `GET /readyz`: 레지스트리를 읽을 수 있음. 본문에 `gate_policy_version`, `can_pass`, `judging`이 있다. `can_pass=false`는 정책이 비어 있거나 불완전해서 통과를 낼 수 없다는 뜻이며 장애가 아니다. `judging`이 disabled이면 I1·I3가 연결되지 않았다.
+- `GET /healthz`: 프로세스가 살아 있음. `GET /readyz`: 레지스트리를 읽을 수 있음. 본문에 `gate_policy_version`, `judging`, `awaiting_approval`(승인 대기 개수), 설치된 turn-engine·model-runtime 버전이 있다. `judging`이 disabled이면 I1·I3가 연결되지 않아 자동 검사와 승인 결정이 되지 않는다.
 
 ## 자주 하는 일
 
-- 정책 적용: 정책 JSON을 갱신하고 서비스를 재시작한다. 정책 때문에 반려된 접수는 새 정책 버전으로 자동 재판정된다. 시험용 정책(`test-`)을 운영에 쓰지 않는다. O11이 정해지기 전에는 운영 정책이 없다.
+- 정책 적용: 정책 JSON(선택)을 갱신하고 서비스를 재시작한다.
 - 후보 수동 제출: `POST /v1/submissions` (쓰기 토큰). 같은 조합은 기존 접수를 돌려준다.
 - 활성화: `POST /v1/activate`. 롤백: `POST /v1/rollback`(`RollbackRequest`). 현재 포인터: `GET /v1/active-pointer`.
-- 판정이 오래 `EVAL_REQUESTED`: `/readyz`의 `eval.state`를 먼저 본다(`no_worker`, `runner_not_configured`, `ok`). 워커가 떠 있는지, GPU 서버가 같은 레지스트리를 보는지 확인. 임대(기본 1시간)가 만료되면 다른 워커가 가져간다.
+- 제출이 `AWAITING_APPROVAL`에 오래 머무름: 승인자가 보고서를 보고 결정해야 한다(`/readyz`의 `awaiting_approval`). 자동 검사에서 멈춤(`RECEIVED`)이면 I1·I3 연결과 로그를 본다.
 - INTEGRITY_ERROR(로그 error 수준): 릴리스 묶음 파일이 변조되었거나 손상되었다. 그 릴리스를 활성화하지 말고, 활성이면 이전 PASS 릴리스로 롤백 요청한 뒤 레지스트리 백업에서 복구한다.
 
 ## 백업과 정리

@@ -163,8 +163,7 @@ def test_find_decisions_filters_and_order(world):
 def test_find_decisions_includes_rejections(world):
     qs = world.q.add("qs-nc", 1, approved=True, clinical=False)
     world.reg.service.submit_candidate(world.subject(qs=qs), requested_by_role="operator")
-    from fakes import make_test_policy
-    world.engine(make_test_policy()).process_pending()
+    world.engine().process_pending()
     items, _ = world.reg.reader.find_decisions(question_set=qs)
     assert len(items) == 1 and items[0]["result"] == "REJECT" and items[0]["reject_reasons"]
 

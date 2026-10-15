@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from release_gate import CandidateCollector, GatePolicy
-from fakes import make_test_policy
 
 
 def collector(world, configured=False):
@@ -61,34 +62,45 @@ def test_collector_to_release_end_to_end(world):
     world.q.add("qs-main", 1)
     world.m.add("lora-a", "1", "LORA_A")
     world.m.add("lora-b", "1", "LORA_B")
-    collector(world).run_once()
-    eng = world.engine(make_test_policy())
-    eng.process_pending()
-    world.worker().run_all()
-    assert eng.process_pending()[0]["result"] == "PASS"
+    sub = collector(world).run_once()[0]
+    eng = world.engine()
+    assert eng.process_pending() == []                       # 자동으로는 PASS가 되지 않는다
+    world.approve(sub["submission_id"])
+    assert world.reg.store.latest_decision(sub["submission_id"])["result"] == "PASS"
 
 
 def test_policy_defaults_and_file(tmp_path):
-    assert GatePolicy.from_file(None).is_empty
-    assert GatePolicy.from_file(tmp_path / "none.json").is_empty
+    assert GatePolicy.from_file(None).version == "human-approval-1"
+    assert GatePolicy.from_file(tmp_path / "none.json").version == "human-approval-1"
     (tmp_path / "empty.json").write_text("  ")
-    p = GatePolicy.from_file(tmp_path / "empty.json")
-    assert p.is_empty and not p.can_pass
+    assert GatePolicy.from_file(tmp_path / "empty.json") == GatePolicy.default()
     f = tmp_path / "p.json"
-    f.write_text(json.dumps(make_test_policy()))
-    assert GatePolicy.from_file(f).can_pass
-    f.write_text("{ 깨진 json")
-    try:
+    f.write_text(json.dumps({"gate_policy_version": "p-2", "checks": {"CONTRACT_COMPAT": {"require_lineage_runtime_match": False}}}))
+    p = GatePolicy.from_file(f)
+    assert p.version == "p-2" and p.params("CONTRACT_COMPAT") == {"require_lineage_runtime_match": False}
+    assert len(p.required_checks) == 4        # 정책이 자동 검사를 줄일 수 없다
+
+
+@pytest.mark.parametrize("content,needle", [
+    ('{ 깨짐', "JSON이 아니다"),
+    ('[1]', "object"),
+    ('{"o11_resolved": true}', "o11_resolved"),                                # 옛 형식(임계치 기반)은 거부
+    ('{"required_checks": ["CLINICAL_SAFETY"]}', "required_checks"),
+    ('{"checks": {"ACCEPTANCE_EVAL": {"thresholds": {"a": {"min": 1}}}}}', "ACCEPTANCE_EVAL"),
+    ('{"gate_policy_version": ""}', "gate_policy_version"),
+])
+def test_bad_policy_file_rejected_clearly(tmp_path, content, needle):
+    from release_gate.policy import PolicyError
+    f = tmp_path / "p.json"
+    f.write_text(content, encoding="utf-8")
+    with pytest.raises(PolicyError) as e:
         GatePolicy.from_file(f)
-        raise AssertionError("깨진 정책 파일은 예외여야 한다")
-    except ValueError:
-        pass
+    assert needle in str(e.value)
 
 
-def test_no_shipped_policy_can_pass():
-    """패키지에 기본 통과 기준이 들어 있지 않다(D38)."""
+def test_no_threshold_code_remains():
+    """통과 임계치는 코드에도 정책에도 없다(D53)."""
     import pathlib
     import release_gate
-    pkg = pathlib.Path(release_gate.__file__).parent
-    assert not list(pkg.glob("*.json"))
-    assert GatePolicy.empty().problems() and not GatePolicy.empty().can_pass
+    src = "".join(p.read_text(encoding="utf-8") for p in pathlib.Path(release_gate.__file__).parent.glob("*.py"))
+    assert "thresholds" not in src and "o11_resolved" not in src

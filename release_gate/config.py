@@ -13,6 +13,5 @@ class GateConfig:
     submit_roles: frozenset = frozenset({"operator", "release-gate-collector", "question-authoring", "model-lab"})
     activate_roles: frozenset = frozenset({"operator"})
     rollback_roles: frozenset = frozenset({"ops-feedback", "operator"})
-    approver_role: str = "gate-service"
-    eval_lease_seconds: int = 3600
-    eval_max_attempts: int = 3
+    approver_role: str = "gate-service"   # 자동 반려 판정의 approver.role
+    approver_roles: frozenset = frozenset({"release-approver"})   # 출고 결정(POST /v1/approvals) 권한(D53)

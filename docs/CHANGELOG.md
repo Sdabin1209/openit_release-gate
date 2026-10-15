@@ -1,5 +1,13 @@
 # 변경 이력
 
+## 0.6.0 (2026-10-15) 출고를 사람 승인으로 (D53, boundary-contracts v1.3.0)
+
+- **임계치 기반 자동 PASS 제거.** 자동 검사는 계약·문항-모델 호환, 임상 승인 기록, 평가 보고서(`EvaluationReport`) 존재·형식(`ACCEPTANCE_EVAL`은 형식 검사일 뿐)이다. 어긋나면 FAIL로 반려, 모두 통과하면 `AWAITING_APPROVAL`.
+- `GET /v1/submissions/{id}/review-report`(`ReviewReport`: 후보 vs 현재 활성 릴리스, 같은 지표끼리, worse는 표시만), `POST /v1/approvals`(역할 `release-approver`, `GateApproval`, 멱등, `STALE_REPORT` 409). APPROVE는 `HUMAN_APPROVAL` PASS인 `GateDecision`(PASS)과 릴리스를, REJECT는 FAIL 판정을 만든다. 승인 없는 PASS 금지(판정 규칙에도 반영).
+- 릴리스에 후보의 평가 보고서를 저장해 다음 후보의 기준값으로 쓴다.
+- **삭제**: 승인 평가 워커, 실행기 규약(`runner_protocol.md`), `gate-worker`, `GATE_RUNNER_FACTORY`, `GATE_ALLOW_TEST`, 정책의 `o11_resolved`/`required_checks`/`thresholds`(이전 형식의 정책 파일은 거부된다), `/readyz`의 `eval`·`can_pass`. `/readyz`에 `awaiting_approval` 추가.
+- boundary-contracts v1.3.0. 레코드의 `pipeline_schema_version`은 패키지 값(1.3)을 쓴다.
+
 ## 0.5.0 (2026-10-15) 정책·실행기 문서화와 안전장치 (D52)
 
 - `gate_policy.schema.json` 추가, 정책 파일을 스키마로 검증(`PolicyError`로 시작 거부). 정책 형식·`o11_resolved`·필수 검사·임계치 문서화.

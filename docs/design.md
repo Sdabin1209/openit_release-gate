@@ -12,10 +12,7 @@
  │ CandidateCollector ──submit──▶ GateService(I5) ──▶ Store(릴리스 레지스트리) │
  │ GateEngine(검사 플러그인, 정책, 릴리스 구성) ◀────────────────┘            │
  └───────────────────────────────▲──────────────────────────────────────────┘
-                                 │ 저장소를 통해서만 만난다(D40)
- ┌─ gate-worker (GPU 서버) ──────┴──────────┐        survey-service 등: ReleaseReader(I4) ─▶ Store(읽기 전용)
- │ EvalWorker + AcceptanceRunner(I8·I9 사용) │
- └──────────────────────────────────────────┘
+ 승인자(학습 담당자): GET review-report ─▶ POST /v1/approvals(release-approver)    survey-service 등: ReleaseReader(I4) ─▶ Store(읽기 전용)
 ```
 
 | 컴포넌트 | 파일 | 하는 일 |
@@ -23,63 +20,54 @@
 | 후보 수집기 | `collector.py`, `main.py` | I1·I3를 보고 새 조합을 `submit_candidate`로 요청. run-once 잡(`python -m release_gate collect`), 스케줄은 deploy가 정한다 |
 | GateService (I5) | `gate.py` | 접수, 활성화, 롤백 |
 | GateEngine | `gate.py`, `checks.py`, `policy.py` | 접수를 판정으로 바꾸고 PASS이면 릴리스를 구성 |
-| 검사 플러그인 | `checks.py` | 검사 종류마다 하나 |
-| 승인 평가 워커 | `worker.py` | GPU 서버에서 평가 실행 (실행기는 주입) |
+| 자동 검사 플러그인 | `checks.py` | 검사 종류마다 하나(기술 호환, 보고서 확인, 임상 승인 기록) |
+| 승인 요청 보고서 | `review.py` | 후보 평가 보고서와 활성 릴리스의 보고서를 같은 지표끼리 맞댄 `ReviewReport` |
 | 저장소 | `store.py` | SQLite+파일(실제), 메모리 |
 | ReleaseReader (I4) | `reader.py` | 읽기. 읽기 전용 저장소로도 동작 |
 | HTTP 면 | `app.py`, `main.py` | `/healthz`, `/readyz`, 토큰 인증, 주기 작업 |
 
-의존은 `boundary_contracts` v1.0.0(sdk Protocol, errors, canonical, 패키지에 든 스키마), 문진 스키마(`CONTRACT_VERSION`, `QuestionBank`)뿐이다. turn-engine·model-runtime은 워커의 실행기 쪽에서만 쓰며 이 리포지토리에는 아직 들어 있지 않다.
+의존은 `boundary_contracts`(sdk Protocol, errors, canonical, 패키지에 든 스키마), 문진 스키마(`CONTRACT_VERSION`, `QuestionBank`)뿐이다. turn-engine·model-runtime은 코드가 가져다 쓰지 않고, 설치된 패키지의 버전 문자열만 읽어 매니페스트와 호환 검사에 쓴다.
 
-## 2. 통과 기준 (gate_policy, D38)
+## 2. 출고 결정은 사람이 한다 (D53)
 
-- 통과 기준은 코드에 없다. `GatePolicy`(`policy.py`)가 JSON 파일(`GATE_POLICY_FILE`)에서 읽는다. 파일이 없거나 비면 `EMPTY`이고 **통과를 낼 수 없다**. 깨진 파일은 시작 실패다(조용히 EMPTY가 되지 않는다).
-- 정책이 통과를 낼 수 있으려면(`problems()`가 비어야 한다): `gate_policy_version` 있음, `o11_resolved=true`, `required_checks`에 `CLINICAL_SAFETY`(D30)와 `CONTRACT_COMPAT`와 `ACCEPTANCE_EVAL` 포함, `ACCEPTANCE_EVAL.thresholds`가 비어 있지 않고 형식이 맞음. 하나라도 어기면 정책 때문에 REJECT한다. 확인: `tests/test_gate_flow.py`.
-- 패키지에는 기본 정책 파일이 없다(`test_no_shipped_policy_can_pass`). 시험용 정책은 `tests/fakes.py::make_test_policy`에만 있고 버전 이름이 `test-`로 시작한다.
-- 정책이 막힌 상태의 접수도 판정을 남긴다: 검사는 실행하지 않고(I1·I3도 읽지 않는다) `checks`를 모두 `SKIPPED`로 적고, `result=REJECT`, `reject_codes=[POLICY_INCOMPLETE]`, `reject_reasons`에 정책 사유를 적는다(D42). 정책 버전이 바뀌면 `POLICY_INCOMPLETE` 반려만 다시 판정한다(새 `GateDecision`이 같은 `submission_id`에 추가되고 이전 것은 남는다). 현재 판정은 `decided_at`이 가장 늦은 것(같으면 `decision_id`가 큰 것)이고, 판정 ID의 번호는 0 채움(`-0002`)이며 같은 접수 안에서 `decided_at`이 거꾸로 가지 않게 한다. `find_decisions`는 최신부터라 첫 항목이 현재 판정이다.
-- 반려 코드: 검사 실패는 `CHECK_FAILED`, 문항 세트·매니페스트·어댑터를 읽지 못함(NOT_FOUND, 해시 불일치)은 `SUBJECT_UNREADABLE`(둘 다일 수 있다). PASS 판정에는 `reject_codes`가 없다.
-- 정책 변경은 서비스 재시작으로 반영한다(제안). 판정 중이던 접수는 정책 버전이 다르면 처음부터 다시 한다.
+- **자동 PASS는 없다.** 임계치 기반 통과, 평가 실행기, GPU 워커, `o11_resolved`는 모두 없앴다(이전 구현의 D38·D40 설계는 D53으로 대체되었다). 평가는 model-lab이 하고 결과를 `EvaluationReport`(합격선 없음)로 모델 패키지에 첨부한다. 게이트는 그 보고서를 읽어 승인자에게 보여 줄 뿐이다.
+- 승인자는 학습 담당자이고 역할은 `release-approver`다(`POST /v1/approvals`의 쓰기 토큰에 묶임). PASS는 승인자의 `APPROVE` 뒤에만 생긴다. 코드에 승인 없이 PASS를 만드는 경로가 없고, `assert_decision_rule`이 승인(`HUMAN_APPROVAL` PASS, `approval_id`) 없는 PASS를 거부한다(`test_no_path_to_pass_without_approval`).
+- gate_policy는 작아졌다: `gate_policy_version`(판정 기록용 버전, 기본 `human-approval-1`)과 `CONTRACT_COMPAT.require_lineage_runtime_match`뿐이다. 자동 검사 네 가지는 정책이 줄일 수 없다. 옛 형식(`o11_resolved`, `required_checks`, `thresholds`)의 정책 파일은 형식 오류로 시작이 거부된다. 형식은 `release_gate/schemas/gate_policy.schema.json`.
 
-## 3. 검사 프레임워크
+## 3. 자동 검사
 
-`Check` 프로토콜(`kind`, `inline`, `run(ctx) -> CheckOutcome`)을 `CheckRegistry`에 등록한다. 새 검사 종류가 생기면(스키마 열거 확장 후) 플러그인을 추가하고 정책의 `required_checks`에 넣는다. 어떤 검사가 필수인지와 임계치는 정책이 정한다. 코드에는 임계치 숫자가 없다.
+`Check` 프로토콜(`kind`, `inline`, `run(ctx) -> CheckOutcome`)을 `CheckRegistry`에 등록한다. 네 가지 모두 서비스가 직접 실행한다(저장소 읽기만). **합격 임계치는 어디에도 없다.**
 
-| 검사 | 실행 위치 | 내용 |
-| --- | --- | --- |
-| CONTRACT_COMPAT | 서비스(inline) | 참조 해시 일치(문항 세트, 두 매니페스트), 문항 세트가 문진 스키마(`QuestionBank`) 적합, 문진 스키마 정수 버전 = 게이트가 지원하는 값, 매니페스트 스키마 적합·MAJOR 지원·`runtime_contract_version` 일치·role 일치·`serving_config_hash == canonical.sha256_hash(serving_config)`(D42), 학습 때 turn-engine/model-runtime 버전 = 게이트 기준(정책 `require_lineage_runtime_match`, 기본 true. 제안) |
-| QUESTION_MODEL_COMPAT | 서비스(inline) | 반려 근거는 구조 호환뿐: 두 어댑터의 기반 모델·계약 버전 일치, 문항 세트가 읽힘. `lineage.question_sets`(선택)는 참고 정보로 상세에만 적고(학습에 쓴 문항 세트인지) 반려 근거로 쓰지 않는다. 적합성은 ACCEPTANCE_EVAL(D32)이 맡는다(D42) |
-| CLINICAL_SAFETY | 서비스(inline) | 그 문항 세트 버전(id, version, content_hash)의 `ReviewRecord` 중 `APPROVED`이고 `clinical_basis_approved=true`인 것이 있어야 한다(D30). 제안: 그 뒤에 더 늦은 비승인 검수가 있으면 불통과(재검수는 새 레코드이므로). 모델 출력의 안전 지표는 O11 전까지 **자리만** 있다: 정책이 `safety_metrics`를 주면 평가기가 없어 FAIL |
-| ACCEPTANCE_EVAL | 워커 실행, 서비스가 임계치 적용 | 워커가 낸 `metrics`를 정책 `thresholds`(`min`/`max`)와 비교. 측정값이 없는 지표는 FAIL. 보지 못한 문항 평가(D32)가 수행되지 않았으면 FAIL(정책 `require_unseen_question_eval`, 기본 true) |
+| 검사 | 내용 |
+| --- | --- |
+| CONTRACT_COMPAT | 참조 해시 일치(문항 세트, 두 매니페스트), 문항 세트가 문진 스키마(`QuestionBank`) 적합, 문진 스키마 정수 버전 = 게이트가 지원하는 값, 매니페스트 스키마 적합·MAJOR 지원·`runtime_contract_version` 일치·role 일치·`serving_config_hash == canonical.sha256_hash(serving_config)`(D42), 학습 때 turn-engine/model-runtime 버전 = 게이트 설치 버전(정책 `require_lineage_runtime_match`, 기본 true. 제안) |
+| QUESTION_MODEL_COMPAT | 반려 근거는 구조 호환뿐: 두 어댑터의 기반 모델·계약 버전 일치, 문항 세트가 읽힘. `lineage.question_sets`(선택)는 참고 정보로 상세에만 적는다(D42) |
+| ACCEPTANCE_EVAL | **형식 검사일 뿐이다**: 두 모델 각각 `manifest.eval_report_ref`의 `EvaluationReport`를 I3 `get_eval_report`로 읽어 JSON, 스키마, `content_hash`, `role`, `package`(제출한 모델과 같은 id·version·content_hash)가 맞는지 확인. 지표 값은 보지 않는다 |
+| CLINICAL_SAFETY | 그 문항 세트 버전(id, version, content_hash)의 `ReviewRecord` 중 `APPROVED`이고 `clinical_basis_approved=true`인 것이 있어야 한다(D30). 제안: 그 뒤에 더 늦은 비승인 검수가 있으면 불통과. 승인 직전에 다시 확인한다 |
 
-I1·I3가 UNAVAILABLE이면 판정을 미루고(접수는 그대로) 다음 주기에 다시 한다. NOT_FOUND와 INTEGRITY_ERROR는 대상이 잘못된 것이므로 검사 실패로 반려한다.
+I1·I3가 UNAVAILABLE이면 판정을 미루고 다음 주기에 다시 한다. NOT_FOUND와 INTEGRITY_ERROR는 대상이 잘못된 것이므로 검사 실패로 반려한다(`reject_codes`: `CHECK_FAILED`, 읽지 못했으면 `SUBJECT_UNREADABLE`도).
 
 ## 4. 접수에서 판정까지 (상태기계)
 
-접수(`GateSubmission`)마다 작업 상태가 있다. 작업 상태는 내부 정보이고 경계에 노출하지 않는다.
-
 ```
-RECEIVED ──(서비스 inline 검사)──▶ 실패 또는 정책 불가: DECIDED(REJECT)
-    │ 모두 통과
+RECEIVED ──(자동 검사)──▶ 하나라도 FAIL: DECIDED(REJECT)  ← 사람에게 가기 전에 반려
+    │ 모두 PASS
     ▼
-EVAL_REQUESTED ──(워커가 임대 후 실행)──▶ EVAL_DONE ──(서비스가 임계치 적용)──▶ DECIDED(PASS | REJECT)
+AWAITING_APPROVAL ──(POST /v1/approvals, release-approver)──▶ DECIDED: APPROVE=PASS 판정+릴리스, REJECT=REJECT 판정
 ```
 
-- 접수 ID = `sub-` + 조합 해시(정규화 JSON의 SHA-256) 앞 32자. 같은 조합은 같은 접수다(한 번만 판정). 판정 ID = `gd-<조합 해시>-<번호>`, 릴리스 ID = `rel-<조합 해시>`. 모두 결정적이라 재시도해도 같은 값이다.
-- `advance()`는 멱등이다. 판정과 릴리스는 한 트랜잭션으로 저장한다.
-- 값싼 검사에서 이미 떨어지는 조합은 GPU 평가를 요청하지 않는다.
-
-## 5. 승인 평가 워커와 서비스의 분리 (D40)
-
-- 서비스(서빙 서버 쪽)는 외부 호출을 받지 않는 쪽으로 두고, 워커(GPU 서버)가 **저장소에서** `EVAL_REQUESTED` 접수를 가져간다. 서비스가 워커를 호출하지 않는다.
-- 가져가기는 임대다: `claim = {worker, expires}`를 저장소의 원자적 갱신으로 건다. 임대 중에는 다른 워커가 못 가져가고, 만료되면 가져갈 수 있다. 시도 횟수가 `max_attempts`를 넘으면 오류 결과를 남겨 FAIL로 판정된다. 실행기가 일시 오류(`UNAVAILABLE`)를 내면 반납하고 다시 한다.
-- 워커는 접수의 작업 상태(`eval_result`)만 쓴다. `GateDecision`, 릴리스, 활성 포인터는 쓰지 않는다. 워커는 임계치를 모른다. 확인: `test_worker_does_not_write_decisions_or_pointer`.
-- 현재 저장소가 SQLite 파일이라 워커는 같은 파일(공유 볼륨)을 연다. 서버가 둘로 갈라지면 저장소를 네트워크 DB로 바꾸고 워커 계정에는 작업 상태 갱신 권한만 준다(**미정**: 배치 결정과 저장소 선택). 저장소 인터페이스(`Store`)가 그 교체 지점이다.
-- 평가 실행기(`AcceptanceRunner`)는 I8·I9로 구현해 `GATE_RUNNER_FACTORY`로 주입한다. **이 리포지토리에는 구현이 없다**(GPU와 O11이 필요하다). 반환은 `{evidence_ref, metrics, unseen_question_eval}`.
+- 접수 ID = `sub-` + 조합 해시 앞 32자(같은 조합은 한 번만). 판정 ID = `gd-<조합 해시>-<번호 4자리>`, 릴리스 ID = `rel-<조합 해시>`, 승인 ID = `ap-<조합 해시>`. 모두 결정적이다.
+- **ReviewReport** (`GET /v1/submissions/{id}/review-report`): 자동 검사가 끝난 제출만(아니면 409, `details.reason=NOT_READY`). 후보의 두 평가 보고서와 현재 활성 릴리스의 평가 보고서(릴리스를 만들 때 저장해 둔 것)를 같은 지표끼리(역할, 이름, slice 종류·값) 맞댄다. SAFETY 그룹이 맨 위. `delta`, `worse`(나빠졌는지; 참고 표시일 뿐 승인을 막지 않는다). 기준에 없는 지표는 baseline이 null, 표본 수 n이 0인 쪽은 delta·worse를 null로 둔다. 활성 릴리스가 없으면 기준 비교가 없다는 메모가 붙는다.
+- **STALE_REPORT**: 보고서는 활성 릴리스가 바뀌면 새 기준으로 다시 만들어진다(`generated_at`이 바뀌고 해시가 바뀐다). 활성 릴리스가 같으면 저장된 보고서를 그대로 돌려줘 해시가 같다. 승인 본문에 `report_hash`를 보냈는데 현재 보고서의 해시와 다르면 409(`CONFLICT`, `details.reason=STALE_REPORT`). 보내지 않으면 서버가 현재 보고서의 해시를 승인 기록에 채운다(HTTP.md의 "서버가 채운다"를 이렇게 읽었다: 확인 필요).
+- **결정** (`POST /v1/approvals`): 역할은 토큰에 묶임(`approver_role`이 다르면 403). `approval_id`, `decided_at`을 보내면 400. REJECT는 `reason` 필수. 같은 `submission_id`에 같은 결정(결정과 사유)이면 200과 기존 기록, 다른 결정이면 409(`DIFFERENT_DECISION`). 승인을 받을 수 없는 상태(자동 검사 전, 이미 반려됨)는 412.
+- APPROVE 처리: 승인 직전에 자동 검사를 다시 한다(그 사이 임상 승인이 철회되었으면 승인을 기록하지 않고 412, 제출을 다시 검사 대기로 돌려 반려 판정을 남기게 한다). 통과하면 어댑터를 I3에서 받아 해시를 다시 확인하고, 승인 기록, `HUMAN_APPROVAL` PASS가 든 `GateDecision`(PASS), 릴리스를 **한 트랜잭션**으로 저장한다. I3가 안 되면(503) 아무것도 기록하지 않고 같은 요청을 다시 보내면 된다. REJECT는 승인 기록과 REJECT 판정(`HUMAN_APPROVAL` FAIL, `reject_codes=[CHECK_FAILED]`: 계약에 사람 반려 전용 코드가 없다)을 남긴다.
+- 활성화는 PASS 릴리스만 받는다(승인이 곧 활성화는 아니다: 활성화는 `activate`가 따로 한다).
 
 ## 6. 릴리스 구성
 
 PASS일 때만 만든다. `commit_decision` 한 번에: 판정 기록, 릴리스 매니페스트, 묶음 파일(문항 세트 JSON, 어댑터 디렉터리 두 개)을 저장한다.
 
+- 릴리스에는 후보의 `EvaluationReport` 두 개도 함께 저장한다(번들 tar에는 넣지 않는 내부 정보). 다음 후보의 승인 보고서가 이것을 기준값으로 쓴다.
 - 어댑터는 `ModelRegistry.open_adapter`로 풀어 `directory_hash`가 매니페스트의 `adapter_hash`와 같은지 다시 확인하고 복사해 묶는다. 서비스는 I1·I3 없이 I4만으로 필요한 것을 얻는다(확인: `test_runtime_does_not_need_neighbors_after_release`).
 - `ReleaseManifest.content_hash` = `canonical.content_hash`. 어댑터 해시와 serving_config는 정식 필드 `adapters.{LORA_A,LORA_B}.{adapter_hash, serving_config, serving_config_hash}`에 복사해 담는다(D42). 서비스는 I3 없이 I9 `load`에 넘길 값을 얻는다. `ext`는 쓰지 않는다.
 - `load_bundle`은 모두 검증한다: 매니페스트 해시, 판정이 PASS이고 그 릴리스를 가리킴(아니면 FAILED_PRECONDITION), 문항 세트 해시 = 참조의 `content_hash`, 어댑터별 `directory_hash` = 매니페스트 값. 어긋나면 INTEGRITY_ERROR. 확인: 변조 시험.
@@ -91,7 +79,7 @@ PASS일 때만 만든다. `commit_decision` 한 번에: 판정 기록, 릴리스
 - 활성화: PASS 릴리스만(아니면 FAILED_PRECONDITION). 활성화 전에 묶음 무결성을 확인한다. 이미 활성인 릴리스를 다시 활성화하면 현재 포인터를 그대로 돌려준다(버전이 늘지 않는다).
 - 롤백: `from`이 현재 활성이고 `to`가 검증을 통과하는 PASS 릴리스이면 APPLIED(포인터 `cause=ROLLBACK`). 영수증은 포인터 변경과 **같은 트랜잭션**에 저장한다. 아니면 REJECTED와 사유를 영수증으로 남긴다(예외가 아님). 같은 `request_id`는 저장된 영수증을 그대로 돌려주고, 같은 ID에 다른 내용이면 CONFLICT. 판단과 변경에 같은 시점의 포인터를 쓰고, 그 사이 바뀌었으면 변경이 거부되어 처음부터 다시 판단한다.
 - 읽기 가용성: I4는 읽기 전용 SQLite 연결(`open_release_reader`)로 서비스 프로세스 없이 읽는다(WAL). 쓰는 경로(`switch_pointer` 등)는 읽기 전용에서 PERMISSION_DENIED. 확인: `test_sqlite_read_only_reader_survives_without_service`.
-- 활성 포인터 변경 권한: HTTP 면의 쓰기 토큰은 **역할에 묶여 있다**(`GATE_WRITE_TOKENS=역할=토큰,...`). 본문의 `requested_by_role`이 토큰의 역할과 다르면 PERMISSION_DENIED이고 생략하면 토큰의 역할을 쓴다. 역할 허용 목록은 `GateConfig`(접수 operator·release-gate-collector·question-authoring·model-lab, 활성화 operator, 롤백 ops-feedback·operator). 프로세스 안에서 쓰는 SDK(메모리 구현)는 인자로 받은 역할을 허용 목록에만 대조한다. 저장소를 쓰는 프로세스는 gate-service와 gate-worker(작업 상태만)다.
+- 활성 포인터 변경 권한: HTTP 면의 쓰기 토큰은 **역할에 묶여 있다**(`GATE_WRITE_TOKENS=역할=토큰,...`). 본문의 `requested_by_role`이 토큰의 역할과 다르면 PERMISSION_DENIED이고 생략하면 토큰의 역할을 쓴다. 역할 허용 목록은 `GateConfig`(접수 operator·release-gate-collector·question-authoring·model-lab, 활성화 operator, 롤백 ops-feedback·operator). 프로세스 안에서 쓰는 SDK(메모리 구현)는 인자로 받은 역할을 허용 목록에만 대조한다. 저장소를 쓰는 프로세스는 gate-service(와 같은 코드의 run-once 잡 collect·judge)뿐이다.
 
 ## 8. 판정 기록의 내부 설계
 
@@ -105,22 +93,6 @@ PASS일 때만 만든다. `commit_decision` 한 번에: 판정 기록, 릴리스
 
 I1·I3의 `list_ids`로 문항 세트와 패키지를 찾고(설정으로 ID 목록을 주면 그것만 본다), 패키지의 LORA_A/LORA_B는 매니페스트의 role로 가른다. 최신 버전은 `created_at`이 가장 늦은 것으로 본다. 주기마다 (문항 세트의 검수 완료 최신) × (LORA_A 최신) × (LORA_B 최신)의 조합을 `submit_candidate(role="release-gate-collector")`로 낸다. 중복은 게이트가 걸러 같은 조합은 한 번만 판정된다. 최신이 아닌 조합(예: 옛 모델과 새 문항)은 사람이 I5로 제출한다(제안). 일시 오류는 다음 주기로 미룬다.
 
-## 10. 승인 평가 실행기와 시험용 장치
-
-규약은 `runner_protocol.md`. 실행기를 꽂지 않으면(`NotConfiguredRunner`) 워커가 접수를 가져가지 않아 접수가 `EVAL_REQUESTED`에서 기다린다. 워커는 박동(heartbeat)을 레지스트리에 남기고 서비스의 `/readyz`가 `eval`(대기 수, 워커 상태)로 보여 준다. 시험용 정책·실행기는 이름에 `test`가 있으면 운영 모드(기본)에서 거부된다(`GATE_ALLOW_TEST=1`로만 허용). 정책 파일은 JSON Schema(`release_gate/schemas/gate_policy.schema.json`)로 검증한다.
-
-## 11. O11이 정해지면 실행기를 만들기 위한 질문 (미정, 사용자 결정)
-
-실제 `AcceptanceRunner`는 아래가 정해지기 전에는 만들지 않는다.
-1. **평가셋의 소유와 위치.** 누가 평가셋을 소유하고(synthetic-data? 사람이 만든 별도 셋?) 어디서 읽는가(I2 `DatasetStore`를 게이트가 읽어도 되는가, 아니면 실행기 전용 읽기 경로)? 평가셋의 불변성·버전 고정은 누가 보증하는가?
-2. **독립성.** 평가셋이 학습·검증 데이터와 겹치지 않음을 누가 어떻게 확인하는가(`scenario_id` 겹침 검사는 I2 publish에 있다)? 평가셋을 만든 쪽(model-lab/synthetic-data)이 평가 결과를 좌우하지 못하게 하는 장치가 필요한가?
-3. **지표.** 어떤 지표를 내는가(파서의 슬롯 정확도, 생성 응답의 규칙 준수율, 출력 보호(repair/fallback) 발생률, 지연 등)? 지표 이름과 정의(분모, 집계 단위)는 어디에 적는가? `*_raw`(보호 전)와 보호 후 중 무엇을 임계치에 쓰는가?
-4. **임계치.** 지표별 min/max 값은 사용자가 정한다. 문항 세트가 달라질 때마다 같은 임계치를 쓰는가, 문항 세트별 기준이 있는가? 비교 대상(직전 PASS 릴리스 대비 하락 허용 폭)이 필요한가?
-5. **보지 못한 문항 평가(D32).** "보지 못한"의 기준은 무엇인가: 모델 `lineage.question_sets`에 없는 문항 세트인가, 슬롯 단위인가? 새 문항 세트와 기존 모델 조합에서 평가 문항을 누가 어떻게 만드는가(합성 생성? 저자가 쓴 예시?)? 보지 못한 문항을 평가에 쓰지 못하는 경우(`unseen_question_eval=false`)는 반려인가?
-6. **안전 지표(CLINICAL_SAFETY의 `safety_metrics`).** 모델 출력의 임상 안전을 어떻게 재는가(위험 문구 누락, 금지된 조언 등)? 사람 검토가 필요한가?
-7. **실행 조건.** 시드, 샘플 수, 재현성 범위, 한 접수의 허용 실행 시간, GPU 자원 상한. 실패 시 재평가 요청 경로(변경 요청이 필요한가)?
-8. **근거 보관.** `evidence_ref`가 가리키는 평가 보고서를 어디에 저장하고 누가 읽는가(게이트는 내용을 해석하지 않는다)?
-
-## 12. 오류와 로깅
+## 10. 오류와 로깅
 
 모든 경계 호출의 실패는 `BoundaryError`다(HTTP는 코드를 상태로 옮긴다). 로그는 표준 출력. 무결성 오류는 error 수준으로 남긴다. 레코드에 입력 원문이나 개인정보는 없다.

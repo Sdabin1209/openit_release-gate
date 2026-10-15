@@ -22,7 +22,6 @@ done
 [ -n "$ok" ] || { echo "FAIL: /healthz 응답 없음"; "$DOCKER" logs "$name"; exit 1; }
 echo "healthz: $(curl -fsS http://127.0.0.1:$port/healthz)"
 ready="$(curl -fsS http://127.0.0.1:$port/readyz)"; echo "readyz: $ready"
-echo "$ready" | grep -q '"can_pass": false' || { echo "FAIL: 기본 정책이 통과를 낼 수 있다"; exit 1; }
 code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$port/v1/active-pointer)"
 [ "$code" = 403 ] || { echo "FAIL: 토큰 없이 읽혔다($code)"; exit 1; }
 curl -fsS -H 'Authorization: Bearer smoke-read' http://127.0.0.1:$port/v1/active-pointer | grep -q '"item": null' \
