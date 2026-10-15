@@ -5,17 +5,11 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER="${DOCKER:-$(command -v docker.exe || command -v docker)}"
 tag="release-gate:smoke"; name="release-gate-smoke-$$"
-commit="$(git -C "$here" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-ctx="$(PYTHON="${PYTHON:-$here/.venv/bin/python}" "$here/scripts/stage_context.sh" 2>/dev/null)"
-cver="$(cat "$ctx/survey-schema/CONTRACT_VERSION")"
-pver="$(PYTHONPATH="$here" python3 -c 'import re,pathlib;print(re.search(r"PIPELINE_SCHEMA_VERSION = \"(.+?)\"",pathlib.Path("'"$here"'/release_gate/__init__.py").read_text()).group(1))')"
 cleanup() { "$DOCKER" rm -f "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
-"$DOCKER" build -q -t "$tag" -f "$here/Dockerfile" \
-  --build-arg COMMIT="$commit" --build-arg CONTRACT_VERSION="$cver" --build-arg PIPELINE_SCHEMA_VERSION="$pver" \
-  "$(wslpath -w "$ctx" 2>/dev/null || echo "$ctx")" >/dev/null
-"$DOCKER" run -d --name "$name" -p 127.0.0.1::8080 -e GATE_READ_TOKEN=smoke-read -e GATE_WRITE_TOKENS=operator=smoke-write "$tag" >/dev/null
+"$here/scripts/build_image.sh" "$tag" >/dev/null
+"$DOCKER" run -d --name "$name" -p 127.0.0.1::8080 -e GATE_READ_TOKENS=survey-service=smoke-read -e GATE_WRITE_TOKENS=operator=smoke-write "$tag" >/dev/null
 
 # 호스트 포트는 Docker가 배정한다(다른 영역의 스모크와 겹치지 않게 고정 포트를 쓰지 않는다)
 port="$("$DOCKER" port "$name" 8080/tcp | head -1 | tr -d '\r' | sed 's/.*://')"
@@ -31,8 +25,12 @@ ready="$(curl -fsS http://127.0.0.1:$port/readyz)"; echo "readyz: $ready"
 echo "$ready" | grep -q '"can_pass": false' || { echo "FAIL: 기본 정책이 통과를 낼 수 있다"; exit 1; }
 code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$port/v1/active-pointer)"
 [ "$code" = 403 ] || { echo "FAIL: 토큰 없이 읽혔다($code)"; exit 1; }
-curl -fsS -H 'Authorization: Bearer smoke-read' http://127.0.0.1:$port/v1/active-pointer | grep -q 'null' \
+curl -fsS -H 'Authorization: Bearer smoke-read' http://127.0.0.1:$port/v1/active-pointer | grep -q '"item": null' \
   || { echo "FAIL: 활성 포인터 읽기"; exit 1; }
+curl -fsS -H 'Authorization: Bearer smoke-read' http://127.0.0.1:$port/v1/releases | grep -q '"items": \[\]' \
+  || { echo "FAIL: 릴리스 목록 읽기"; exit 1; }
+code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Authorization: Bearer smoke-read' -d '{}' http://127.0.0.1:$port/v1/activate)"
+[ "$code" = 403 ] || { echo "FAIL: 읽기 토큰으로 쓰기가 됐다($code)"; exit 1; }
 uid="$("$DOCKER" exec "$name" id -u | tr -d '\r')"; [ "$uid" != 0 ] || { echo "FAIL: root로 실행 중"; exit 1; }
 "$DOCKER" inspect -f '{{json .Config.Labels}}' "$tag"
 echo "SMOKE OK (uid=$uid)"

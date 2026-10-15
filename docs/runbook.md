@@ -16,14 +16,37 @@ scripts/smoke.sh                                         # v1.0.0 태그의 whee
 | `GATE_DATA_DIR` | 레지스트리 디렉터리(볼륨). 기본 `/data` |
 | `GATE_SURVEY_SCHEMA_DIR` | 문진 스키마(이미지에 포함). 경계 계약 스키마는 boundary-contracts 패키지에 들어 있다 |
 | `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION` | 빌드 때 고정한 문진 스키마 정수 버전 |
-| `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` | 릴리스 매니페스트에 기록되는 값. 학습 때 버전과 일치 검사에 쓰임 |
+| `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` | 선택(덮어쓰기). 없으면 **설치된 turn-engine, model-runtime 패키지의 실제 버전**을 읽고, 없으면 `unset`. 이 값이 릴리스 매니페스트에 기록되고 학습 때 버전과의 일치 검사(CONTRACT_COMPAT)에 쓰인다. `/readyz`에 보인다 |
 | `GATE_POLICY_FILE` | gate_policy JSON. 없으면 EMPTY(통과 불가) |
-| `GATE_READ_TOKEN`, `GATE_WRITE_TOKENS` | 필수. `GATE_WRITE_TOKENS=operator=<토큰>,ops-feedback=<토큰>`처럼 역할에 묶는다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
-| `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`. 둘 다 있어야 판정과 수집이 켜진다 |
-| `GATE_WATCH_QUESTION_SETS`, `GATE_WATCH_LORA_A`, `GATE_WATCH_LORA_B` | 선택. 주면 수집기가 그 ID만 본다(없으면 list_ids) |
+| `GATE_READ_TOKENS`, `GATE_WRITE_TOKENS` | 필수. `역할=토큰,역할=토큰` 형식으로 역할에 묶는다. 읽기 예: `survey-service=…,ops-feedback=…,question-authoring=…,model-lab=…`, 쓰기 예: `operator=…,ops-feedback=…,question-authoring=…,model-lab=…`. 읽기 토큰은 쓰기 경로에서 403, 쓰기 토큰은 읽기 면에서 403이다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
+| `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`(설정 파일의 `i1_factory`, `i3_factory`가 우선). 둘 다 있어야 판정이 켜진다. HTTP 클라이언트는 `release_gate.factories:http_question_reader`, `release_gate.factories:http_model_registry`(`boundary_contracts.clients`, v1.1.1 이상 필요). 이 둘은 `GATE_I1_URL`, `GATE_I1_TOKEN`, `GATE_I3_URL`, `GATE_I3_TOKEN`(선택 `*_TIMEOUT`)을 읽는다 |
 | `GATE_POLL_SECONDS`, `PORT` | 주기(기본 60), 포트(기본 8080) |
 
 워커: `GATE_DATA_DIR`(같은 레지스트리), `GATE_RUNNER_FACTORY`, `GATE_WORKER_ID`, `GATE_POLL_SECONDS`. 실행 `gate-worker`.
+
+## 후보 수집기: run-once 잡 (D39)
+
+`python -m release_gate collect --config collect.json` 은 한 번 실행하고 끝난다. 같은 조합은 게이트가 기존 접수를 돌려주므로 여러 번 실행해도 접수가 늘지 않는다(멱등). 언제 돌릴지는 deploy의 스케줄러가 정한다. 서비스는 수집을 스스로 돌리지 않는다. 표준 출력에 JSON 한 줄(`status`, `submitted`, `new`)을 내고, I1·I3가 일시적으로 안 되면 `deferred`를 내고 종료 코드 75(재시도 가능)로 끝난다. 다른 실패는 0이 아닌 코드와 로그다. `judge`는 대기 중인 접수의 판정을 한 걸음 진행하는 같은 형태의 잡이다(서비스의 루프와 같은 일).
+
+설정 파일(JSON, 모두 선택이며 비우면 환경 변수를 쓴다):
+
+```json
+{
+  "data_dir": "/data",
+  "i1_factory": "release_gate.factories:http_question_reader",
+  "i1_options": {"base_url": "http://question-authoring:8080", "token": "…(비밀은 파일 대신 GATE_I1_TOKEN 환경 변수 권장)"},
+  "i3_factory": "release_gate.factories:http_model_registry",
+  "i3_options": {"base_url": "http://model-registry:8080"},
+  "watch": {"question_sets": ["qs-main"], "lora_a": ["lora-a"], "lora_b": ["lora-b"]},
+  "policy_file": "/etc/gate/policy.json"
+}
+```
+
+`watch`를 비우면 I1·I3의 `list_ids`로 찾는다. `policy_file`은 `judge`에서만 쓴다. 필요한 환경 변수: `GATE_SURVEY_SCHEMA_DIR`(이미지에 설정됨), `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION`. `collect`는 레지스트리(`data_dir`)에 접수를 쓰므로 gate-service와 같은 볼륨을 본다.
+
+## 이미지
+
+`scripts/build_image.sh [태그]`가 빌드한다. 컨텍스트에는 boundary-contracts 태그(기본 `v1.1.0`, `BOUNDARY_CONTRACTS_TAG`로 바꿈)의 wheel이 들어가고, `GATE_LIB_WHEELS_DIR`에 turn-engine, model-runtime wheel이 있으면 함께 설치된다(deploy가 배포된 wheel을 준다). 라벨은 `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`이고 값은 컨텍스트의 wheel 이름에서 읽는다. wheel이 없으면 `unset`이며, 그러면 학습 때 버전 일치 검사가 모든 후보를 반려한다.
 
 ## 상태 확인
 

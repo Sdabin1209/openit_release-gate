@@ -20,7 +20,7 @@
 
 | 컴포넌트 | 파일 | 하는 일 |
 | --- | --- | --- |
-| 후보 수집기 | `collector.py` | 정해진 주기로 I1·I3를 보고 새 조합을 `submit_candidate`로 요청 |
+| 후보 수집기 | `collector.py`, `main.py` | I1·I3를 보고 새 조합을 `submit_candidate`로 요청. run-once 잡(`python -m release_gate collect`), 스케줄은 deploy가 정한다 |
 | GateService (I5) | `gate.py` | 접수, 활성화, 롤백 |
 | GateEngine | `gate.py`, `checks.py`, `policy.py` | 접수를 판정으로 바꾸고 PASS이면 릴리스를 구성 |
 | 검사 플러그인 | `checks.py` | 검사 종류마다 하나 |
@@ -99,7 +99,9 @@ PASS일 때만 만든다. `commit_decision` 한 번에: 판정 기록, 릴리스
 - 쓰기 전에 항상 boundary-contracts 스키마로 검증하고(`SchemaSet`), `assert_decision_rule`이 PASS/REJECT 규칙(PASS이면 모든 검사 PASS이고 release_id 있음, REJECT이면 사유가 있고 release_id 없음)을 한 번 더 확인한다.
 - 같은 `decision_id`에 같은 내용이면 기존 것을, 다른 내용이면 CONFLICT. `approver`는 `{role: "gate-service"}`(제안). 사람이 승인하는 단계는 브리프에 없다.
 
-## 9. 후보 수집기
+## 9. 후보 수집기 (run-once 잡)
+
+서비스 프로세스가 스스로 돌리지 않고 `python -m release_gate collect --config …`를 한 번 실행한다(D39). 멱등이다: 같은 조합은 접수가 늘지 않는다. 설정 형식은 runbook.
 
 I1·I3의 `list_ids`로 문항 세트와 패키지를 찾고(설정으로 ID 목록을 주면 그것만 본다), 패키지의 LORA_A/LORA_B는 매니페스트의 role로 가른다. 최신 버전은 `created_at`이 가장 늦은 것으로 본다. 주기마다 (문항 세트의 검수 완료 최신) × (LORA_A 최신) × (LORA_B 최신)의 조합을 `submit_candidate(role="release-gate-collector")`로 낸다. 중복은 게이트가 걸러 같은 조합은 한 번만 판정된다. 최신이 아닌 조합(예: 옛 모델과 새 문항)은 사람이 I5로 제출한다(제안). 일시 오류는 다음 주기로 미룬다.
 

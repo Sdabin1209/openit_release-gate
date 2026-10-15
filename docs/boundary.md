@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | I4 ReleaseReader | `release_gate.ReleaseReaderImpl` (`boundary_contracts.sdk.ReleaseReader` Protocol 구현) | 실제: `open_release_reader(data_dir)`(읽기 전용). 메모리: `memory_registry(...).reader` |
 | I5 GateService | `release_gate.GateServiceImpl` (`GateService` Protocol 구현), HTTP 면 | `POST /v1/submissions`, `/v1/activate`, `/v1/rollback`(쓰기 토큰은 역할에 묶임, 오류 상태 코드는 CONVENTIONS 9절). 메모리: `memory_registry(...).service` |
-| 읽기 HTTP | `GET /v1/active-pointer`, `/v1/releases/<id>`, `/v1/decisions/<id>` | 읽기 토큰 |
+| I4 읽기 HTTP (HTTP.md) | `GET /v1/active-pointer` (`{"item"}`), `/v1/releases`, `/v1/releases/<id>`, `/v1/releases/<id>/bundle`(tar: manifest.json, question_bank.json, adapters/LORA_A/…, adapters/LORA_B/…; PASS 아니면 412, 해시 불일치 422), `/v1/decisions?question_set_id=&question_set_version=&lora_a_id=&lora_a_version=&lora_b_id=&lora_b_version=&submission_id=`, `/v1/decisions/<id>` | 읽기 토큰(역할별). 목록은 `{items, next_cursor}`, `cursor`/`limit`(기본 100, 최대 500), 최신부터. 서버도 번들을 보내기 전에 모든 해시를 검증한다 |
 | 상태 | `GET /healthz`, `GET /readyz` | 인증 없음 |
 
 메모리 구현과 SQLite 구현은 같은 클래스를 다른 `Store` 위에 올린 것이고 같은 적합성 시험(`tests/test_conformance.py`, 매개변수 `memory`·`sqlite`)을 통과한다. 이웃은 `memory_registry`로 혼자 시험하되, 판정을 만들려면 I1·I3 대역과 시험용 정책이 필요하다(`tests/fakes.py`, `tests/conftest.py::World.make_release` 참고).
@@ -28,7 +28,7 @@
 | I8 turn-engine, I9 model-runtime | 워커의 평가 실행기에서만. 버전 문자열은 릴리스 매니페스트에 기록 | 환경 변수 `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` |
 | I5 호출 | 후보 제출, 활성화, `RollbackRequest` | 경계 계약 MAJOR 1 |
 
-입력은 `boundary_contracts.sdk`의 Protocol을 따르는 객체로만 받는다(생성자 인자 또는 `GATE_I1_FACTORY`, `GATE_I3_FACTORY`의 `module:callable`). 이웃 코드를 가져오지 않는다.
+입력은 `boundary_contracts.sdk`의 Protocol을 따르는 객체로만 받는다(생성자 인자 또는 설정의 팩토리 `module:callable`). 운영에서는 HTTP 클라이언트(`boundary_contracts.clients`, v1.1.1 이상)를 만드는 `release_gate.factories`를 고른다. 클라이언트가 나오기 전에는 시험용 대역 구조를 쓴다. 이웃 코드를 가져오지 않는다.
 
 ## 장애 영향
 

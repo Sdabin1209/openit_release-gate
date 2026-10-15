@@ -1,5 +1,13 @@
 # 변경 이력
 
+## 0.3.0 (2026-10-15) HTTP 읽기 면 완성(D49, D50)
+
+- I4 HTTP: `/v1/releases`(목록), `/v1/releases/{id}/bundle`(tar), `/v1/decisions`(id·version 필터), 응답을 `{item}`/`{items, next_cursor}`로 통일. 판정 조회 필터는 해시 없는 부분 참조를 받는다(저장소 키 구분자를 `\x1f`로 바꿈: **0.2.0의 SQLite 레지스트리와는 `find_decisions` 필터가 호환되지 않는다**. 운영 데이터가 있으면 재생성 필요).
+- 읽기 토큰을 역할별로(`GATE_READ_TOKENS`). 읽기 토큰의 쓰기 호출과 쓰기 토큰의 읽기 호출은 403.
+- 후보 수집기를 run-once 잡으로(`python -m release_gate collect|judge --config`), 서비스 루프에서는 수집을 뺌. I1·I3 HTTP 클라이언트 팩토리(`release_gate.factories`).
+- turn-engine·model-runtime 버전을 설치된 패키지에서 읽음. 이미지 라벨 키를 `io.openit.*`로 통일, `scripts/build_image.sh` 추가, boundary-contracts 기본 태그 v1.1.0.
+- 시험: HTTP 목록·번들 tar 해시 검증·토큰 분리, run-once 멱등, 버전 읽기. 스모크에 읽기·쓰기 거부 호출 추가.
+
 ## 0.2.0 (2026-10-15) boundary-contracts v1.0.0 반영(D42)
 
 - `ReleaseManifest.adapters` 정식 필드 사용, ext 제거. `GateDecision.reject_codes`와 `SKIPPED` 사용, policy_blocked ext 제거.

@@ -1,5 +1,5 @@
 """release-gate: 문항·모델 조합을 판정해 릴리스로 출고하고 활성 포인터를 관리한다."""
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 SUPPORTED_PIPELINE_MAJOR = 1
 PIPELINE_SCHEMA_VERSION = "1.0"
 

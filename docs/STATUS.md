@@ -1,4 +1,9 @@
-# STATUS (2026-10-15, 첫 구간 종료)
+# STATUS (2026-10-15, D49·D50 반영 후)
+
+- I4 읽기 면(목록, 번들 tar, 판정 조회), 역할별 읽기 토큰, run-once collect·judge, 라벨 통일, 설치 버전 읽기 완료. 확인: pytest, scripts/smoke.sh.
+- 확인하지 못한 것: 실제 `boundary_contracts.clients`(v1.1.1 미출시)와의 연동, 실제 turn-engine·model-runtime wheel로 만든 이미지(가짜 wheel로 라벨·버전 읽기만 확인).
+- boundary-contracts v1.1.1 출시 후: requirements.txt와 `BOUNDARY_CONTRACTS_TAG` 갱신, 클라이언트로 I4 HTTP 적합성 시험(`boundary-contracts/conformance/`) 실행.
+
 
 ## 한 일
 - design.md, boundary.md, runbook.md, CHANGELOG.md, 변경 요청 CR-0001~0007.

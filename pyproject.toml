@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "release-gate"
-version = "0.1.0"
+version = "0.3.0"
 requires-python = ">=3.10"
 description = "문진 시스템 검증·배포 게이트 (I4 ReleaseReader, I5 GateService)"
 dependencies = ["boundary-contracts>=1.0,<2", "jsonschema>=4.18"]

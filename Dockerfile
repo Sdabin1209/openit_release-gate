@@ -1,24 +1,23 @@
 # 빌드 컨텍스트는 scripts/stage_context.sh 가 만든 .build/ctx 이다: boundary-contracts v1.0.0 태그 시점 소스로 만든
-# wheel(wheels/)과 문진 스키마. 이미지 안에서는 ssh로 git을 받지 않는다. 직접 빌드: scripts/smoke.sh
+# wheel(wheels/), 선택으로 turn-engine·model-runtime wheel, 문진 스키마. 이미지 안에서는 ssh로 git을 받지 않는다. 직접 빌드: scripts/smoke.sh
 FROM python:3.12-slim
 
 ARG COMMIT=unknown
-ARG CONTRACT_VERSION=unknown
-ARG PIPELINE_SCHEMA_VERSION=unknown
+ARG BOUNDARY_VERSION=unknown
+ARG SURVEY_SCHEMA_VERSION=unknown
 ARG TURN_ENGINE_VERSION=unset
 ARG MODEL_RUNTIME_VERSION=unset
-LABEL org.opencontainers.image.revision="${COMMIT}" \
-      org.openit.survey-contract-version="${CONTRACT_VERSION}" \
-      org.openit.boundary-contract-version="${PIPELINE_SCHEMA_VERSION}" \
-      org.openit.turn-engine-version="${TURN_ENGINE_VERSION}" \
-      org.openit.model-runtime-version="${MODEL_RUNTIME_VERSION}"
+LABEL io.openit.service="release-gate" \
+      io.openit.revision="${COMMIT}" \
+      io.openit.contracts.boundary="${BOUNDARY_VERSION}" \
+      io.openit.contracts.survey-schema="${SURVEY_SCHEMA_VERSION}" \
+      io.openit.turn-engine="${TURN_ENGINE_VERSION}" \
+      io.openit.model-runtime="${MODEL_RUNTIME_VERSION}"
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 \
     GATE_SURVEY_SCHEMA_DIR=/opt/contracts/survey-schema \
     GATE_DATA_DIR=/data \
-    GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION=${CONTRACT_VERSION} \
-    GATE_TURN_ENGINE_VERSION=${TURN_ENGINE_VERSION} \
-    GATE_MODEL_RUNTIME_VERSION=${MODEL_RUNTIME_VERSION} \
+    GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION=${SURVEY_SCHEMA_VERSION} \
     PORT=8080
 
 RUN useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin gate \
@@ -29,6 +28,7 @@ RUN pip install -r release-gate/requirements.lock
 COPY wheels ./wheels
 COPY survey-schema /opt/contracts/survey-schema
 COPY release-gate ./release-gate
+# turn-engine·model-runtime wheel이 컨텍스트에 있으면 함께 설치한다. 서비스는 설치된 버전을 읽어 라벨·매니페스트에 쓴다.
 RUN pip install --no-deps ./wheels/*.whl ./release-gate && rm -rf /src
 
 USER gate
@@ -36,4 +36,4 @@ WORKDIR /data
 EXPOSE 8080
 VOLUME /data
 HEALTHCHECK --interval=30s --timeout=3s CMD python -c "import urllib.request,os;urllib.request.urlopen('http://127.0.0.1:%s/healthz'%os.environ.get('PORT','8080'),timeout=2)"
-CMD ["gate-service"]
+CMD ["python", "-m", "release_gate", "serve"]
