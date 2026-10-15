@@ -12,19 +12,22 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import re
 import shutil
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable
+from typing import Callable, Optional
 from urllib.parse import parse_qs, urlsplit
 
+from boundary_contracts import canonical
 from boundary_contracts.errors import BoundaryError
 
 from .reader import write_bundle_tar
 from .registry import Registry
 
 log = logging.getLogger("gate")
+_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 MAX_LIMIT = 500
 _STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, "CONFLICT": 409,
            "INTEGRITY_ERROR": 422, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
@@ -46,11 +49,13 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # 표준 출력으로 낸다
         log.info("%s %s", self.address_string(), fmt % args)
 
-    def _send(self, code: int, body) -> None:
+    def _send(self, code: int, body, headers: Optional[dict] = None) -> None:
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
 
@@ -90,8 +95,11 @@ class _Handler(BaseHTTPRequestHandler):
             raise BoundaryError("INVALID_RECORD", f"본문을 읽을 수 없다: {e}") from e
 
     def _run(self, fn) -> None:
+        headers = None
         try:
-            code, body = fn()
+            res = fn()
+            code, body = res[0], res[1]
+            headers = res[2] if len(res) > 2 else None
             if code == "bundle":
                 return self._send_bundle(body)
         except BoundaryError as e:
@@ -101,7 +109,7 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception:  # 서비스는 죽지 않는다. 원인은 로그에 남긴다.
             log.exception("처리 중 예외")
             code, body = 500, {"code": "INTERNAL", "message": "내부 오류"}
-        self._send(code, body)
+        self._send(code, body, headers)
 
     def _page(self, q: dict) -> tuple:
         def one(k, d):
@@ -173,7 +181,9 @@ class _Handler(BaseHTTPRequestHandler):
             if path.startswith("/v1/submissions/") and path.endswith("/review-report"):
                 sid = path[len("/v1/submissions/"):-len("/review-report")]
                 if sid and "/" not in sid:
-                    return 200, r.service.get_review_report(sid)
+                    rr = r.service.get_review_report(sid)
+                    # 서버가 대조에 쓰는 해시. 클라이언트는 계산하지 않고 이 값을 report_hash로 돌려보낸다(D69)
+                    return 200, rr, {"X-Openit-Report-Hash": canonical.sha256_hash(rr)}
             if path == "/v1/decisions":
                 cursor, limit = self._page(q)
                 items, nxt = r.reader.find_decisions(
@@ -197,7 +207,10 @@ class _Handler(BaseHTTPRequestHandler):
                 eng = self.server.engine
                 if eng is None:
                     raise BoundaryError("UNAVAILABLE", "승인 결정에는 I1·I3 연결이 필요하다(GATE_I1_FACTORY, GATE_I3_FACTORY)")
-                rec, created = eng.decide(b, token_role=role)
+                user = self.headers.get("X-Openit-User")
+                if user is not None and not _ID.match(user):
+                    raise BoundaryError("INVALID_RECORD", "X-Openit-User가 ID 형식이 아니다")
+                rec, created = eng.decide(b, token_role=role, approver_id=user)
                 return (201 if created else 200), rec
             role = self._write_role(b.get("requested_by_role"))
             if path == "/v1/submissions":

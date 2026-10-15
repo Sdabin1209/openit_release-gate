@@ -44,7 +44,7 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 - 자동 검사는 기술 호환(`CONTRACT_COMPAT`, `QUESTION_MODEL_COMPAT`), 평가 보고서 존재·형식(`ACCEPTANCE_EVAL`, 형식 검사일 뿐), 임상 승인 기록(`CLINICAL_SAFETY`, D30)이다. 어긋나면 FAIL로 반려한다. 모두 통과하면 제출이 `AWAITING_APPROVAL`이 된다. **합격 임계치는 없다.**
 - `GET /v1/submissions?status=&limit=&cursor=`(읽기 토큰): `SubmissionView` 목록, 최신부터, 기본 limit 100 최대 500, `next_cursor`(접수 순번이라 새 제출이 생겨도 밀리지 않음). `GET /v1/submissions/{id}`: 한 건, 없으면 404. `status`는 `PENDING_CHECK`(자동 검사 전), `AWAITING_APPROVAL`, `REJECTED_AUTO`(자동 검사 반려), `REJECTED_HUMAN`(사람이 반려), `PASSED`(승인되어 릴리스 발급)이고 `decision_id`·`approval_id`·`release_id`는 있을 때만 채운다(D68).
 - `GET /v1/submissions/{id}/review-report`(읽기 토큰): `ReviewReport`. 자동 검사 전이면 409(`details.reason=NOT_READY`).
-- `POST /v1/approvals`(쓰기 역할 `release-approver`만): 본문은 `GateApproval`에서 `approval_id`·`decided_at`을 뺀 것(`report_hash`는 선택). 새 기록은 201, 같은 결정의 반복은 200, 다른 결정은 409, 보낸 `report_hash`가 현재 보고서와 다르면 409(`details.reason=STALE_REPORT`). 이 호출에는 I1·I3 연결이 필요하다.
+- `POST /v1/approvals`(쓰기 역할 `release-approver`만): 본문은 `GateApproval`에서 `approval_id`·`decided_at`을 뺀 것(`report_hash`는 선택). 새 기록은 201, 같은 결정의 반복은 200, 다른 결정은 409, 보낸 `report_hash`가 현재 보고서와 다르면 409(`details.reason=STALE_REPORT`), 이미 다른 결정이 있으면 409(`ALREADY_DECIDED`). `GET .../review-report`의 응답 헤더 `X-Openit-Report-Hash`가 대조에 쓰는 해시다. 요청 헤더 `X-Openit-User`(게이트웨이가 붙임)가 있으면 그 값이 `approver_id`다(D69). 이 호출에는 I1·I3 연결이 필요하다.
 - 결정이 APPROVE면 `HUMAN_APPROVAL` PASS가 든 `GateDecision`(PASS, `approval_id`)과 릴리스를 만들고, REJECT면 `HUMAN_APPROVAL` FAIL인 REJECT 판정을 남긴다. 승인 없이 PASS가 되는 경로는 없다.
 - 정책 파일(선택)은 `gate_policy_version`과 `CONTRACT_COMPAT.require_lineage_runtime_match`뿐이다(`docs/runbook.md`).
 

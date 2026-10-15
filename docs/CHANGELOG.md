@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 0.7.1 (2026-10-15) 승인 요청의 해시·충돌·승인자 (D69)
+
+- `review-report` 응답 헤더 `X-Openit-Report-Hash`. 409 사유 `STALE_REPORT`/`ALREADY_DECIDED`(이전 `DIFFERENT_DECISION`은 `ALREADY_DECIDED`로 바뀜). `X-Openit-User`가 `approver_id`(Id 형식 검증, 헤더 우선).
+
 ## 0.7.0 (2026-10-15) 제출 목록·조회 (D68, boundary-contracts v1.3.3)
 
 - `GET /v1/submissions?status=&limit=&cursor=`, `GET /v1/submissions/{id}`: `SubmissionView`(내부 상태를 PENDING_CHECK, AWAITING_APPROVAL, REJECTED_AUTO, REJECTED_HUMAN, PASSED로 대응). 읽기 토큰으로 호출. 스키마 검증, 필터, 페이지, 404 시험. boundary-contracts v1.3.3.

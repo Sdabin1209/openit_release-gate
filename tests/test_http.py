@@ -275,3 +275,73 @@ def test_submission_views_over_http(world, server):
     assert st == 404 and e["code"] == "NOT_FOUND"
     assert call(server, "/v1/submissions", token="wt")[0] == 403 and call(server, "/v1/submissions", token="bad")[0] == 403
     assert call(server, f"/v1/submissions/{sid['ok']}", token="wt")[0] == 403
+
+
+def hcall(base, path, body=None, token=None, headers=None):
+    """응답 헤더까지 돌려주는 호출: (상태, 본문, 헤더)."""
+    req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(),
+                                 method="GET" if body is None else "POST")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
+    try:
+        with urllib.request.urlopen(req) as r:
+            return r.status, json.loads(r.read()), r.headers
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read()), e.headers
+
+
+def _awaiting(world, server, **kw):
+    sid = call(server, "/v1/submissions", {"subject": world.subject(**kw)}, "wt")[1]["submission_id"]
+    world.engine().process_pending()
+    return sid
+
+
+def test_report_hash_header_matches_and_is_accepted(world, server):
+    from boundary_contracts import canonical
+    sid = _awaiting(world, server)
+    st, rr, h = hcall(server, f"/v1/submissions/{sid}/review-report", token="rt")
+    assert st == 200 and h["X-Openit-Report-Hash"] == canonical.sha256_hash(rr)         # 서버가 대조에 쓰는 값
+    again = hcall(server, f"/v1/submissions/{sid}/review-report", token="rq")[2]["X-Openit-Report-Hash"]
+    assert again == h["X-Openit-Report-Hash"]                                           # 같은 보고서는 같은 해시
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "ignored", "approver_role": "release-approver",
+            "report_hash": h["X-Openit-Report-Hash"]}                                   # 계산하지 않고 받은 값을 그대로
+    st, ap, _ = hcall(server, "/v1/approvals", body, "wa")
+    assert st == 201 and ap["report_hash"] == h["X-Openit-Report-Hash"]
+
+
+def test_conflict_reasons_stale_and_already_decided(world, server):
+    sid = _awaiting(world, server)
+    h = hcall(server, f"/v1/submissions/{sid}/review-report", token="rt")[2]["X-Openit-Report-Hash"]
+    other = world.make_release(world.subject(qs=world.q.add("qs-oth", 1)))
+    world.reg.service.activate(other, requested_by_role="operator")            # 기준이 바뀌어 보고서가 낡는다
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "t1", "approver_role": "release-approver",
+            "report_hash": h}
+    st, e, _ = hcall(server, "/v1/approvals", body, "wa")
+    assert st == 409 and e["code"] == "CONFLICT" and e["details"]["reason"] == "STALE_REPORT"
+    h2 = hcall(server, f"/v1/submissions/{sid}/review-report", token="rt")[2]["X-Openit-Report-Hash"]
+    assert h2 != h
+    assert hcall(server, "/v1/approvals", dict(body, report_hash=h2), "wa")[0] == 201
+    st, e, _ = hcall(server, "/v1/approvals", dict(body, decision="REJECT", reason="번복", report_hash=h2), "wa")
+    assert st == 409 and e["code"] == "CONFLICT" and e["details"]["reason"] == "ALREADY_DECIDED"
+    assert hcall(server, "/v1/approvals", dict(body, report_hash=h2), "wa")[0] == 200            # 같은 결정은 멱등
+
+
+def test_x_openit_user_header_wins_over_body(world, server):
+    sid = _awaiting(world, server)
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "body-user", "approver_role": "release-approver"}
+    assert hcall(server, "/v1/approvals", body, "wa", {"X-Openit-User": "bad id!"})[0] == 400      # Id 형식이 아니다
+    assert hcall(server, "/v1/approvals", body, "wa", {"X-Openit-User": "x" * 129})[0] == 400
+    assert world.reg.store.get_approval(sid) is None
+    st, ap, _ = hcall(server, "/v1/approvals", body, "wa", {"X-Openit-User": "gw-user-7"})
+    assert st == 201 and ap["approver_id"] == "gw-user-7"
+    d = world.reg.store.latest_decision(sid)
+    assert d["approver"]["id"] == "gw-user-7"
+    world.schemas.validate("GateApproval", ap)
+
+
+def test_body_approver_id_used_without_header(world, server):
+    sid = _awaiting(world, server)
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "body-user", "approver_role": "release-approver"}
+    assert hcall(server, "/v1/approvals", body, "wa")[1]["approver_id"] == "body-user"

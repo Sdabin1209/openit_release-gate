@@ -109,7 +109,7 @@ def test_decide_is_idempotent_and_conflicting_decision_is_409(world):
     assert created and not created2 and again == first
     assert len(world.reg.store.find_decisions(submission_id=sub["submission_id"])[0]) == 1
     e = code(world.approve, sub["submission_id"], "REJECT", reason="마음이 바뀜")
-    assert e.code == "CONFLICT" and e.details["reason"] == "DIFFERENT_DECISION"
+    assert e.code == "CONFLICT" and e.details["reason"] == "ALREADY_DECIDED"
     assert world.reg.store.latest_decision(sub["submission_id"])["result"] == "PASS"
 
 

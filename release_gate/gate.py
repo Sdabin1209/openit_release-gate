@@ -230,12 +230,15 @@ class GateEngine:
         return None
 
     # --- 사람의 결정 (POST /v1/approvals)
-    def decide(self, body: dict, *, token_role: str) -> tuple:
-        """(GateApproval, created). 같은 submission_id에 같은 결정이면 (기존, False), 다른 결정이면 CONFLICT."""
+    def decide(self, body: dict, *, token_role: str, approver_id: Optional[str] = None) -> tuple:
+        """(GateApproval, created). 같은 submission_id에 같은 결정이면 (기존, False), 다른 결정이면 CONFLICT(details.reason=ALREADY_DECIDED).
+    report_hash가 현재 보고서와 다르면 CONFLICT(details.reason=STALE_REPORT)."""
         if token_role not in self.config.approver_roles:
             raise BoundaryError("PERMISSION_DENIED", f"역할 {token_role}은 출고 결정 권한이 없다")
         if not isinstance(body, dict):
             raise BoundaryError("INVALID_RECORD", "본문이 객체가 아니다")
+        if approver_id is not None:   # 게이트웨이가 인증한 사용자(X-Openit-User)가 본문의 approver_id를 대신한다(D69)
+            body = {**body, "approver_id": approver_id}
         for k in ("approval_id", "decided_at"):
             if k in body:
                 raise BoundaryError("INVALID_RECORD", f"{k}는 서버가 채운다")
@@ -277,7 +280,7 @@ class GateEngine:
     def _same_or_conflict(existing: dict, rec: dict) -> tuple:
         if existing["decision"] == rec["decision"] and existing.get("reason") == rec.get("reason"):
             return existing, False
-        raise BoundaryError("CONFLICT", "이 제출에는 이미 다른 결정이 있다", {"reason": "DIFFERENT_DECISION"})
+        raise BoundaryError("CONFLICT", "이 제출에는 이미 다른 결정이 있다", {"reason": "ALREADY_DECIDED"})
 
     def _finish(self, sid: str, approval: dict, w: dict) -> None:
         subject = subject_of(self.store.get_submission(sid)["subject"])
