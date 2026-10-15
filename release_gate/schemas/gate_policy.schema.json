@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GatePolicy",
+  "description": "게이트 통과 기준(gate_policy). 통과를 내려면 이 스키마를 지키고 release_gate.policy.GatePolicy.problems()도 비어야 한다. 파일이 없거나 비어 있으면 EMPTY 정책이고 통과를 낼 수 없다(D38).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["gate_policy_version", "o11_resolved", "required_checks"],
+  "properties": {
+    "gate_policy_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "판정 기록(GateDecision.gate_policy_version)에 남는 정책 버전. 정책 내용을 바꾸면 반드시 바꾼다. 'test'가 들어 있으면 운영 모드에서 거부된다."
+    },
+    "o11_resolved": {
+      "type": "boolean",
+      "description": "O11(승인 평가의 통과 임계치와 모델 출력 안전 지표)이 사용자 결정으로 정해져 이 정책에 반영되었다는 선언. false이면 다른 값이 모두 맞아도 통과를 낼 수 없다."
+    },
+    "required_checks": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["CONTRACT_COMPAT", "QUESTION_MODEL_COMPAT", "ACCEPTANCE_EVAL", "CLINICAL_SAFETY"]},
+      "description": "필수 검사. CONTRACT_COMPAT, CLINICAL_SAFETY, ACCEPTANCE_EVAL은 반드시 포함해야 통과를 낼 수 있다(QUESTION_MODEL_COMPAT은 선택)."
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "검사별 설정.",
+      "properties": {
+        "CONTRACT_COMPAT": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "require_lineage_runtime_match": {"type": "boolean", "description": "모델 학습 때의 turn-engine·model-runtime 버전이 게이트의 설치 버전과 같아야 한다. 기본 true."}
+          }
+        },
+        "QUESTION_MODEL_COMPAT": {"type": "object", "additionalProperties": false},
+        "CLINICAL_SAFETY": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "safety_metrics": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "모델 출력 안전 지표 이름(O11). 평가기가 연결되기 전에는 비워 둔다. 값이 있는데 평가기가 없으면 검사는 FAIL이다."}
+          }
+        },
+        "ACCEPTANCE_EVAL": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "thresholds": {
+              "type": "object",
+              "minProperties": 1,
+              "description": "지표 이름 -> 허용 범위. 실행기가 낸 metrics에 그 이름이 없으면 FAIL.",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {"min": {"type": "number"}, "max": {"type": "number"}}
+              }
+            },
+            "require_unseen_question_eval": {"type": "boolean", "description": "실행기가 unseen_question_eval=true를 내야 한다(D32). 기본 true."}
+          }
+        }
+      }
+    }
+  }
+}

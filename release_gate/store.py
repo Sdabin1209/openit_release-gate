@@ -89,6 +89,9 @@ class Store:
     def get_receipt(self, request_id: str) -> Optional[tuple]: ...
     def put_receipt(self, request_id: str, request_hash: str, receipt: dict) -> tuple: ...
     def ping(self) -> None: ...
+    # 워커 상태(운영 정보. 계약 레코드가 아니다)
+    def put_heartbeat(self, worker_id: str, info: dict, at: float) -> None: ...
+    def heartbeats(self) -> list[dict]: ...
 
 
 # --------------------------------------------------------------------------- 메모리
@@ -109,6 +112,15 @@ class MemoryStore(Store):
 
     def ping(self) -> None:
         return None
+
+    def put_heartbeat(self, worker_id, info, at):
+        with self._lock:
+            self._beats = getattr(self, "_beats", {})
+            self._beats[worker_id] = {"worker_id": worker_id, "at": at, **info}
+
+    def heartbeats(self):
+        with self._lock:
+            return list(getattr(self, "_beats", {}).values())
 
     def put_submission(self, record, subject_key):
         with self._lock:
@@ -275,6 +287,7 @@ CREATE TABLE IF NOT EXISTS decisions(seq INTEGER PRIMARY KEY AUTOINCREMENT, deci
   submission_id TEXT NOT NULL, qs TEXT NOT NULL, la TEXT NOT NULL, lb TEXT NOT NULL, record TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS releases(seq INTEGER PRIMARY KEY AUTOINCREMENT, release_id TEXT UNIQUE NOT NULL, record TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pointer_history(pointer_version INTEGER PRIMARY KEY, record TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS heartbeats(worker_id TEXT PRIMARY KEY, at REAL NOT NULL, info TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS receipts(request_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, record TEXT NOT NULL);
 """
 
@@ -306,6 +319,19 @@ class SqliteStore(Store):
                 self._c.execute("SELECT 1 FROM pointer_history LIMIT 1").fetchall()
         except sqlite3.Error as e:
             raise BoundaryError("UNAVAILABLE", f"레지스트리를 읽을 수 없다: {e}") from e
+
+    def put_heartbeat(self, worker_id, info, at):
+        self._w()
+        with self._Txn(self) as c:
+            c.execute("INSERT OR REPLACE INTO heartbeats(worker_id, at, info) VALUES(?,?,?)",
+                      (worker_id, at, json.dumps(info)))
+
+    def heartbeats(self):
+        try:
+            rows = self._q("SELECT worker_id, at, info FROM heartbeats")
+        except BoundaryError:
+            return []  # 오래된 레지스트리(테이블 없음)
+        return [{"worker_id": w, "at": a, **json.loads(i)} for w, a, i in rows]
 
     def _w(self):
         if self.read_only:

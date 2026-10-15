@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 0.5.0 (2026-10-15) 정책·실행기 문서화와 안전장치 (D52)
+
+- `gate_policy.schema.json` 추가, 정책 파일을 스키마로 검증(`PolicyError`로 시작 거부). 정책 형식·`o11_resolved`·필수 검사·임계치 문서화.
+- `docs/runner_protocol.md`: 실행기 호출 형태, `EvalResult`/`EvalJob`/`AcceptanceRunner` 타입, 오류·시간 제한, NotConfigured 동작. 반환 형식 검사.
+- 기본 `NotConfiguredRunner`: 접수는 `EVAL_REQUESTED`에서 기다린다. 워커 박동과 `/readyz`의 `eval` 상태.
+- 이름에 test가 있는 정책·실행기는 운영 모드에서 거부(`GATE_ALLOW_TEST=1`로 시험 환경만 허용). design.md 11절에 O11 질문 목록.
+
 ## 0.4.0 (2026-10-15) boundary-contracts v1.2.0 (D49, D51)
 
 - boundary-contracts 기본 태그 v1.2.0. 이미지 빌드가 turn-engine v0.2.0, model-runtime v0.4.0을 `git archive`로 wheel로 만들어 설치하므로 라벨과 판정의 버전 일치 검사가 실제 버전을 쓴다.

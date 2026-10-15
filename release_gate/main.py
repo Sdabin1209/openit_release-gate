@@ -27,7 +27,8 @@ from .policy import GatePolicy
 from .registry import sqlite_registry
 from .schemas import SchemaSet, SurveySchema
 from .store import SqliteStore
-from .worker import EvalWorker
+from .policy import is_test_version
+from .worker import EvalWorker, NotConfiguredRunner
 
 log = logging.getLogger("gate")
 EX_TEMPFAIL = 75
@@ -105,6 +106,37 @@ def _tokens(name: str, required: bool) -> dict:
     return out
 
 
+def allow_test() -> bool:
+    """GATE_ALLOW_TEST=1이면 시험용 정책·실행기를 허용한다. 기본은 운영 모드(거부). deploy의 test/ 환경에서만 켠다."""
+    return os.environ.get("GATE_ALLOW_TEST", "").lower() in ("1", "true", "yes")
+
+
+def refuse_test_in_production(policy: GatePolicy | None, runner_spec: str | None) -> None:
+    """이름에 test가 있는 정책(gate_policy_version)이나 실행기 팩토리 경로는 운영 모드에서 거부한다(D38)."""
+    if allow_test():
+        return
+    if policy is not None and is_test_version(policy.version):
+        raise SystemExit(f"시험용 정책({policy.version})은 운영 모드에서 쓸 수 없다. 시험 환경이면 GATE_ALLOW_TEST=1")
+    if runner_spec and is_test_version(runner_spec):
+        raise SystemExit(f"시험용 실행기({runner_spec})는 운영 모드에서 쓸 수 없다. 시험 환경이면 GATE_ALLOW_TEST=1")
+
+
+def eval_status(store, now: float | None = None, stale_seconds: float = 300.0) -> dict:
+    """/readyz에 보이는 승인 평가 상태. pending은 EVAL_REQUESTED 접수 수."""
+    now = time.time() if now is None else now
+    pending = len(store.submission_ids(("EVAL_REQUESTED",)))
+    workers = [{"worker_id": b["worker_id"], "runner": b.get("runner"), "age_seconds": round(now - b["at"], 1)}
+               for b in store.heartbeats()]
+    live = [w for w in workers if w["age_seconds"] <= stale_seconds]
+    if not live:
+        state = "no_worker"
+    elif all(w["runner"] != "configured" for w in live):
+        state = "runner_not_configured"
+    else:
+        state = "ok"
+    return {"pending": pending, "state": state, "workers": workers}
+
+
 def _logging() -> None:
     logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -122,6 +154,7 @@ def serve() -> None:
     cfg = load_config(os.environ.get("GATE_CONFIG"))
     schemas, survey, config, reg = _build(cfg)
     policy = GatePolicy.from_file(os.environ.get("GATE_POLICY_FILE"))
+    refuse_test_in_production(policy, None)
     questions, models = _neighbors(cfg)
     tasks, judging = [], "disabled (I1/I3 미연결)"
     if questions is not None and models is not None:
@@ -132,7 +165,8 @@ def serve() -> None:
         log.warning("gate_policy로는 통과를 낼 수 없다: %s", "; ".join(policy.problems()))
     status = lambda: {"gate_policy_version": policy.version, "can_pass": policy.can_pass, "judging": judging,
                       "turn_engine_version": config.turn_engine_version,
-                      "model_runtime_version": config.model_runtime_version}
+                      "model_runtime_version": config.model_runtime_version,
+                      "eval": eval_status(reg.store)}
     # 후보 수집은 여기서 돌리지 않는다. 스케줄러가 `collect`를 부른다(D39).
     Loop(float(_env("GATE_POLL_SECONDS", "60")), tasks).start()
     read_tokens = _tokens("GATE_READ_TOKENS", False)
@@ -173,6 +207,7 @@ def collect(cfg: dict) -> int:
 def judge(cfg: dict) -> int:
     schemas, survey, config, reg = _build(cfg)
     policy = GatePolicy.from_file(cfg.get("policy_file") or os.environ.get("GATE_POLICY_FILE"))
+    refuse_test_in_production(policy, None)
     questions, models = _neighbors(cfg)
     if questions is None or models is None:
         raise SystemExit("i1_factory와 i3_factory가 필요하다")
@@ -184,13 +219,17 @@ def judge(cfg: dict) -> int:
 def work() -> None:
     """GPU 서버의 승인 평가 워커. GATE_RUNNER_FACTORY가 AcceptanceRunner를 만든다."""
     _logging()
-    runner = make(os.environ.get("GATE_RUNNER_FACTORY"))
+    spec = os.environ.get("GATE_RUNNER_FACTORY")
+    refuse_test_in_production(None, spec)
+    runner = make(spec)
     if runner is None:
-        raise SystemExit("환경 변수 GATE_RUNNER_FACTORY(module:callable)가 필요하다")
+        log.warning("GATE_RUNNER_FACTORY가 없다: NotConfigured 실행기로 돈다. 접수는 EVAL_REQUESTED에서 기다린다(O11)")
+        runner = NotConfiguredRunner()
     w = EvalWorker(SqliteStore(_env("GATE_DATA_DIR", "/data")), runner, worker_id=_env("GATE_WORKER_ID", os.uname().nodename))
     interval = float(_env("GATE_POLL_SECONDS", "30"))
     while True:
         try:
+            w.beat()
             if w.run_once():
                 continue
         except Exception:

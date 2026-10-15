@@ -16,6 +16,7 @@ def job_env(world, tmp_path, monkeypatch):
     if not isinstance(world.reg.store, st.SqliteStore):
         pytest.skip("SQLite 레지스트리 전용")
     monkeypatch.setenv("GATE_SURVEY_SCHEMA_DIR", str(SURVEY))
+    monkeypatch.setenv("GATE_ALLOW_TEST", "1")
     monkeypatch.setenv("GATE_TURN_ENGINE_VERSION", "0.1.0")
     monkeypatch.setenv("GATE_MODEL_RUNTIME_VERSION", "0.1.0")
     monkeypatch.setattr(gate_main, "_neighbors", lambda cfg: (world.q, world.m))

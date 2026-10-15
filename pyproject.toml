@@ -19,3 +19,6 @@ gate-worker = "release_gate.main:work"
 [tool.setuptools]
 packages = ["release_gate"]
 
+
+[tool.setuptools.package-data]
+release_gate = ["schemas/*.json"]

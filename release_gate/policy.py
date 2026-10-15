@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import importlib.resources
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -16,6 +17,28 @@ CHECK_KINDS = ("CONTRACT_COMPAT", "QUESTION_MODEL_COMPAT", "ACCEPTANCE_EVAL", "C
 # 정책이 빼도 되지 않는 검사. CLINICAL_SAFETY는 D30(승인 기록 없이는 통과 불가), 나머지 둘은 출고물의 정합성이다.
 ALWAYS_REQUIRED = ("CONTRACT_COMPAT", "CLINICAL_SAFETY")
 EMPTY_VERSION = "EMPTY"
+
+
+class PolicyError(ValueError):
+    """정책 파일이 형식(gate_policy.schema.json)을 어겼다. 서비스는 시작하지 않는다."""
+
+
+def policy_schema() -> dict:
+    return json.loads(importlib.resources.files("release_gate").joinpath("schemas/gate_policy.schema.json")
+                      .read_text(encoding="utf-8"))
+
+
+def validate_policy(d: object) -> None:
+    import jsonschema
+    errs = sorted(jsonschema.Draft202012Validator(policy_schema()).iter_errors(d), key=lambda e: list(e.path))
+    if errs:
+        raise PolicyError("gate_policy 형식 오류: " + "; ".join(
+            f"{'/'.join(map(str, e.path)) or '.'}: {e.message}" for e in errs[:5]))
+
+
+def is_test_version(version: str) -> bool:
+    """이름에 'test'가 있는 정책은 시험용이다(D38). 운영 모드에서는 거부한다."""
+    return "test" in str(version).lower()
 
 
 @dataclass(frozen=True)
@@ -44,7 +67,14 @@ class GatePolicy:
         if not path or not Path(path).exists():
             return cls.empty()
         text = Path(path).read_text(encoding="utf-8").strip()
-        return cls.from_dict(json.loads(text)) if text else cls.empty()
+        if not text:
+            return cls.empty()
+        try:
+            d = json.loads(text)
+        except ValueError as e:
+            raise PolicyError(f"gate_policy가 JSON이 아니다: {e}") from e
+        validate_policy(d)
+        return cls.from_dict(d)
 
     @property
     def is_empty(self) -> bool:

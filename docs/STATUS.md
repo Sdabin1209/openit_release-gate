@@ -10,6 +10,9 @@
 - 구현: `release_gate/` 전체 (정책, 검사, 저장소 2종, I4·I5, 판정 엔진, 워커, 수집기, HTTP 면, 진입점). 메모리 구현은 `memory_registry`.
 - 시험: `python -m pytest -q` (적합성은 memory·sqlite 두 구현 모두). 스모크: `scripts/smoke.sh`(이미지 빌드, /healthz, /readyz, 토큰 거부, 비root, 라벨).
 
+## D52 반영
+정책 스키마·검증, 실행기 규약 문서, NotConfigured 기본, 시험용 거부 장치 완료(`pytest`, `scripts/smoke.sh`). 실제 실행기는 O11 이후(design.md 11절의 질문 필요). **deploy 시험 환경은 `GATE_ALLOW_TEST=1`이 필요하다.**
+
 ## 남은 일
 - **AcceptanceRunner 구현**: model-runtime(I9), turn-engine(I8)로 승인 평가 실행. GPU와 O11(임계치, 안전 지표)이 필요하다. 이 리포지토리에는 인터페이스와 워커만 있다.
 - **운영 gate_policy**: O11이 정해진 뒤 사용자 결정으로 만든다. 그 전까지 모든 판정은 REJECT(정책 불가)이다. 의도된 동작이다.

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from typing import Optional, Protocol, TypedDict, runtime_checkable
 
 from boundary_contracts.errors import BoundaryError
 
@@ -24,10 +24,44 @@ class EvalJob:
     policy_version: str
 
 
+class EvalResult(TypedDict, total=False):
+    """AcceptanceRunner.run의 반환. 호출 규약 전체는 docs/runner_protocol.md."""
+    evidence_ref: str              # 평가 근거의 ID(GateDecision.checks[].evidence_ref). Id 형식, 선택
+    metrics: dict                  # 지표 이름 -> 수치(int|float). 정책의 thresholds 이름이 모두 있어야 한다
+    unseen_question_eval: bool     # 보지 못한 문항 평가(D32)를 했는가
+    detail: str                    # 사람이 읽는 메모, 선택
+
+
+@runtime_checkable
 class AcceptanceRunner(Protocol):
-    """승인 평가 실행기. 반환: {"evidence_ref": Id, "metrics": {이름: 수치}, "unseen_question_eval": bool, "detail": str}.
-    model-runtime(I9)과 turn-engine(I8)을 써서 구현한다. 이 리포지토리에는 구현이 없다(GPU와 O11 필요)."""
-    def run(self, job: EvalJob) -> dict: ...
+    """승인 평가 실행기. `GATE_RUNNER_FACTORY=모듈:함수`의 함수(인자 없음)가 이 객체를 돌려준다.
+    model-runtime(I9)과 turn-engine(I8)을 써서 구현한다. 이 리포지토리에는 구현이 없다(O11이 정해져야 한다)."""
+    def run(self, job: EvalJob) -> EvalResult: ...
+
+
+class NotConfiguredRunner:
+    """실행기를 꽂지 않았을 때의 기본값. 워커는 `configured=False`인 실행기로는 접수를 가져가지 않으므로
+    접수는 EVAL_REQUESTED에서 기다린다(실패로 판정되지 않는다). 상태는 /readyz의 eval에 보인다."""
+    configured = False
+
+    def run(self, job: EvalJob) -> EvalResult:
+        raise BoundaryError("UNAVAILABLE", "승인 평가 실행기가 연결되지 않았다(GATE_RUNNER_FACTORY, O11)")
+
+
+def check_result(r: object) -> Optional[str]:
+    """실행기 반환값의 형식 위반 사유. 올바르면 None. 위반하면 워커가 오류 결과로 기록해 판정은 FAIL이 된다."""
+    if not isinstance(r, dict):
+        return "반환값이 dict가 아니다"
+    m = r.get("metrics")
+    if not isinstance(m, dict) or any(not isinstance(k, str) or isinstance(v, bool) or not isinstance(v, (int, float))
+                                      for k, v in m.items()):
+        return "metrics가 {이름: 수치} 형식이 아니다"
+    if "unseen_question_eval" in r and not isinstance(r["unseen_question_eval"], bool):
+        return "unseen_question_eval이 bool이 아니다"
+    ref = r.get("evidence_ref")
+    if ref is not None and not (isinstance(ref, str) and _ID.match(ref)):
+        return "evidence_ref가 ID 형식이 아니다"
+    return None
 
 
 class EvalWorker:
@@ -77,17 +111,18 @@ class EvalWorker:
         self.store.update_work(sid, fn)
 
     def run_once(self) -> bool:
-        """요청 하나를 처리했으면 True."""
+        """요청 하나를 처리했으면 True. 실행기가 연결되지 않았으면(configured=False) 아무것도 가져가지 않는다."""
+        if not getattr(self.runner, "configured", True):
+            return False
         for sid in self.store.submission_ids(("EVAL_REQUESTED",)):
             w = self._claim(sid)
             if w is None:
                 continue
             job = EvalJob(sid, self.store.get_submission(sid)["subject"], w.get("policy_version", ""))
             try:
-                r = dict(self.runner.run(job))
-                ref = r.get("evidence_ref")
-                if ref is not None and not (isinstance(ref, str) and _ID.match(ref)):
-                    r = {"error": "evidence_ref가 ID 형식이 아니다"}
+                r = self.runner.run(job)
+                bad = check_result(r)
+                r = {"error": f"실행기 반환 형식 오류: {bad}"} if bad else dict(r)
             except BoundaryError as e:
                 r = None if e.retryable else {"error": f"{e.code}: {e.message}"}
             except Exception as e:  # 실행기 버그나 GPU 오류: 조용히 넘기지 않고 결과에 남긴다
@@ -95,6 +130,11 @@ class EvalWorker:
             self._finish(sid, r)
             return True
         return False
+
+    def beat(self) -> None:
+        """워커가 살아 있고 실행기가 연결되었는지 저장소에 남긴다. 서비스의 /readyz가 읽는다."""
+        self.store.put_heartbeat(self.worker_id, {"runner": "configured" if getattr(self.runner, "configured", True)
+                                                  else "not_configured"}, self._now())
 
     def run_all(self) -> int:
         n = 0

@@ -40,6 +40,13 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 | 레지스트리 파일 손상 | `load_bundle`/활성화가 INTEGRITY_ERROR. 롤백은 손상된 대상으로 되돌리기를 REJECTED로 거부한다 |
 | 정책 비어 있음 | 모든 판정이 REJECT. 서비스는 정상(`/readyz`의 `can_pass=false`) |
 
+## 설정 계약: gate_policy와 승인 평가 실행기
+
+이웃(deploy)이 맞춰야 하는 이 영역의 설정이다.
+- 정책 JSON: 형식은 `release_gate/schemas/gate_policy.schema.json`, 설명은 `docs/runbook.md`의 "gate_policy". 필수 키 `gate_policy_version`, `o11_resolved`, `required_checks`. 비어 있거나 `o11_resolved=false`이거나 임계치가 없으면 통과 불가(`reject_codes=POLICY_INCOMPLETE`). 틀린 형식은 서비스가 시작하지 않는다.
+- 실행기: `GATE_RUNNER_FACTORY=모듈:함수`(인자 없음, `run(job)` 객체), 호출 형태·오류 처리·NotConfigured 동작은 `docs/runner_protocol.md`. 실행기가 없으면 접수는 `EVAL_REQUESTED`에서 기다리고 `/readyz`의 `eval.state`가 `runner_not_configured` 또는 `no_worker`다.
+- 시험용 정책·실행기(이름에 `test`)는 `GATE_ALLOW_TEST=1`이 아니면 거부된다.
+
 ## 하지 않는 것
 
 문항·모델을 만들거나 고치지 않는다. 문진 스키마와 `boundary-contracts`를 수정하지 않는다(변경 요청은 `docs/change-requests/`). 안전 지표와 통과 임계치를 정하지 않는다(O11).
