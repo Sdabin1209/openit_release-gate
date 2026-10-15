@@ -28,7 +28,23 @@ class ReleaseParts:
 
 
 def ref_key(ref: dict) -> str:
-    return f"{ref['id']}\x00{ref['version']}\x00{ref['content_hash']}"
+    return f"{ref['id']}\x1f{ref['version']}\x1f{ref['content_hash']}"
+
+
+def ref_prefix(ref: dict) -> str:
+    """부분 참조(id, id+version, id+version+content_hash) 필터의 키 접두사. HTTP 조회는 해시 없이 id·version만 준다."""
+    parts = []
+    for k in ("id", "version", "content_hash"):
+        if ref.get(k) is None:
+            break
+        parts.append(str(ref[k]))
+    if not parts:
+        raise BoundaryError("INVALID_RECORD", "참조 필터에 id가 없다")
+    return "\x1f".join(parts) + ("\x1f" if len(parts) < 3 else "")
+
+
+def _ref_hit(key: str, ref: dict) -> bool:
+    return key.startswith(ref_prefix(ref))
 
 
 def _page_args(cursor: Optional[str], limit: int) -> tuple[Optional[int], int]:
@@ -177,11 +193,11 @@ class MemoryStore(Store):
                     continue
                 d = self._decisions[seq - 1]
                 s = d["subject"]
-                if question_set and ref_key(s["question_set"]) != ref_key(question_set):
+                if question_set and not _ref_hit(ref_key(s["question_set"]), question_set):
                     continue
-                if lora_a and ref_key(s["lora_a"]) != ref_key(lora_a):
+                if lora_a and not _ref_hit(ref_key(s["lora_a"]), lora_a):
                     continue
-                if lora_b and ref_key(s["lora_b"]) != ref_key(lora_b):
+                if lora_b and not _ref_hit(ref_key(s["lora_b"]), lora_b):
                     continue
                 if submission_id and d.get("submission_id") != submission_id:
                     continue
@@ -429,8 +445,9 @@ class SqliteStore(Store):
         where, args = [], []
         for col, ref in (("qs", question_set), ("la", lora_a), ("lb", lora_b)):
             if ref:
-                where.append(f"{col}=?")
-                args.append(ref_key(ref))
+                p = ref_prefix(ref)
+                where.append(f"substr({col},1,?)=?")
+                args += [len(p), p]
         if submission_id:
             where.append("submission_id=?")
             args.append(submission_id)

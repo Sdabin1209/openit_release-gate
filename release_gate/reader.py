@@ -71,3 +71,25 @@ def verify_in_tempdir(store: Store, release_id: str) -> None:
     """활성화 직전의 무결성 확인. 풀어 본 뒤 임시 디렉터리를 지운다."""
     with tempfile.TemporaryDirectory(prefix="verify-") as d:
         verify_release(store, release_id, Path(d))
+
+
+def write_bundle_tar(store: Store, release_id: str, out) -> None:
+    """HTTP.md의 번들 tar를 out(바이너리 파일 객체)에 쓴다: manifest.json, question_bank.json, adapters/<ROLE>/….
+    서버도 모든 해시를 먼저 검증한다(PASS 아님 412, 불일치 422). 일반 파일만 담는다."""
+    import io
+    import json
+    import tarfile
+
+    with tempfile.TemporaryDirectory(prefix="bundle-tar-") as d:
+        b = verify_release(store, release_id, Path(d))
+        with tarfile.open(fileobj=out, mode="w|") as tar:
+            for name, obj in (("manifest.json", b.manifest), ("question_bank.json", b.question_bank)):
+                data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+            for role in ROLES:
+                root = Path(b.adapters[role])
+                for p in sorted(root.rglob("*")):
+                    if p.is_file() and not p.is_symlink():
+                        tar.add(p, arcname=f"adapters/{role}/{p.relative_to(root).as_posix()}", recursive=False)

@@ -43,9 +43,9 @@ class CandidateCollector:
             return None
         return best["role"], {"id": best["package_id"], "version": best["version"], "content_hash": best["content_hash"]}
 
-    def run_once(self) -> list[dict]:
+    def run_once(self, *, raise_unavailable: bool = False) -> list[dict]:
         """이번 주기에 제출한 조합의 GateSubmission 목록(이미 접수된 조합은 게이트가 기존 접수를 돌려준다).
-        일시 오류(UNAVAILABLE)는 다음 주기로 미룬다."""
+        일시 오류(UNAVAILABLE)는 빈 목록으로 미룬다(raise_unavailable면 올린다)."""
         try:
             qrefs = []
             for qid in (self.qs_ids if self.qs_ids is not None else list(_all_ids(self.q.list_ids))):
@@ -67,6 +67,6 @@ class CandidateCollector:
                             {"question_set": qs, "lora_a": la, "lora_b": lb}, requested_by_role=ROLE))
             return made
         except BoundaryError as e:
-            if e.retryable:
+            if e.retryable and not raise_unavailable:
                 return []
             raise
