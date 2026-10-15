@@ -1,5 +1,10 @@
 # 변경 이력
 
+## 0.4.0 (2026-10-15) boundary-contracts v1.2.0 (D49, D51)
+
+- boundary-contracts 기본 태그 v1.2.0. 이미지 빌드가 turn-engine v0.2.0, model-runtime v0.4.0을 `git archive`로 wheel로 만들어 설치하므로 라벨과 판정의 버전 일치 검사가 실제 버전을 쓴다.
+- 시험 추가: 수집기·판정 엔진이 `HttpQuestionReader`, `HttpModelRegistry`로 I1·I3를 읽는 통합(수집 -> 판정 -> 번들), 팩토리, I4·I5 서버를 `HttpReleaseReader`, `HttpGateService`로 호출하는 적합성(번들 해시 검증, 역할 403, 412).
+
 ## 0.3.0 (2026-10-15) HTTP 읽기 면 완성(D49, D50)
 
 - I4 HTTP: `/v1/releases`(목록), `/v1/releases/{id}/bundle`(tar), `/v1/decisions`(id·version 필터), 응답을 `{item}`/`{items, next_cursor}`로 통일. 판정 조회 필터는 해시 없는 부분 참조를 받는다(저장소 키 구분자를 `\x1f`로 바꿈: **0.2.0의 SQLite 레지스트리와는 `find_decisions` 필터가 호환되지 않는다**. 운영 데이터가 있으면 재생성 필요).

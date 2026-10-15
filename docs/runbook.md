@@ -19,7 +19,7 @@ scripts/smoke.sh                                         # v1.0.0 태그의 whee
 | `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` | 선택(덮어쓰기). 없으면 **설치된 turn-engine, model-runtime 패키지의 실제 버전**을 읽고, 없으면 `unset`. 이 값이 릴리스 매니페스트에 기록되고 학습 때 버전과의 일치 검사(CONTRACT_COMPAT)에 쓰인다. `/readyz`에 보인다 |
 | `GATE_POLICY_FILE` | gate_policy JSON. 없으면 EMPTY(통과 불가) |
 | `GATE_READ_TOKENS`, `GATE_WRITE_TOKENS` | 필수. `역할=토큰,역할=토큰` 형식으로 역할에 묶는다. 읽기 예: `survey-service=…,ops-feedback=…,question-authoring=…,model-lab=…`, 쓰기 예: `operator=…,ops-feedback=…,question-authoring=…,model-lab=…`. 읽기 토큰은 쓰기 경로에서 403, 쓰기 토큰은 읽기 면에서 403이다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
-| `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`(설정 파일의 `i1_factory`, `i3_factory`가 우선). 둘 다 있어야 판정이 켜진다. HTTP 클라이언트는 `release_gate.factories:http_question_reader`, `release_gate.factories:http_model_registry`(`boundary_contracts.clients`, v1.1.1 이상 필요). 이 둘은 `GATE_I1_URL`, `GATE_I1_TOKEN`, `GATE_I3_URL`, `GATE_I3_TOKEN`(선택 `*_TIMEOUT`)을 읽는다 |
+| `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`(설정 파일의 `i1_factory`, `i3_factory`가 우선). 둘 다 있어야 판정이 켜진다. HTTP 클라이언트는 `release_gate.factories:http_question_reader`, `release_gate.factories:http_model_registry`(`boundary_contracts.clients`, v1.2.0에서 확인). 이 둘은 `GATE_I1_URL`, `GATE_I1_TOKEN`, `GATE_I3_URL`, `GATE_I3_TOKEN`(선택 `*_TIMEOUT`)을 읽는다 |
 | `GATE_POLL_SECONDS`, `PORT` | 주기(기본 60), 포트(기본 8080) |
 
 워커: `GATE_DATA_DIR`(같은 레지스트리), `GATE_RUNNER_FACTORY`, `GATE_WORKER_ID`, `GATE_POLL_SECONDS`. 실행 `gate-worker`.
@@ -46,7 +46,7 @@ scripts/smoke.sh                                         # v1.0.0 태그의 whee
 
 ## 이미지
 
-`scripts/build_image.sh [태그]`가 빌드한다. 컨텍스트에는 boundary-contracts 태그(기본 `v1.1.0`, `BOUNDARY_CONTRACTS_TAG`로 바꿈)의 wheel이 들어가고, `GATE_LIB_WHEELS_DIR`에 turn-engine, model-runtime wheel이 있으면 함께 설치된다(deploy가 배포된 wheel을 준다). 라벨은 `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`이고 값은 컨텍스트의 wheel 이름에서 읽는다. wheel이 없으면 `unset`이며, 그러면 학습 때 버전 일치 검사가 모든 후보를 반려한다.
+`scripts/build_image.sh [태그]`가 빌드한다. 컨텍스트에는 boundary-contracts 태그(기본 `v1.2.0`, `BOUNDARY_CONTRACTS_TAG`)의 wheel이 들어가고, turn-engine(기본 `v0.2.0`, `TURN_ENGINE_TAG`)과 model-runtime(기본 `v0.4.0`, `MODEL_RUNTIME_TAG`)은 이웃 리포지토리를 `git archive <태그>`로 꺼내 wheel을 만들어 함께 설치한다(리포지토리는 수정하지 않는다). `GATE_LIB_WHEELS_DIR`를 주면 그 안의 wheel을 대신 쓴다. 라벨은 `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`이고 값은 컨텍스트의 wheel 이름에서 읽는다. wheel이 없으면(직접 `docker build`할 때 등) `unset`이며, 그러면 학습 때 버전 일치 검사가 모든 후보를 반려한다.
 
 ## 상태 확인
 
