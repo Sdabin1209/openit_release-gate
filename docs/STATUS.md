@@ -1,7 +1,7 @@
 # STATUS (2026-10-27, boundary-contracts v2.0.0 이전, 브랜치 migrate-contracts-2.0.0)
 
 - 2.0.0 이전 완료(상세는 CHANGELOG 0.7.0). 확인: pytest, scripts/smoke.sh(라벨 contracts.boundary=2.0.0). 아직 하지 않은 것: push, 태그(헤드 몫).
-- 이미지의 turn-engine v0.2.0, model-runtime v0.4.0 기본 태그는 그대로다. 새 태그(v0.3.0/v0.6.0 제안)가 나오면 `TURN_ENGINE_TAG`, `MODEL_RUNTIME_TAG`와 `GATE_TURN_ENGINE_VERSION` 등을 올려야 한다(학습 때 버전 일치 검사가 있다). 미확인.
+- 브랜치 follow-new-tags: 이미지 기본 태그를 turn-engine v0.3.0, model-runtime v0.6.1로 올렸다. 확인: pip git+ssh 설치, pytest 전체, scripts/smoke.sh(라벨 0.3.0/0.6.1), CONTRACT_COMPAT 일치 통과와 0.2.0/0.4.0/0.6.0 반려(tests/test_new_tags.py). 프롬프트 템플릿 검사는 두지 않기로 판단(design.md). push 안 함.
 
 # (이전) STATUS 2026-10-15, D53 사람 승인 반영 후
 

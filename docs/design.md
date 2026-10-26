@@ -41,6 +41,8 @@
 | 검사 | 내용 |
 | --- | --- |
 | CONTRACT_COMPAT | 참조 해시 일치(문항 세트, 두 매니페스트), 문항 세트가 문진 스키마(`QuestionBank`) 적합, 문진 스키마 정수 버전 = 게이트가 지원하는 값, 매니페스트 스키마 적합·MAJOR 지원·`runtime_contract_version` 일치·role 일치·`serving_config_hash == canonical.sha256_hash(serving_config)`(D42), 학습 때 turn-engine/model-runtime 버전 = 게이트 설치 버전(정책 `require_lineage_runtime_match`, 기본 true. 제안) |
+
+CONTRACT_COMPAT는 `serving_config`의 프롬프트 템플릿 버전(model-runtime v0.6.1의 `/v1/info.serving_config_expectation`: 기본 prompt-4, 폐기 예정 prompt-3)을 검사하지 않는다(판단, 제안). 이유: (1) 이 값은 model-runtime의 지원 목록이고 게이트가 이웃 값을 복사해 두면 어긋난다. I9을 직접 부르는 것도 경계 밖이다. (2) 게이트는 임계치·정책을 코드에 두지 않는다(D53). (3) prompt-3 패키지는 0.6.1에서 적재되고, 지원하지 않는 버전은 `load`가 거부한다. (4) `CheckOutcome`에 경고 등급이 없어 "폐기 경고"는 PASS/FAIL로만 표현되고, 그러면 적재되는 패키지를 반려하게 된다. 필요하면 정책 항목으로 추가한다(미정, 헤드 결정).
 | QUESTION_MODEL_COMPAT | 반려 근거는 구조 호환뿐: 두 어댑터의 기반 모델·계약 버전 일치, 문항 세트가 읽힘. `lineage.question_sets`(선택)는 참고 정보로 상세에만 적는다(D42) |
 | ACCEPTANCE_EVAL | **형식 검사일 뿐이다**: 두 모델 각각 `manifest.eval_report_ref`의 `EvaluationReport`를 I3 `get_eval_report`로 읽어 JSON, 스키마, `content_hash`, `role`, `package`(제출한 모델과 같은 id·version·content_hash)가 맞는지 확인. 지표 값은 보지 않는다 |
 | CLINICAL_SAFETY | 그 문항 세트 버전(id, version, content_hash)의 `ReviewRecord` 중 `APPROVED`이고 `clinical_basis_approved=true`인 것이 있어야 한다(D30). 제안: 그 뒤에 더 늦은 비승인 검수가 있으면 불통과. 승인 직전에 다시 확인한다 |

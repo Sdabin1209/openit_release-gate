@@ -1,5 +1,11 @@
 # 변경 이력
 
+## (미배포) 새 태그 따라가기: turn-engine v0.3.0, model-runtime v0.6.1
+
+- 이미지 기본 태그 `TURN_ENGINE_TAG` v0.3.0, `MODEL_RUNTIME_TAG` v0.6.1(`scripts/build_image.sh`). 라벨과 `/readyz`의 버전이 0.3.0, 0.6.1로 나온다. `GATE_TURN_ENGINE_VERSION`·`GATE_MODEL_RUNTIME_VERSION`은 설치된 패키지에서 읽으므로 코드의 기본값은 없다(환경 변수로 덮어쓸 때만 값을 준다).
+- CONTRACT_COMPAT의 버전 일치는 문자열 완전 일치다: 학습 때 model-runtime 0.6.0이나 0.4.0, turn-engine 0.2.0으로 만든 패키지는 반려된다(`tests/test_new_tags.py`). 0.6.0 패키지를 받아야 하면 정책 `require_lineage_runtime_match=false`가 필요하다(제안, 헤드 판단).
+- serving_config의 프롬프트 템플릿(prompt-4 기본, prompt-3 폐기) 검사는 두지 않았다. 근거는 `docs/design.md` CONTRACT_COMPAT 절 끝.
+
 ## 0.7.0 -> 패키지 0.7.0 (2026-10-27) boundary-contracts v2.0.0 이전 (D74, D75)
 
 - 경계 계약 v2.0.0(태그 설치, `requirements.txt`, `scripts/stage_context.sh`, 이미지 라벨 `io.openit.contracts.boundary`). `SUPPORTED_PIPELINE_MAJOR` 2: v1 매니페스트는 CONTRACT_COMPAT 반려.
