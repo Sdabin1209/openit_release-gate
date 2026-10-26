@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # 스모크 시험(D22): 이미지를 빌드하고 컨테이너를 띄워 /healthz, /readyz, 인증, 비root 실행, 라벨을 확인한다.
-# WSL에서는 docker.exe 를 쓴다. DOCKER=docker 로 바꿀 수 있다.
+# 표준 `docker` 명령을 쓴다(실행 파일 이름은 DOCKER 환경 변수로만 바꾼다). 데몬에 못 닿으면 중단한다.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-DOCKER="${DOCKER:-$(command -v docker.exe || command -v docker)}"
+DOCKER="${DOCKER:-docker}"
+if ! "$DOCKER" info >/dev/null 2>&1; then
+  echo "오류: 도커 데몬에 연결할 수 없다('$DOCKER info' 실패). 도커가 실행 중이고 이 셸에서 접근할 수 있는지 확인한다." >&2
+  exit 1
+fi
 tag="release-gate:smoke"; name="release-gate-smoke-$$"
 cleanup() { "$DOCKER" rm -f "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT

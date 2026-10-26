@@ -6,7 +6,7 @@
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ../boundary-contracts -e '.[test]'      # 운영·CI는 requirements.txt(v1.0.0 태그 고정)
 python -m pytest -q                                      # 단위, 적합성(메모리·SQLite), HTTP
-scripts/smoke.sh                                         # v1.0.0 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(WSL은 docker.exe)
+scripts/smoke.sh                                         # v1.0.0 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(표준 `docker`, 데몬에 못 닿으면 중단)
 ```
 
 ## 환경 변수 (gate-service)

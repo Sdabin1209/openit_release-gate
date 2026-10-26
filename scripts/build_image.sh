@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # 이미지를 빌드한다: scripts/build_image.sh [이미지 태그]. 라벨 값은 컨텍스트의 wheel 이름에서 읽는다(설치되는 버전과 같다).
-# WSL에서는 docker.exe 를 쓴다. DOCKER=docker 로 바꿀 수 있다.
+# 표준 `docker` 명령을 쓴다(실행 파일 이름은 DOCKER 환경 변수로만 바꾼다). 데몬에 못 닿으면 중단한다.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-DOCKER="${DOCKER:-$(command -v docker.exe || command -v docker)}"
+DOCKER="${DOCKER:-docker}"
+if ! "$DOCKER" info >/dev/null 2>&1; then
+  echo "오류: 도커 데몬에 연결할 수 없다('$DOCKER info' 실패). 도커가 실행 중이고 이 셸에서 접근할 수 있는지 확인한다." >&2
+  exit 1
+fi
 tag="${1:-release-gate:local}"
 PY="${PYTHON:-$here/.venv/bin/python}"
 # turn-engine·model-runtime는 태그 시점 소스(git archive)로 wheel을 만들어 이미지에 넣는다. 이웃 리포지토리는 읽기만 한다.
@@ -25,5 +29,5 @@ commit="$(git -C "$here" rev-parse --short HEAD 2>/dev/null || echo unknown)"
   --build-arg COMMIT="$commit" --build-arg BOUNDARY_VERSION="${bc:-unknown}" \
   --build-arg SURVEY_SCHEMA_VERSION="$(cat "$ctx/survey-schema/CONTRACT_VERSION")" \
   --build-arg TURN_ENGINE_VERSION="${te:-unset}" --build-arg MODEL_RUNTIME_VERSION="${mr:-unset}" \
-  "$(wslpath -w "$ctx" 2>/dev/null || echo "$ctx")" >/dev/null
+  "$ctx" >/dev/null
 echo "$tag"
