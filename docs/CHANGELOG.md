@@ -1,5 +1,9 @@
 # 변경 이력
 
+## (미배포) model-runtime v0.6.2 따라가기 (D72, D80)
+
+- `MODEL_RUNTIME_TAG` 기본값 v0.6.1 -> v0.6.2(`scripts/build_image.sh`, runbook). 코드 변경 없음. CONTRACT_COMPAT는 모든 이미지가 같은 model-runtime 버전이어야 하는 완전 일치라, 기준 0.6.2에서 0.6.1과 0.6.0 패키지도 반려된다(`tests/test_new_tags.py`).
+
 ## (미배포) 새 태그 따라가기: turn-engine v0.3.0, model-runtime v0.6.1
 
 - 이미지 기본 태그 `TURN_ENGINE_TAG` v0.3.0, `MODEL_RUNTIME_TAG` v0.6.1(`scripts/build_image.sh`). 라벨과 `/readyz`의 버전이 0.3.0, 0.6.1로 나온다. `GATE_TURN_ENGINE_VERSION`·`GATE_MODEL_RUNTIME_VERSION`은 설치된 패키지에서 읽으므로 코드의 기본값은 없다(환경 변수로 덮어쓸 때만 값을 준다).

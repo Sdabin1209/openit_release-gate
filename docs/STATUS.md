@@ -1,6 +1,7 @@
 # STATUS (2026-10-27, boundary-contracts v2.0.0 이전, 브랜치 migrate-contracts-2.0.0)
 
 - 2.0.0 이전 완료(상세는 CHANGELOG 0.7.0). 확인: pytest, scripts/smoke.sh(라벨 contracts.boundary=2.0.0). 아직 하지 않은 것: push, 태그(헤드 몫).
+- 브랜치 follow-mr-0.6.2: model-runtime 기본 태그를 v0.6.2로 올렸다(D72, D80). 확인: pip git+ssh 설치, pytest 211 통과 7 건너뜀 0 실패, scripts/smoke.sh(라벨 model-runtime 0.6.2), CONTRACT_COMPAT 0.6.2 일치 통과와 0.6.1/0.6.0/0.4.0 반려. push 안 함.
 - 브랜치 follow-new-tags: 이미지 기본 태그를 turn-engine v0.3.0, model-runtime v0.6.1로 올렸다. 확인: pip git+ssh 설치, pytest 전체, scripts/smoke.sh(라벨 0.3.0/0.6.1), CONTRACT_COMPAT 일치 통과와 0.2.0/0.4.0/0.6.0 반려(tests/test_new_tags.py). 프롬프트 템플릿 검사는 두지 않기로 판단(design.md). push 안 함.
 
 # (이전) STATUS 2026-10-15, D53 사람 승인 반영 후
