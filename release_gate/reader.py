@@ -34,6 +34,10 @@ def verify_release(store: Store, release_id: str, dest: Path) -> ReleaseBundle:
             raise BoundaryError("INTEGRITY_ERROR", f"묶음에 {role} 어댑터가 없다: {release_id}")
         if canonical.directory_hash(adapters[role]) != expected[role]["adapter_hash"]:
             raise BoundaryError("INTEGRITY_ERROR", f"묶음의 {role} 어댑터 해시가 다르다: {release_id}")
+        sp = expected[role].get("system_prompt") or {}
+        f = Path(adapters[role]) / sp.get("path", "")
+        if not sp or not f.is_file() or canonical.file_hash(f) != sp.get("sha256"):
+            raise BoundaryError("INTEGRITY_ERROR", f"묶음의 {role} 시스템 프롬프트 파일이 없거나 해시가 다르다: {release_id}")
     return ReleaseBundle(manifest, bank, adapters)
 
 

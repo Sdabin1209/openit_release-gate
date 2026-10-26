@@ -4,9 +4,9 @@
 
 ```
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ../boundary-contracts -e '.[test]'      # 운영·CI는 requirements.txt(v1.0.0 태그 고정)
+pip install -e ../boundary-contracts -e '.[test]'      # 운영·CI는 requirements.txt(v2.0.0 태그 고정)
 python -m pytest -q                                      # 단위, 적합성(메모리·SQLite), HTTP
-scripts/smoke.sh                                         # v1.0.0 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(표준 `docker`, 데몬에 못 닿으면 중단)
+scripts/smoke.sh                                         # v2.0.0 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(표준 `docker`, 데몬에 못 닿으면 중단)
 ```
 
 ## 환경 변수 (gate-service)
@@ -73,7 +73,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 
 ## 이미지
 
-`scripts/build_image.sh [태그]`가 빌드한다. 컨텍스트에는 boundary-contracts 태그(기본 `v1.2.0`, `BOUNDARY_CONTRACTS_TAG`)의 wheel이 들어가고, turn-engine(기본 `v0.2.0`, `TURN_ENGINE_TAG`)과 model-runtime(기본 `v0.4.0`, `MODEL_RUNTIME_TAG`)은 이웃 리포지토리를 `git archive <태그>`로 꺼내 wheel을 만들어 함께 설치한다(리포지토리는 수정하지 않는다). `GATE_LIB_WHEELS_DIR`를 주면 그 안의 wheel을 대신 쓴다. 라벨은 `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`이고 값은 컨텍스트의 wheel 이름에서 읽는다. wheel이 없으면(직접 `docker build`할 때 등) `unset`이며, 그러면 학습 때 버전 일치 검사가 모든 후보를 반려한다.
+`scripts/build_image.sh [태그]`가 빌드한다. 컨텍스트에는 boundary-contracts 태그(기본 `v2.0.0`, `BOUNDARY_CONTRACTS_TAG`)의 wheel이 들어가고, turn-engine(기본 `v0.2.0`, `TURN_ENGINE_TAG`)과 model-runtime(기본 `v0.4.0`, `MODEL_RUNTIME_TAG`)은 이웃 리포지토리를 `git archive <태그>`로 꺼내 wheel을 만들어 함께 설치한다(리포지토리는 수정하지 않는다). `GATE_LIB_WHEELS_DIR`를 주면 그 안의 wheel을 대신 쓴다. 라벨은 `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`이고 값은 컨텍스트의 wheel 이름에서 읽는다. wheel이 없으면(직접 `docker build`할 때 등) `unset`이며, 그러면 학습 때 버전 일치 검사가 모든 후보를 반려한다.
 
 ## 상태 확인
 

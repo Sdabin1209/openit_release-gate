@@ -17,16 +17,16 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 
 ## 생산하는 계약
 
-`GateDecision`(`reject_codes`, `SKIPPED` 포함), `ReleaseManifest`(`adapters` 포함), `GateSubmission`, `ActivePointer`, `RollbackReceipt`. 전부 쓰기 전에 boundary-contracts v1.0.0 스키마로 검증한다. `ext`는 쓰지 않는다.
+`GateDecision`(`reject_codes`, `SKIPPED` 포함), `ReleaseManifest`(`adapters[role].system_prompt` 포함, D75), `GateSubmission`, `ActivePointer`, `RollbackReceipt`. 전부 쓰기 전에 boundary-contracts v2.0.0 스키마로 검증한다. `ext`는 쓰지 않는다.
 
 ## 소비하는 것과 지원 버전
 
 | 입력 | 쓰는 것 | 지원 버전 |
 | --- | --- | --- |
 | I1 QuestionReader | `get_question_bank`, `get_reviews` (`latest`, `list_ids`는 수집기) | 문진 스키마 정수 버전: 이미지를 빌드할 때 고정한 값(`GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION`, 현재 1)이 배포된 스키마의 `CONTRACT_VERSION`과 같아야 한다. 다르면 CONTRACT_COMPAT가 반려한다 |
-| I3 ModelRegistry | `get_manifest`, `open_adapter` (`list_ids`, `list_versions`는 수집기) | 경계 계약 `1.0` (MAJOR 1). `list_ids`, `lineage.question_sets`(참고) 사용 |
+| I3 ModelRegistry | `get_manifest`, `open_adapter` (`list_ids`, `list_versions`는 수집기) | 경계 계약 `2.0` (MAJOR 2, v1 매니페스트는 CONTRACT_COMPAT가 반려). `system_prompt {path, sha256}` 필수(D75): 어댑터 디렉터리 안의 파일과 해시를 확인하고 릴리스 매니페스트로 복사한다. `list_ids`, `lineage.question_sets`(참고) 사용 |
 | I8 turn-engine, I9 model-runtime | 코드는 쓰지 않는다. 설치된 패키지의 버전 문자열만 읽어 릴리스 매니페스트에 기록하고 호환 검사에 쓴다 | 환경 변수 `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` |
-| I5 호출 | 후보 제출, 활성화, `RollbackRequest` | 경계 계약 MAJOR 1 |
+| I5 호출 | 후보 제출, 활성화, `RollbackRequest` | 경계 계약 MAJOR 2 |
 
 입력은 `boundary_contracts.sdk`의 Protocol을 따르는 객체로만 받는다(생성자 인자 또는 설정의 팩토리 `module:callable`). 운영에서는 HTTP 클라이언트(`HttpQuestionReader`, `HttpModelRegistry`, boundary-contracts v1.2.0)를 만드는 `release_gate.factories`를 고른다. 시험에서는 `tests/`의 대역(직접 호출)과 HTTP 서버+실제 클라이언트 두 경로를 모두 쓴다. 이웃 코드를 가져오지 않는다.
 

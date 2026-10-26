@@ -44,7 +44,7 @@ class FakeQuestions:
 
     @staticmethod
     def review(ref, *, approved=True, clinical=True, n=1, at="2026-10-14T00:00:00Z") -> dict:
-        r = {"pipeline_schema_version": "1.0", "review_id": f"rv-{ref['id']}-{ref['version']}-{n}",
+        r = {"pipeline_schema_version": "2.0", "review_id": f"rv-{ref['id']}-{ref['version']}-{n}",
              "question_set": ref, "reviewer_role": "clinical-reviewer",
              "decision": "APPROVED" if approved else "REJECTED", "clinical_basis_approved": clinical,
              "reviewed_at": at}
@@ -110,17 +110,22 @@ class FakeModels:
 
     def add(self, package_id: str, version: str, role: str, *, files: dict | None = None,
             runtime_contract_version=1, engine="0.1.0", runtime="0.1.0", base=("base-1", "r1"),
-            created_at="2026-10-14T00:00:00Z", metrics=None, report=True, **over) -> dict:
+            created_at="2026-10-14T00:00:00Z", metrics=None, report=True, prompt_path="system_prompt.txt", **over) -> dict:
         d = self.root / f"{package_id}-{version}"
         d.mkdir(parents=True, exist_ok=True)
-        for name, data in (files or {"adapter.bin": f"{package_id}{version}".encode(), "cfg/x.json": b"{}"}).items():
+        files = dict(files or {"adapter.bin": f"{package_id}{version}".encode(), "cfg/x.json": b"{}"})
+        if prompt_path is not None:  # D75: 시스템 프롬프트 파일은 어댑터 디렉터리 안에 있다(adapter_hash에 포함)
+            files.setdefault(prompt_path, f"SYSTEM PROMPT {role}".encode())
+        for name, data in files.items():
             (d / name).parent.mkdir(parents=True, exist_ok=True)
             (d / name).write_bytes(data)
         sc = {"prompt_template": "v1", "decoding": {"mode": "constrained"}, "max_attempts": 2}
-        m = {"pipeline_schema_version": "1.0", "package_id": package_id, "version": version, "role": role,
+        m = {"pipeline_schema_version": "2.0", "package_id": package_id, "version": version, "role": role,
              "created_at": created_at, "runtime_contract_version": runtime_contract_version,
              "base_model": {"id": base[0], "revision": base[1]}, "adapter_hash": canonical.directory_hash(d),
              "serving_config": sc, "serving_config_hash": canonical.sha256_hash(sc),
+             "system_prompt": {"path": prompt_path or "system_prompt.txt",
+                               "sha256": canonical.file_hash(d / prompt_path) if prompt_path else "sha256:" + "0" * 64},
              "lineage": {"dataset": {"id": "ds", "version": "1", "content_hash": "sha256:" + "0" * 64},
                          "training_run_id": "run-1", "turn_engine_version": engine, "model_runtime_version": runtime},
              "eval_report_ref": f"eval-{package_id}-{version}"}
@@ -186,7 +191,7 @@ DEFAULT_METRICS = [
 
 def make_eval_report(manifest: dict, *, metrics=None, created_at="2026-10-14T00:00:00Z") -> dict:
     """ModelPackageManifest에 맞는 EvaluationReport(시험용). 합격 여부나 임계치는 담지 않는다."""
-    rep = {"pipeline_schema_version": "1.3", "report_id": manifest["eval_report_ref"], "created_at": created_at,
+    rep = {"pipeline_schema_version": "2.0", "report_id": manifest["eval_report_ref"], "created_at": created_at,
            "role": manifest["role"],
            "package": {"id": manifest["package_id"], "version": manifest["version"],
                        "content_hash": manifest["content_hash"]},

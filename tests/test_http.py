@@ -69,7 +69,7 @@ def test_activate_and_rollback_over_http(world, server):
     assert call(server, "/v1/activate", {"release_id": r2}, "wt")[0] == 200
     st, body = call(server, "/v1/active-pointer", token="rt")
     assert body["item"]["release_id"] == r2
-    req = {"pipeline_schema_version": "1.0", "request_id": "rb-h", "requested_at": "2026-10-15T00:00:00Z",
+    req = {"pipeline_schema_version": "2.0", "request_id": "rb-h", "requested_at": "2026-10-15T00:00:00Z",
            "from_release_id": r2, "to_release_id": r1, "reason": "x", "evidence_refs": ["e1"],
            "requested_by_role": "ops-feedback"}
     assert call(server, "/v1/rollback", req, "wt")[0] == 403          # 토큰 역할(operator) != 요청의 ops-feedback

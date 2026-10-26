@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 0.7.0 -> 패키지 0.7.0 (2026-10-27) boundary-contracts v2.0.0 이전 (D74, D75)
+
+- 경계 계약 v2.0.0(태그 설치, `requirements.txt`, `scripts/stage_context.sh`, 이미지 라벨 `io.openit.contracts.boundary`). `SUPPORTED_PIPELINE_MAJOR` 2: v1 매니페스트는 CONTRACT_COMPAT 반려.
+- 릴리스를 만들 때 패키지의 `system_prompt`를 `ReleaseManifest.adapters[LORA_A|LORA_B].system_prompt`로 복사한다. 어댑터 안의 파일과 해시를 확인하고 어긋나면 INTEGRITY_ERROR(릴리스를 만들지 않는다). `load_bundle`도 프롬프트 파일 해시를 확인한다.
+- `runtime_contract_version`은 D75대로 문진 스키마 정수 버전이며 다르면 거부(기존 검사 유지).
+- 시험: `tests/test_v2_contract.py` 추가, 시험용 대역을 v2 형식(`system_prompt`, 버전 2.0)으로.
+
 ## 0.7.1 (2026-10-15) 승인 요청의 해시·충돌·승인자 (D69)
 
 - `review-report` 응답 헤더 `X-Openit-Report-Hash`. 409 사유 `STALE_REPORT`/`ALREADY_DECIDED`(이전 `DIFFERENT_DECISION`은 `ALREADY_DECIDED`로 바뀜). `X-Openit-User`가 `approver_id`(Id 형식 검증, 헤더 우선).

@@ -56,7 +56,7 @@ class NeighborServer:
                 raise BoundaryError("PERMISSION_DENIED", "토큰이 없거나 틀리다")
             status, ctype, data = self._route(unquote(u.path), q)
         except BoundaryError as e:
-            status, ctype, data = STATUS[e.code], "application/json", json.dumps(e.to_record("1.0")).encode()
+            status, ctype, data = STATUS[e.code], "application/json", json.dumps(e.to_record("2.0")).encode()
         h.send_response(status)
         h.send_header("Content-Type", ctype)
         h.send_header("Content-Length", str(len(data)))

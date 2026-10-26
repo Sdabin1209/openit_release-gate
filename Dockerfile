@@ -1,4 +1,4 @@
-# 빌드 컨텍스트는 scripts/stage_context.sh 가 만든 .build/ctx 이다: boundary-contracts v1.0.0 태그 시점 소스로 만든
+# 빌드 컨텍스트는 scripts/stage_context.sh 가 만든 .build/ctx 이다: boundary-contracts 태그 시점 소스로 만든
 # wheel(wheels/), 선택으로 turn-engine·model-runtime wheel, 문진 스키마. 이미지 안에서는 ssh로 git을 받지 않는다. 직접 빌드: scripts/smoke.sh
 FROM python:3.12-slim
 

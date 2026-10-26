@@ -313,8 +313,13 @@ class GateEngine:
                 if canonical.directory_hash(p) != m["adapter_hash"]:
                     raise BoundaryError("INTEGRITY_ERROR", f"{role} 어댑터 내용이 adapter_hash와 다르다")
                 adapters[role] = Path(p)
+                sp = m["system_prompt"]  # D75: 시스템 프롬프트는 패키지의 일부. 파일을 확인하고 값을 그대로 복사한다
+                f = Path(p) / sp["path"]
+                if not f.is_file() or canonical.file_hash(f) != sp["sha256"]:
+                    raise BoundaryError("INTEGRITY_ERROR", f"{role} 어댑터 안의 시스템 프롬프트 파일이 없거나 해시가 다르다")
                 ext_adapters[role] = {"adapter_hash": m["adapter_hash"], "serving_config": m["serving_config"],
-                                      "serving_config_hash": m["serving_config_hash"]}
+                                      "serving_config_hash": m["serving_config_hash"],
+                                      "system_prompt": {"path": sp["path"], "sha256": sp["sha256"]}}
             man = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "release_id": d["release_id"],
                    "created_at": d["decided_at"], "gate_decision_id": d["decision_id"],
                    "question_set": subject["question_set"], "lora_a": subject["lora_a"], "lora_b": subject["lora_b"],

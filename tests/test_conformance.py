@@ -20,7 +20,7 @@ def code(fn, *a, **kw):
 
 
 def rollback_req(rid, frm, to, role="ops-feedback"):
-    return {"pipeline_schema_version": "1.0", "request_id": rid, "requested_at": "2026-10-15T00:00:00Z",
+    return {"pipeline_schema_version": "2.0", "request_id": rid, "requested_at": "2026-10-15T00:00:00Z",
             "from_release_id": frm, "to_release_id": to, "reason": "품질 저하", "evidence_refs": ["ev-1"],
             "requested_by_role": role}
 
@@ -227,7 +227,7 @@ def test_pointer_compare_and_swap_is_atomic(reg):
 
     def go(i):
         barrier.wait()
-        p = {"pipeline_schema_version": "1.0", "release_id": f"rel-{i}", "pointer_version": 1,
+        p = {"pipeline_schema_version": "2.0", "release_id": f"rel-{i}", "pointer_version": 1,
              "activated_at": "2026-10-15T00:00:00Z", "cause": "ACTIVATE"}
         if s.switch_pointer(0, p):
             wins.append(i)
