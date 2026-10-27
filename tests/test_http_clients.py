@@ -6,6 +6,8 @@ import threading
 
 import pytest
 
+from conftest import tamper_decisions
+
 from boundary_contracts.clients import HttpGateService, HttpReleaseReader
 from boundary_contracts.errors import BoundaryError
 from release_gate.app import GateHTTPServer
@@ -66,8 +68,7 @@ def test_non_pass_release_bundle_is_failed_precondition(world, srv, tmp_path):
     if hasattr(world.reg.store, "_decisions"):
         world.reg.store._decisions[0]["result"] = "REJECT"
     else:
-        import json
-        world.reg.store._c.execute("UPDATE decisions SET record=?", (json.dumps(dict(d, result="REJECT")),))
+        tamper_decisions(world.reg.store, dict(d, result="REJECT"))
     assert code(HttpReleaseReader(srv, "r-surv").load_bundle, rid, dest=tmp_path / "n") == "FAILED_PRECONDITION"
 
 

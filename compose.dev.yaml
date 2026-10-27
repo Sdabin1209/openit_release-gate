@@ -1,0 +1,16 @@
+# 개발·시험용 PostgreSQL(D22). 앱은 컨테이너 밖에서 돌고 이것만 띄운다. 호스트 포트는 Docker가 빈 포트로 배정한다.
+# 이 값은 로컬 시험 전용이다(운영 비밀 아님).
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: gate
+      POSTGRES_PASSWORD: gate-dev-only
+      POSTGRES_DB: gate
+    ports:
+      - "127.0.0.1::5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gate -d gate"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

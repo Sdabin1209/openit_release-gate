@@ -2,7 +2,7 @@
 
 ## 소유하는 저장소
 
-릴리스 레지스트리(`GATE_DATA_DIR`: SQLite `registry.sqlite3`와 `releases/` 디렉터리). 쓰는 프로세스는 이 영역의 gate-service(접수, 자동 검사, 승인 결정, 판정, 릴리스, 포인터)와 같은 코드의 run-once 잡(`collect`, `judge`)이다. 다른 영역에는 읽기만 준다(I4, 읽기 전용 연결 또는 읽기 토큰).
+릴리스 레지스트리(레코드: `GATE_DATABASE_URL`이 있으면 이 영역 전용 PostgreSQL 데이터베이스·계정, 없으면 `GATE_DATA_DIR`의 SQLite `registry.sqlite3`. 번들 파일: `GATE_DATA_DIR/releases/` 디렉터리). PostgreSQL이 멈추면 쓰기와 읽기가 UNAVAILABLE(재시도 가능)이고 `/readyz`는 503이다. 쓰는 프로세스는 이 영역의 gate-service(접수, 자동 검사, 승인 결정, 판정, 릴리스, 포인터)와 같은 코드의 run-once 잡(`collect`, `judge`)이다. 다른 영역에는 읽기만 준다(I4, 읽기 전용 연결 또는 읽기 토큰).
 
 ## 제공하는 SDK와 서비스
 
@@ -13,7 +13,7 @@
 | I4 읽기 HTTP (HTTP.md) | `GET /v1/active-pointer` (`{"item"}`), `/v1/releases`, `/v1/releases/<id>`, `/v1/releases/<id>/bundle`(tar: manifest.json, question_bank.json, adapters/LORA_A/…, adapters/LORA_B/…; PASS 아니면 412, 해시 불일치 422), `/v1/decisions?question_set_id=&question_set_version=&lora_a_id=&lora_a_version=&lora_b_id=&lora_b_version=&submission_id=`, `/v1/decisions/<id>` | 읽기 토큰(역할별). 목록은 `{items, next_cursor}`, `cursor`/`limit`(기본 100, 최대 500), 최신부터. 서버도 번들을 보내기 전에 모든 해시를 검증한다 |
 | 상태 | `GET /healthz`, `GET /readyz` | 인증 없음 |
 
-I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `HttpGateService`로 호출하는 `tests/test_http_clients.py`가 시험한다. 메모리 구현과 SQLite 구현은 같은 클래스를 다른 `Store` 위에 올린 것이고 같은 적합성 시험(`tests/test_conformance.py`, 매개변수 `memory`·`sqlite`)을 통과한다. 이웃은 `memory_registry`로 혼자 시험하되, 판정을 만들려면 I1·I3 대역과 시험용 정책이 필요하다(`tests/fakes.py`, `tests/conftest.py::World.make_release` 참고).
+I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `HttpGateService`로 호출하는 `tests/test_http_clients.py`가 시험한다. 메모리·SQLite·PostgreSQL 구현은 같은 클래스를 다른 `Store` 위에 올린 것이고 같은 적합성 시험(`tests/test_conformance.py`, 매개변수 `memory`·`sqlite`·`postgres`)을 통과한다. PostgreSQL 시험은 `TEST_DATABASE_URL`이 있을 때만 돈다. 이웃은 `memory_registry`로 혼자 시험하되, 판정을 만들려면 I1·I3 대역과 시험용 정책이 필요하다(`tests/fakes.py`, `tests/conftest.py::World.make_release` 참고).
 
 ## 생산하는 계약
 

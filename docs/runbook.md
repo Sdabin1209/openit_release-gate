@@ -5,7 +5,9 @@
 ```
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ../boundary-contracts -e '.[test]'      # 운영·CI는 requirements.txt(v2.0.2 태그 고정)
-python -m pytest -q                                      # 단위, 적합성(메모리·SQLite), HTTP
+python -m pytest -q                                      # 단위, 적합성(메모리·SQLite, TEST_DATABASE_URL이 있으면 PostgreSQL도), HTTP
+TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)" python -m pytest -q   # PostgreSQL 포함. 없으면 그 시험은 SKIP이고 PASS로 세지 않는다
+scripts/dev-postgres.sh down                             # 시험용 postgres:16 정리 (../deploy/scripts/dev-postgres.sh 가 있으면 그것을 쓴다)
 scripts/smoke.sh                                         # v2.0.2 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(표준 `docker`, 데몬에 못 닿으면 중단)
 ```
 
@@ -13,7 +15,8 @@ scripts/smoke.sh                                         # v2.0.2 태그의 whee
 
 | 이름 | 뜻 |
 | --- | --- |
-| `GATE_DATA_DIR` | 레지스트리 디렉터리(볼륨). 기본 `/data` |
+| `GATE_DATABASE_URL` (비밀: `GATE_DATABASE_URL_FILE` 우선) | 있으면 레코드는 PostgreSQL(서비스별 데이터베이스·계정, 운영). 없으면 `GATE_DATA_DIR`의 SQLite(개발·시험 기본). 서버와 잡(collect, judge)이 같은 선택을 쓴다. `/readyz`에는 DB 종류(`database`)만 나온다 |
+| `GATE_DATA_DIR` | 레지스트리 디렉터리(볼륨). 기본 `/data`. 번들 파일(`releases/`)은 DB 종류와 상관없이 여기에 둔다. SQLite 모드에서는 DB 파일도 여기에 있다 |
 | `GATE_SURVEY_SCHEMA_DIR` | 문진 스키마(이미지에 포함). 경계 계약 스키마는 boundary-contracts 패키지에 들어 있다 |
 | `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION` | 빌드 때 고정한 문진 스키마 정수 버전 |
 | `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` | 선택(덮어쓰기). 없으면 **설치된 turn-engine, model-runtime 패키지의 실제 버전**을 읽고, 없으면 `unset`. 이 값이 릴리스 매니페스트에 기록되고 학습 때 버전과의 일치 검사(CONTRACT_COMPAT)에 쓰인다. `/readyz`에 보인다 |
@@ -89,7 +92,8 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 
 ## 백업과 정리
 
-- 백업: 서비스를 멈추거나 `sqlite3 registry.sqlite3 ".backup ..."`으로 DB를 복사하고 `releases/` 디렉터리를 함께 복사한다. 둘이 한 쌍이다.
+- 백업(PostgreSQL 모드): `pg_dump`로 서비스 데이터베이스를 받고 `releases/` 디렉터리를 함께 복사한다. 둘이 한 쌍이다.
+- 백업(SQLite 모드): 서비스를 멈추거나 `sqlite3 registry.sqlite3 ".backup ..."`으로 DB를 복사하고 `releases/` 디렉터리를 함께 복사한다. 둘이 한 쌍이다.
 - 정리: `releases/` 아래 `.tmp-*` 디렉터리와 DB에 행이 없는 릴리스 디렉터리는 중단된 쓰기의 잔재이고 읽기에 영향이 없다. 서비스가 멈춘 뒤 지워도 된다.
 - 릴리스, 판정, 포인터 이력은 삭제하지 않는다(불변).
 

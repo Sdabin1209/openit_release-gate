@@ -6,6 +6,8 @@ from copy import deepcopy
 
 import pytest
 
+from conftest import tamper_decisions
+
 from boundary_contracts import canonical
 from boundary_contracts.errors import BoundaryError
 from boundary_contracts.sdk import GateService, ReleaseBundle, ReleaseReader
@@ -70,8 +72,7 @@ def test_activate_non_pass_release_fails_precondition(world):
     if isinstance(world.reg.store, MemoryStore):
         world.reg.store._decisions[world.reg.store._decision_by_id[d["decision_id"]]]["result"] = "REJECT"
     else:
-        import json
-        world.reg.store._c.execute("UPDATE decisions SET record=?", (json.dumps(dict(d, result="REJECT")),))
+        tamper_decisions(world.reg.store, dict(d, result="REJECT"))
     assert code(world.reg.service.activate, rid, requested_by_role="operator") == "FAILED_PRECONDITION"
     assert code(world.reg.reader.load_bundle, rid, dest=world.m.root / "x") == "FAILED_PRECONDITION"
     assert world.reg.reader.get_active_pointer() is None
@@ -250,6 +251,19 @@ def test_sqlite_read_only_reader_survives_without_service(world, tmp_path):
     assert rd.get_active_pointer()["release_id"] == rid
     assert rd.load_bundle(rid, dest=tmp_path / "ro").manifest["release_id"] == rid
     assert code(rd._store.switch_pointer, 1, {"pointer_version": 2}) == "PERMISSION_DENIED"
+
+
+def test_postgres_persists_across_reopen(world, schemas, config):
+    from release_gate import PostgresStore
+    if not isinstance(world.reg.store, PostgresStore):
+        pytest.skip("PostgreSQL 전용")
+    rid = world.make_release()
+    world.reg.service.activate(rid, requested_by_role="operator")
+    from release_gate import postgres_registry
+    again = postgres_registry(world.reg.store._url, world.reg.store.root, schemas, config)   # 스키마 생성은 멱등
+    assert again.reader.get_active_pointer()["release_id"] == rid
+    assert again.reader.get_release(rid)["release_id"] == rid
+    assert world.reg.store.kind == "postgresql"
 
 
 def test_sqlite_persists_across_reopen(world, schemas, config, tmp_path):

@@ -12,8 +12,13 @@ from conftest import SURVEY
 @pytest.fixture
 def job_env(world, tmp_path, monkeypatch):
     import release_gate.store as st
-    if not isinstance(world.reg.store, st.SqliteStore):
-        pytest.skip("SQLite 레지스트리 전용")
+    if isinstance(world.reg.store, st.MemoryStore):
+        pytest.skip("SQLite·PostgreSQL 레지스트리 전용")
+    if world.reg.store.kind == "postgresql":   # 잡은 GATE_DATABASE_URL로 PostgreSQL을 고른다
+        monkeypatch.delenv("GATE_DATABASE_URL_FILE", raising=False)
+        monkeypatch.setenv("GATE_DATABASE_URL", world.reg.store._url)
+    else:
+        monkeypatch.delenv("GATE_DATABASE_URL", raising=False)
     monkeypatch.setenv("GATE_SURVEY_SCHEMA_DIR", str(SURVEY))
     monkeypatch.setenv("GATE_ALLOW_TEST", "1")
     monkeypatch.setenv("GATE_TURN_ENGINE_VERSION", "0.1.0")

@@ -7,6 +7,8 @@ import urllib.request
 
 import pytest
 
+from conftest import tamper_decisions
+
 from release_gate.app import GateHTTPServer
 
 
@@ -159,7 +161,7 @@ def test_bundle_of_non_pass_release_is_412(world, server):
     if hasattr(world.reg.store, "_decisions"):
         world.reg.store._decisions[0]["result"] = "REJECT"
     else:
-        world.reg.store._c.execute("UPDATE decisions SET record=?", (json.dumps(dict(d, result="REJECT")),))
+        tamper_decisions(world.reg.store, dict(d, result="REJECT"))
     assert raw(server, f"/v1/releases/{rid}/bundle", "rt")[0] == 412
 
 

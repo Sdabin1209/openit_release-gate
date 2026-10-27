@@ -158,7 +158,7 @@ class _Handler(BaseHTTPRequestHandler):
                     st = self.server.status()
                 except BoundaryError as e:
                     return 503, {"status": "not ready", "reason": e.message}
-                return 200, {"status": "ready", **st}
+                return 200, {"status": "ready", "database": getattr(r.store, "kind", "unknown"), **st}
             self._read_role()
             if path == "/v1/active-pointer":
                 return 200, {"item": r.reader.get_active_pointer()}

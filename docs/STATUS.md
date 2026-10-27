@@ -20,7 +20,7 @@
 ## 한 일
 - design.md, boundary.md, runbook.md, CHANGELOG.md, 변경 요청 CR-0001~0007.
 - 구현: `release_gate/` 전체 (정책, 자동 검사, 저장소 2종, I4·I5, 판정·승인 엔진, 승인 요청 보고서, 수집기, HTTP 면, 진입점). 메모리 구현은 `memory_registry`.
-- 시험: `python -m pytest -q` (적합성은 memory·sqlite 두 구현 모두). 스모크: `scripts/smoke.sh`(이미지 빌드, /healthz, /readyz, 토큰 거부, 비root, 라벨).
+- 시험: `python -m pytest -q` (적합성은 memory·sqlite·postgres 세 구현. postgres는 `TEST_DATABASE_URL`이 있을 때만, 없으면 SKIP이며 PASS로 세지 않는다). 스모크: `scripts/smoke.sh`(이미지 빌드, /healthz, /readyz, 토큰 거부, 비root, 라벨).
 
 ## 남은 일
 - 실제 question-authoring·model-registry·승인자 화면과의 연동 확인(deploy E2E). `boundary_contracts.clients`에는 `get_review_report`/`decide`가 아직 없어 시험은 raw HTTP로 했다.

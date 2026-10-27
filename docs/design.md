@@ -22,7 +22,7 @@
 | GateEngine | `gate.py`, `checks.py`, `policy.py` | 접수를 판정으로 바꾸고 PASS이면 릴리스를 구성 |
 | 자동 검사 플러그인 | `checks.py` | 검사 종류마다 하나(기술 호환, 보고서 확인, 임상 승인 기록) |
 | 승인 요청 보고서 | `review.py` | 후보 평가 보고서와 활성 릴리스의 보고서를 같은 지표끼리 맞댄 `ReviewReport` |
-| 저장소 | `store.py` | SQLite+파일(실제), 메모리 |
+| 저장소 | `store.py`, `postgres_store.py` | PostgreSQL+파일(운영), SQLite+파일(개발·시험 기본), 메모리 |
 | ReleaseReader (I4) | `reader.py` | 읽기. 읽기 전용 저장소로도 동작 |
 | HTTP 면 | `app.py`, `main.py` | `/healthz`, `/readyz`, 토큰 인증, 주기 작업 |
 
@@ -81,6 +81,7 @@ PASS일 때만 만든다. `commit_decision` 한 번에: 판정 기록, 릴리스
 - 포인터는 `pointer_history(pointer_version PK, record)`에 **추가만** 한다. 현재 값은 최대 `pointer_version`. 변경은 `BEGIN IMMEDIATE` 트랜잭션에서 '기대한 현재 버전'과 '새 버전 = 현재 + 1'을 확인하고 넣는다. 맞지 않으면 아무것도 바꾸지 않고 실패하며 호출자가 다시 판단한다(비교 후 교체). 확인: 8개 스레드 경쟁 시험, 건너뛰기 거부 시험. 메모리 구현은 같은 규칙을 락으로 지킨다.
 - 활성화: PASS 릴리스만(아니면 FAILED_PRECONDITION). 활성화 전에 묶음 무결성을 확인한다. 이미 활성인 릴리스를 다시 활성화하면 현재 포인터를 그대로 돌려준다(버전이 늘지 않는다).
 - 롤백: `from`이 현재 활성이고 `to`가 검증을 통과하는 PASS 릴리스이면 APPLIED(포인터 `cause=ROLLBACK`). 영수증은 포인터 변경과 **같은 트랜잭션**에 저장한다. 아니면 REJECTED와 사유를 영수증으로 남긴다(예외가 아님). 같은 `request_id`는 저장된 영수증을 그대로 돌려주고, 같은 ID에 다른 내용이면 CONFLICT. 판단과 변경에 같은 시점의 포인터를 쓰고, 그 사이 바뀌었으면 변경이 거부되어 처음부터 다시 판단한다.
+- PostgreSQL 저장소(`postgres_store.py`): 표준 이유 - 서비스별 데이터베이스·계정을 가진 서버가 백업·접근 제어·동시 접속의 표준 경로다. 같은 `Store` 인터페이스와 같은 테이블(JSON 텍스트 행)을 쓰고 시작 시 `CREATE TABLE IF NOT EXISTS`로 멱등 생성한다. 쓰기는 한 트랜잭션 + 어드바이저리 잠금으로 직렬화한다(SQLite의 BEGIN IMMEDIATE에 해당). 활성 포인터 교체는 현재 버전 확인 + `pointer_version` 기본 키 삽입이고 경쟁에서 지면 False(낙관적). 오류 메시지는 예외 종류와 SQLSTATE만 싣고 접속 문자열·암호는 싣지 않는다. 선택은 `GATE_DATABASE_URL`(`open_registry`). 확인: `tests/test_conformance.py`(`[postgres]`), `tests/test_postgres.py`.
 - 읽기 가용성: I4는 읽기 전용 SQLite 연결(`open_release_reader`)로 서비스 프로세스 없이 읽는다(WAL). 쓰는 경로(`switch_pointer` 등)는 읽기 전용에서 PERMISSION_DENIED. 확인: `test_sqlite_read_only_reader_survives_without_service`.
 - 활성 포인터 변경 권한: HTTP 면의 쓰기 토큰은 **역할에 묶여 있다**(`GATE_WRITE_TOKENS=역할=토큰,...`). 본문의 `requested_by_role`이 토큰의 역할과 다르면 PERMISSION_DENIED이고 생략하면 토큰의 역할을 쓴다. 역할 허용 목록은 `GateConfig`(접수 operator·release-gate-collector·question-authoring·model-lab, 활성화 operator, 롤백 ops-feedback·operator). 프로세스 안에서 쓰는 SDK(메모리 구현)는 인자로 받은 역할을 허용 목록에만 대조한다. 저장소를 쓰는 프로세스는 gate-service(와 같은 코드의 run-once 잡 collect·judge)뿐이다.
 

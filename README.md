@@ -26,11 +26,11 @@ HTTP 경로(boundary.md 기준): 쓰기는 `POST /v1/submissions`, `/v1/approval
 | `release_gate/checks.py`, `policy.py` | 자동 검사 4종(CONTRACT_COMPAT, QUESTION_MODEL_COMPAT, ACCEPTANCE_EVAL 형식, CLINICAL_SAFETY)과 정책 파일 |
 | `release_gate/collector.py` | 후보 수집기(I1·I3를 보고 새 조합을 제출) |
 | `release_gate/review.py`, `views.py` | 승인 요청 보고서(후보 대 활성 릴리스 지표 비교), 제출 상태 보기 |
-| `release_gate/store.py` | 릴리스 레지스트리 저장소: SQLite+파일(실제), 메모리(가짜) |
+| `release_gate/store.py`, `postgres_store.py` | 릴리스 레지스트리 저장소: PostgreSQL+파일(운영, `GATE_DATABASE_URL`), SQLite+파일(개발·시험 기본), 메모리(가짜) |
 | `release_gate/reader.py`, `registry.py` | I4 읽기 구현(읽기 전용 연결 가능), 저장소+I4+I5 묶음 도우미 |
 | `release_gate/app.py`, `main.py` | HTTP 면, 진입점 `serve` / `collect` / `judge` |
 | `release_gate/factories.py`, `schemas.py` | I1·I3 HTTP 클라이언트 팩토리, 쓰기 전 스키마 검증 |
-| `tests/` | 적합성(memory·sqlite), HTTP, 비밀, 수집·정책, 계약 v2 시험. `fakes.py`가 이웃 대역 |
+| `tests/` | 적합성(memory·sqlite·postgres), HTTP, 비밀, 수집·정책, 계약 v2 시험. `fakes.py`가 이웃 대역 |
 | `scripts/` | `build_image.sh`, `stage_context.sh`(이미지 컨텍스트), `smoke.sh`(스모크) |
 | `Dockerfile`, `requirements.txt`, `requirements.lock` | 이미지와 태그 고정 의존 |
 | `docs/` | 아래 6절 |

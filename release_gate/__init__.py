@@ -8,7 +8,12 @@ from .config import GateConfig  # noqa: E402
 from .gate import GateEngine, GateServiceImpl  # noqa: E402
 from .policy import GatePolicy  # noqa: E402
 from .reader import ReleaseReaderImpl  # noqa: E402
-from .registry import Registry, memory_registry, open_release_reader, sqlite_registry  # noqa: E402
+from .registry import Registry, memory_registry, open_registry, open_release_reader, postgres_registry, sqlite_registry  # noqa: E402
 from .schemas import SchemaSet, SurveySchema  # noqa: E402
 from .store import MemoryStore, SqliteStore  # noqa: E402
 from .collector import CandidateCollector  # noqa: E402
+
+try:
+    from .postgres_store import PostgresStore  # noqa: E402,F401
+except ImportError:  # pragma: no cover
+    pass

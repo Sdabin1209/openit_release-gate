@@ -30,6 +30,21 @@ def sqlite_registry(root: str | Path, schemas: SchemaSet, config: GateConfig, cl
     return Registry(s, ReleaseReaderImpl(s), GateServiceImpl(s, schemas, config, clock))
 
 
+def postgres_registry(url: str, root: str | Path, schemas: SchemaSet, config: GateConfig, clock: Clock = utc_now) -> Registry:
+    """운영 구현: 레코드는 PostgreSQL, 번들 파일은 root/releases/(파일 시스템)."""
+    from .postgres_store import PostgresStore
+    s = PostgresStore(url, root)
+    return Registry(s, ReleaseReaderImpl(s), GateServiceImpl(s, schemas, config, clock))
+
+
+def open_registry(root: str | Path, schemas: SchemaSet, config: GateConfig, clock: Clock = utc_now,
+                  database_url: str | None = None) -> Registry:
+    """database_url이 있으면 PostgreSQL, 없으면 root의 SQLite. 서버와 잡이 같은 선택을 쓴다."""
+    if database_url:
+        return postgres_registry(database_url, root, schemas, config, clock)
+    return sqlite_registry(root, schemas, config, clock)
+
+
 def open_release_reader(root: str | Path) -> ReleaseReaderImpl:
     """읽기 전용 I4. 게이트 서비스가 멈춰 있어도 레지스트리 파일만 있으면 읽힌다."""
     return ReleaseReaderImpl(SqliteStore(root, read_only=True))

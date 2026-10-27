@@ -24,7 +24,7 @@ from .collector import CandidateCollector
 from .config import GateConfig
 from .gate import GateEngine
 from .policy import GatePolicy
-from .registry import sqlite_registry
+from .registry import open_registry
 from .schemas import SchemaSet, SurveySchema
 from .store import SqliteStore
 
@@ -155,7 +155,9 @@ def _build(cfg: dict):
     schemas = SchemaSet()
     survey = SurveySchema(_env("GATE_SURVEY_SCHEMA_DIR"))
     config = _gate_config(survey)
-    reg = sqlite_registry(cfg.get("data_dir") or _env("GATE_DATA_DIR", "/data"), schemas, config)
+    # GATE_DATABASE_URL(비밀: GATE_DATABASE_URL_FILE 우선)이 있으면 PostgreSQL, 없으면 GATE_DATA_DIR의 SQLite
+    reg = open_registry(cfg.get("data_dir") or _env("GATE_DATA_DIR", "/data"), schemas, config,
+                        database_url=read_secret("GATE_DATABASE_URL"))
     return schemas, survey, config, reg
 
 

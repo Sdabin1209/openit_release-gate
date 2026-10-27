@@ -67,6 +67,8 @@ def _same(a: dict, b: dict, what: str) -> None:
 class Store:
     """저장소 인터페이스. 구현은 모든 메서드를 원자적으로 처리한다."""
 
+    kind = "memory"   # /readyz에 보이는 DB 종류: memory, sqlite, postgresql (접속 정보는 싣지 않는다)
+
     # 접수
     def put_submission(self, record: dict, subject_key: str) -> tuple[dict, bool]: ...
     def get_submission(self, submission_id: str) -> dict: ...
@@ -305,9 +307,51 @@ CREATE TABLE IF NOT EXISTS receipts(request_id TEXT PRIMARY KEY, request_hash TE
 """
 
 
-class SqliteStore(Store):
+class ReleaseFiles:
+    """번들 파일(<root>/releases/<release_id>/)을 다루는 공통 부분. SQLite·PostgreSQL 구현이 같은 파일 규칙을 쓴다(파일은 DB 대상이 아니다)."""
+    root: Path
+
+    def _stage_release(self, release: ReleaseParts) -> Path:
+        rid = release.manifest["release_id"]
+        final = self.root / "releases" / rid
+        if final.exists():
+            raise BoundaryError("CONFLICT", f"release_id 충돌: {rid}")
+        tmp = self.root / "releases" / f".tmp-{rid}"
+        shutil.rmtree(tmp, ignore_errors=True)
+        (tmp / "adapters").mkdir(parents=True)
+        (tmp / "eval_reports.json").write_text(json.dumps(dict(release.eval_reports or {}), ensure_ascii=False), encoding="utf-8")
+        (tmp / "question_bank.json").write_text(json.dumps(release.question_bank, ensure_ascii=False), encoding="utf-8")
+        for role, src in release.adapters.items():
+            shutil.copytree(src, tmp / "adapters" / role)
+        return tmp
+
+    def get_release_reports(self, release_id):
+        try:
+            return json.loads((self.root / "releases" / release_id / "eval_reports.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}  # 기준 보고서가 없는 릴리스(비교 기준 없음)
+
+    def read_release_parts(self, release_id, dest):
+        self.get_release(release_id)
+        base = self.root / "releases" / release_id
+        try:
+            bank = json.loads((base / "question_bank.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            raise BoundaryError("INTEGRITY_ERROR", f"릴리스 묶음의 문항 세트를 읽을 수 없다: {release_id}") from e
+        out = {}
+        for role in ROLES:
+            src = base / "adapters" / role
+            if src.is_dir():
+                shutil.copytree(src, Path(dest) / role, dirs_exist_ok=True)
+                out[role] = Path(dest) / role
+        return bank, out
+
+
+class SqliteStore(ReleaseFiles, Store):
     """root/registry.sqlite3 와 root/releases/<release_id>/ (question_bank.json, adapters/<ROLE>/...).
     read_only=True이면 쓰기 없이 열린다. 게이트 서비스가 멈춰도 읽기 SDK는 이 모드로 계속 읽는다."""
+
+    kind = "sqlite"
 
     def __init__(self, root: str | Path, *, read_only: bool = False):
         self.root = Path(root)
@@ -413,29 +457,9 @@ class SqliteStore(Store):
             return new
 
     # 판정과 릴리스
-    def _stage_release(self, release: ReleaseParts) -> Path:
-        rid = release.manifest["release_id"]
-        final = self.root / "releases" / rid
-        if final.exists():
-            raise BoundaryError("CONFLICT", f"release_id 충돌: {rid}")
-        tmp = self.root / "releases" / f".tmp-{rid}"
-        shutil.rmtree(tmp, ignore_errors=True)
-        (tmp / "adapters").mkdir(parents=True)
-        (tmp / "eval_reports.json").write_text(json.dumps(dict(release.eval_reports or {}), ensure_ascii=False), encoding="utf-8")
-        (tmp / "question_bank.json").write_text(json.dumps(release.question_bank, ensure_ascii=False), encoding="utf-8")
-        for role, src in release.adapters.items():
-            shutil.copytree(src, tmp / "adapters" / role)
-        return tmp
-
     def get_approval(self, submission_id):
         rows = self._q("SELECT record FROM approvals WHERE submission_id=?", (submission_id,))
         return json.loads(rows[0][0]) if rows else None
-
-    def get_release_reports(self, release_id):
-        try:
-            return json.loads((self.root / "releases" / release_id / "eval_reports.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return {}  # 기준 보고서가 없는 릴리스(비교 기준 없음)
 
     def commit_decision(self, decision, work, release=None, approval=None):
         self._w()
@@ -515,21 +539,6 @@ class SqliteStore(Store):
                        + " ORDER BY seq DESC LIMIT ?", ((before,) if before is not None else ()) + (limit + 1,))
         nxt = str(rows[limit - 1][0]) if len(rows) > limit else None
         return [json.loads(r[1]) for r in rows[:limit]], nxt
-
-    def read_release_parts(self, release_id, dest):
-        self.get_release(release_id)
-        base = self.root / "releases" / release_id
-        try:
-            bank = json.loads((base / "question_bank.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError) as e:
-            raise BoundaryError("INTEGRITY_ERROR", f"릴리스 묶음의 문항 세트를 읽을 수 없다: {release_id}") from e
-        out = {}
-        for role in ROLES:
-            src = base / "adapters" / role
-            if src.is_dir():
-                shutil.copytree(src, Path(dest) / role, dirs_exist_ok=True)
-                out[role] = Path(dest) / role
-        return bank, out
 
     # 포인터
     def get_pointer(self):

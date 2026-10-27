@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from release_gate import (GateConfig, GateEngine, GatePolicy, SchemaSet, SurveySchema,
-                          memory_registry, sqlite_registry)
+                          memory_registry, postgres_registry, sqlite_registry)
 from fakes import FakeModels, FakeQuestions
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,12 +40,40 @@ def config(survey):
                       turn_engine_version="0.1.0", model_runtime_version="0.1.0")
 
 
-@pytest.fixture(params=["memory", "sqlite"])
+PG_SKIP = "TEST_DATABASE_URL이 없어 PostgreSQL 시험을 건너뜀(PASS로 세지 않는다)"
+
+
+@pytest.fixture
+def pg_url():
+    """시험마다 새 스키마(search_path)를 만들어 격리한다. 시험이 끝나면 지운다. 접속 문자열은 출력하지 않는다."""
+    base = os.environ.get("TEST_DATABASE_URL")
+    if not base:
+        pytest.skip(PG_SKIP)
+    import psycopg
+    from psycopg.conninfo import make_conninfo
+    name = "t_" + uuid.uuid4().hex[:12]
+    with psycopg.connect(base, autocommit=True) as admin:
+        admin.execute(f"CREATE SCHEMA {name}")
+        yield make_conninfo(base, options=f"-csearch_path={name}")
+        admin.execute(f"DROP SCHEMA {name} CASCADE")
+
+
+@pytest.fixture(params=["memory", "sqlite", "postgres"])
 def reg(request, schemas, config, tmp_path):
     clock = Clock()
     if request.param == "memory":
         return memory_registry(schemas, config, clock)
+    if request.param == "postgres":
+        url = request.getfixturevalue("pg_url")
+        return postgres_registry(url, tmp_path / "registry", schemas, config, clock)
     return sqlite_registry(tmp_path / "registry", schemas, config, clock)
+
+
+def tamper_decisions(store, record: dict) -> None:
+    """저장된 판정 기록을 직접 바꿔(저장소 우회) 무결성 시험을 만든다. SQLite·PostgreSQL 용."""
+    import json
+    sql = "UPDATE decisions SET record=%s" if store.kind == "postgresql" else "UPDATE decisions SET record=?"
+    store._c.execute(sql, (json.dumps(record),))
 
 
 class World:
