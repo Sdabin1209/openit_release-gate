@@ -1,5 +1,9 @@
 # 변경 이력
 
+## (미배포) model-runtime v0.6.3 따라가기
+
+- `MODEL_RUNTIME_TAG` 기본값 v0.6.2 -> v0.6.3(`scripts/build_image.sh`, runbook). 코드 변경 없음. 기준 0.6.3에서 0.6.2 이하 패키지는 반려된다(`tests/test_new_tags.py`).
+
 ## (미배포) model-runtime v0.6.2 따라가기 (D72, D80)
 
 - `MODEL_RUNTIME_TAG` 기본값 v0.6.1 -> v0.6.2(`scripts/build_image.sh`, runbook). 코드 변경 없음. CONTRACT_COMPAT는 모든 이미지가 같은 model-runtime 버전이어야 하는 완전 일치라, 기준 0.6.2에서 0.6.1과 0.6.0 패키지도 반려된다(`tests/test_new_tags.py`).
