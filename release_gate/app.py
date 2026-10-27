@@ -41,6 +41,29 @@ class GateHTTPServer(ThreadingHTTPServer):
         super().__init__(addr, _Handler)
         self.engine = engine  # 승인 결정(decide)에 필요하다. I1·I3가 연결되지 않으면 None
         self.registry, self.read_tokens, self.write_tokens, self.status = registry, dict(read_tokens), dict(write_tokens), status
+        self._last_status: dict = {}
+
+    def readyz_status(self) -> dict:
+        """/readyz의 보조 수치(승인 대기 건수 등). 주 연결로 읽으므로 주 연결이 막혀 있으면 기다리지 않고 마지막 값을 낸다(`db_stats_stale`).
+        확인(ping)은 이미 통과했으므로 이 때문에 503이 되지 않는다. 오류(BoundaryError)는 그대로 올린다."""
+        box: list = []
+
+        def run():
+            try:
+                box.append((True, self.status()))
+            except BaseException as e:      # noqa: BLE001 - 호출 쪽에서 다시 올린다
+                box.append((False, e))
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        t.join(getattr(self.registry.store, "probe_timeout", 2.0))
+        if not box:
+            return {**self._last_status, "db_stats_stale": True}
+        ok, v = box[0]
+        if not ok:
+            raise v
+        self._last_status = v
+        return v
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -154,8 +177,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return 200, {"status": "ok"}
             if path == "/readyz":
                 try:
-                    r.store.ping()
-                    st = self.server.status()
+                    r.store.ping()         # PostgreSQL이면 주 연결·락을 쓰지 않는 별도 짧은 확인(상한 probe_timeout)
+                    st = self.server.readyz_status()
                 except BoundaryError as e:
                     return 503, {"status": "not ready", "reason": e.message}
                 return 200, {"status": "ready", "database": getattr(r.store, "kind", "unknown"), **st}

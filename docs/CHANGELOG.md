@@ -1,5 +1,14 @@
 # 변경 이력
 
+## (미배포) PostgreSQL 대기 상한과 /readyz 상한 (FAULT_MATRIX P0-3 / C4)
+
+- 이전: 주 연결에 서버 쪽 `statement_timeout`이 없었고 `connect_timeout`은 고정 10초였다. 얼어붙은 서버(`docker pause`)에서는 기존 연결의 문장이 무한 대기했다(측정: 일시 정지한 서버에 대한 `ping()`이 120초가 지나도 안 돌아옴). `/readyz`는 주 연결과 그 락으로 확인해 요청 처리와 같이 막혔다.
+- 이후: 연결 `connect_timeout` 기본 3초(`GATE_DB_CONNECT_TIMEOUT_SECONDS`), 문장 `statement_timeout` 기본 3초(`GATE_DB_STATEMENT_TIMEOUT_SECONDS`). 서버가 얼어 서버 쪽 값이 소용없으면 문장 시작 +상한+1초에 클라이언트가 소켓을 닫아 끝낸다(BEGIN/COMMIT 포함, 문장 단위). 오류는 `UNAVAILABLE`(재시도 가능)이고 다음 호출이 연결을 다시 연다.
+- `/readyz`: PostgreSQL이면 주 연결·락을 쓰지 않는 별도 짧은 연결로 확인하고 `GATE_READYZ_DB_TIMEOUT_SECONDS`(기본 2초) 안에 끝낸다. 보조 수치(승인 대기 건수)를 주 연결로 읽다 막히면 기다리지 않고 마지막 값에 `db_stats_stale: true`로 답한다.
+- 수집·판정 잡(`collect`, `judge`): DB가 닿지 않거나 응답이 없으면 상한 안에 `{"status":"failed"}` 한 줄을 내고 종료 코드 75(EX_TEMPFAIL)로 끝난다. 이전에는 시작 때 예외 추적과 종료 코드 1이었고, 얼어붙은 서버에서는 끝나지 않을 수 있었다.
+- 바뀐 점: 접속 대기 10초 -> 3초. 시작 때 스키마 생성도 같은 상한을 받는다(다른 인스턴스의 스키마 잠금을 3초 넘게 기다리면 UNAVAILABLE로 끝나고 다시 시작하면 된다). SQLite 경로는 불변.
+- 시험: `tests/test_pg_timeouts.py` 12개(서버 없이 7, PostgreSQL 필요 5 중 pause 3).
+
 ## (미배포) model-runtime v0.7.2 따라가기 (D80)
 
 - `MODEL_RUNTIME_TAG` 기본값 v0.7.1 -> v0.7.2(`scripts/build_image.sh`, runbook). v0.7.2는 가짜 A의 정정(CORRECT) 출력을 더한 하위 호환 변경이다(계약 boundary v2.0.2, turn-engine v0.4.0 그대로). 기준 0.7.2에서 model-runtime 0.7.1 패키지는 반려된다(`tests/test_new_tags.py`에 0.7.1 케이스 추가). 잠금 파일에는 model-runtime이 없어 바뀌지 않는다. 게이트 코드는 변경 없음.

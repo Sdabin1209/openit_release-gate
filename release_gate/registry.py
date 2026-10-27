@@ -30,18 +30,20 @@ def sqlite_registry(root: str | Path, schemas: SchemaSet, config: GateConfig, cl
     return Registry(s, ReleaseReaderImpl(s), GateServiceImpl(s, schemas, config, clock))
 
 
-def postgres_registry(url: str, root: str | Path, schemas: SchemaSet, config: GateConfig, clock: Clock = utc_now) -> Registry:
-    """운영 구현: 레코드는 PostgreSQL, 번들 파일은 root/releases/(파일 시스템)."""
+def postgres_registry(url: str, root: str | Path, schemas: SchemaSet, config: GateConfig, clock: Clock = utc_now,
+                      **timeouts: float) -> Registry:
+    """운영 구현: 레코드는 PostgreSQL, 번들 파일은 root/releases/(파일 시스템).
+    timeouts: connect_timeout, statement_timeout, probe_timeout(초). 생략하면 postgres_store의 기본값."""
     from .postgres_store import PostgresStore
-    s = PostgresStore(url, root)
+    s = PostgresStore(url, root, **timeouts)
     return Registry(s, ReleaseReaderImpl(s), GateServiceImpl(s, schemas, config, clock))
 
 
 def open_registry(root: str | Path, schemas: SchemaSet, config: GateConfig, clock: Clock = utc_now,
-                  database_url: str | None = None) -> Registry:
-    """database_url이 있으면 PostgreSQL, 없으면 root의 SQLite. 서버와 잡이 같은 선택을 쓴다."""
+                  database_url: str | None = None, **timeouts: float) -> Registry:
+    """database_url이 있으면 PostgreSQL, 없으면 root의 SQLite. 서버와 잡이 같은 선택을 쓴다. timeouts는 PostgreSQL에만 쓴다."""
     if database_url:
-        return postgres_registry(database_url, root, schemas, config, clock)
+        return postgres_registry(database_url, root, schemas, config, clock, **timeouts)
     return sqlite_registry(root, schemas, config, clock)
 
 

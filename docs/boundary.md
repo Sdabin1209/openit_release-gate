@@ -2,7 +2,7 @@
 
 ## 소유하는 저장소
 
-릴리스 레지스트리(레코드: `GATE_DATABASE_URL`이 있으면 이 영역 전용 PostgreSQL 데이터베이스·계정, 없으면 `GATE_DATA_DIR`의 SQLite `registry.sqlite3`. 번들 파일: `GATE_DATA_DIR/releases/` 디렉터리). PostgreSQL이 멈추면 쓰기와 읽기가 UNAVAILABLE(재시도 가능)이고 `/readyz`는 503이다. 쓰는 프로세스는 이 영역의 gate-service(접수, 자동 검사, 승인 결정, 판정, 릴리스, 포인터)와 같은 코드의 run-once 잡(`collect`, `judge`)이다. 다른 영역에는 읽기만 준다(I4, 읽기 전용 연결 또는 읽기 토큰).
+릴리스 레지스트리(레코드: `GATE_DATABASE_URL`이 있으면 이 영역 전용 PostgreSQL 데이터베이스·계정, 없으면 `GATE_DATA_DIR`의 SQLite `registry.sqlite3`. 번들 파일: `GATE_DATA_DIR/releases/` 디렉터리). PostgreSQL이 멈추면 쓰기와 읽기가 UNAVAILABLE(재시도 가능)이고 `/readyz`는 503이다(대기 상한은 아래 "DB 대기 상한"). 쓰는 프로세스는 이 영역의 gate-service(접수, 자동 검사, 승인 결정, 판정, 릴리스, 포인터)와 같은 코드의 run-once 잡(`collect`, `judge`)이다. 다른 영역에는 읽기만 준다(I4, 읽기 전용 연결 또는 읽기 토큰).
 
 ## 제공하는 SDK와 서비스
 
@@ -37,7 +37,20 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 | gate-service 중단 | 활성 포인터와 릴리스 읽기는 유지된다(읽기 전용 연결). 새 판정, 활성화, 롤백이 멈춘다. survey-service는 마지막 포인터와 이미 받은 묶음을 계속 쓴다 |
 | 승인자가 결정하지 않음 | 제출이 `AWAITING_APPROVAL`에서 기다린다. 이미 있는 릴리스와 포인터는 그대로다 |
 | I1 또는 I3 중단 | 새 판정이 다음 주기로 미뤄진다(접수는 유지). 이미 만든 릴리스는 묶음에 내용이 있어 영향 없다 |
+| PostgreSQL 중지·연결 불가·응답 없음 | 문장·접속은 상한(기본 3초, 얼어붙은 서버는 +1초) 안에 UNAVAILABLE로 끝나 승인·활성화 요청이 무한 대기하지 않는다. `/readyz`는 기본 2초 안에 503(접속 정보 없음), `/healthz`는 200. DB가 돌아오면 재시작 없이 다음 호출·`/readyz`가 정상이 된다. 수집·판정 잡은 상한 안에 종료 코드 75로 끝난다. 읽기 전용 SQLite 연결은 이 경로와 무관 |
 | 레지스트리 파일 손상 | `load_bundle`/활성화가 INTEGRITY_ERROR. 롤백은 손상된 대상으로 되돌리기를 REJECTED로 거부한다 |
+
+## DB 대기 상한 (PostgreSQL)
+
+| 설정 | 기본 | 뜻 |
+| --- | --- | --- |
+| `GATE_DB_CONNECT_TIMEOUT_SECONDS` | 3 | 주 연결 접속 상한(libpq는 올림한 정수 초). 이전 고정값은 10 |
+| `GATE_DB_STATEMENT_TIMEOUT_SECONDS` | 3 | 문장 하나의 상한. 서버 `statement_timeout`(잠금 대기 포함)이고, 서버가 얼어 응답이 없으면 +1초에 클라이언트가 소켓을 닫는다 |
+| `GATE_READYZ_DB_TIMEOUT_SECONDS` | 2 | `/readyz`의 DB 확인 상한. 별도 연결을 쓴다 |
+
+근거(설계 판단, 측정 아님): 정상일 때 문장은 수 ms이고 쓰기 하나는 몇 문장이라 3초면 느린 디스크·잠깐의 잠금 대기를 견디면서 요청이 수 초 안에 끝난다. 2초는 로드 밸런서 검사 제한(보통 수 초) 안이고 libpq의 `connect_timeout`은 2초 미만이 의미 없다. 상한은 문장 단위다(요청 하나가 여러 문장이면 그 합까지 걸릴 수 있다). 재접속 재시도는 하지 않고(호출자가 다시 요청) 번들 파일 복사는 상한 밖이다.
+
+확인한 것(이 PC, 로컬 PostgreSQL 컨테이너 `docker pause`): `tests/test_pg_timeouts.py`. `/readyz` 503이 상한 안(3초 미만)에 오고 복구 뒤 200, 요청 경로(읽기·트랜잭션)가 상한 안에 UNAVAILABLE, 수집 잡이 종료 코드 75, 블랙홀 서버(접속만 받음)로 시작·잡 종료. 확인하지 못한 것: 실제 compose 환경·gateway를 거친 경로, 큰 부하·느린 디스크에서 3초가 맞는지. 이 PC 컨테이너 조합에서의 재측정(E2E 5p의 중지 뒤 503 시간)은 deploy E2E 5p에서 헤드가 한다.
 
 ## 출고 승인 계약 (D53)
 

@@ -17,6 +17,7 @@ import os
 import sys
 
 from boundary_contracts import read_secret
+from boundary_contracts.errors import BoundaryError
 
 from .app import GateHTTPServer, Loop
 from .checks import CheckRegistry
@@ -24,6 +25,7 @@ from .collector import CandidateCollector
 from .config import GateConfig
 from .gate import GateEngine
 from .policy import GatePolicy
+from .postgres_store import DEFAULT_CONNECT_TIMEOUT, DEFAULT_PROBE_TIMEOUT, DEFAULT_STATEMENT_TIMEOUT
 from .registry import open_registry
 from .schemas import SchemaSet, SurveySchema
 from .store import SqliteStore
@@ -162,13 +164,30 @@ def _logging() -> None:
     logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 
+def _seconds(name: str, default: float) -> float:
+    """초 단위 설정(환경 변수). 양수가 아니면 시작을 거부한다."""
+    raw = os.environ.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        v = float(raw)
+    except ValueError:
+        raise SystemExit(f"{name}은(는) 초 단위 숫자여야 한다") from None
+    if not v > 0:
+        raise SystemExit(f"{name}은(는) 0보다 커야 한다")
+    return v
+
+
 def _build(cfg: dict):
     schemas = SchemaSet()
     survey = SurveySchema(_env("GATE_SURVEY_SCHEMA_DIR"))
     config = _gate_config(survey)
     # GATE_DATABASE_URL(비밀: GATE_DATABASE_URL_FILE 우선)이 있으면 PostgreSQL, 없으면 GATE_DATA_DIR의 SQLite
     reg = open_registry(cfg.get("data_dir") or _env("GATE_DATA_DIR", "/data"), schemas, config,
-                        database_url=read_secret("GATE_DATABASE_URL"))
+                        database_url=read_secret("GATE_DATABASE_URL"),
+                        connect_timeout=_seconds("GATE_DB_CONNECT_TIMEOUT_SECONDS", DEFAULT_CONNECT_TIMEOUT),
+                        statement_timeout=_seconds("GATE_DB_STATEMENT_TIMEOUT_SECONDS", DEFAULT_STATEMENT_TIMEOUT),
+                        probe_timeout=_seconds("GATE_READYZ_DB_TIMEOUT_SECONDS", DEFAULT_PROBE_TIMEOUT))
     return schemas, survey, config, reg
 
 
@@ -215,7 +234,6 @@ def collect(cfg: dict) -> int:
     try:
         made = c.run_once(raise_unavailable=True)
     except Exception as e:
-        from boundary_contracts.errors import BoundaryError
         if isinstance(e, BoundaryError) and e.retryable:
             print(json.dumps({"job": "collect", "status": "deferred", "reason": e.message}, ensure_ascii=False))
             return EX_TEMPFAIL
@@ -248,5 +266,13 @@ def main(argv: list[str] | None = None) -> int:
         serve()
     else:
         _logging()
-        return {"collect": collect, "judge": judge}[a.cmd](load_config(a.config))
+        cfg = load_config(a.config)
+        try:
+            return {"collect": collect, "judge": judge}[a.cmd](cfg)
+        except BoundaryError as e:
+            if not e.retryable:
+                raise
+            # DB가 닿지 않거나 응답이 없을 때: 상한 안에 오류가 올라오므로 무한 대기하지 않고 비정상 종료 코드로 끝난다(재시도 가능)
+            print(json.dumps({"job": a.cmd, "status": "failed", "code": e.code, "reason": e.message}, ensure_ascii=False))
+            return EX_TEMPFAIL
     return 0
