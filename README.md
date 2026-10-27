@@ -100,3 +100,20 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | `docs/STATUS.md` | 한 일, 남은 일, 확인하지 못한 것 |
 | `docs/CHANGELOG.md` | 변경 이력 |
 | `docs/change-requests/` | 헤드에 낸 변경 요청 CR-0001~0007(모두 결정됨, 기록용) |
+
+## 6-1. 구조 결정 기록 (ADR, 왜)
+
+구조 선택의 이유는 `docs/adr/`에 둔다(상태, 맥락, 결정, 왜, 대안, 결과, 되돌리는 조건). 근거를 찾지 못한 항목은 '근거 기록 없음', 측정하지 않은 값은 '측정 안 함'으로 적었다.
+
+| ADR | 주제 |
+| --- | --- |
+| [0001](docs/adr/0001-storage.md) | 개발·시험 SQLite, 운영 PostgreSQL |
+| [0002](docs/adr/0002-state-model.md) | 접수-검사-승인 대기-결정-릴리스 상태 모델 |
+| [0003](docs/adr/0003-bundle-files-and-hash.md) | 번들·어댑터는 파일, DB는 행, 매번 전체 해시 검증 |
+| [0004](docs/adr/0004-pointer-cas.md) | 활성 포인터 비교 후 교체와 영수증 한 트랜잭션 |
+| [0005](docs/adr/0005-tokens-and-actor.md) | 토큰·역할과 X-Openit-User 신뢰 경계 |
+| [0006](docs/adr/0006-polling-loop.md) | 판정 Loop 60초 폴링 |
+| [0007](docs/adr/0007-human-approval.md) | 지표 비교와 사람 승인이 마지막 |
+| [0008](docs/adr/0008-timeouts.md) | timeout 값과 근거 |
+| [0009](docs/adr/0009-retention.md) | 보존·정리 |
+| [0010](docs/adr/0010-rollback.md) | 롤백 설계 |
