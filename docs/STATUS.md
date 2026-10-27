@@ -12,7 +12,7 @@
 # (이전) STATUS 2026-10-15, D53 사람 승인 반영 후
 
 - I4 읽기 면(목록, 번들 tar, 판정 조회), 역할별 읽기 토큰, run-once collect·judge, 라벨 통일, 설치 버전 읽기 완료. 확인: pytest, scripts/smoke.sh.
-- v1.2.0 클라이언트로 I1·I3 소비 경로와 I4·I5 서버 적합성을 시험했다(참조 서버와 같은 방식의 서버를 tests/에 둠). 이미지는 turn-engine v0.2.0, model-runtime v0.4.0 wheel을 담는다.
+- v1.2.0 클라이언트로 I1·I3 소비 경로와 I4·I5 서버 적합성을 시험했다(참조 서버와 같은 방식의 서버를 tests/에 둠). 이미지는 당시 turn-engine v0.2.0, model-runtime v0.4.0 wheel을 담았다(과거 기록. 현재 기본 태그는 v0.4.0/v0.7.0, 맨 위 항목과 `scripts/build_image.sh` 참조).
 - 확인하지 못한 것: 실제 question-authoring·model-registry 서비스와의 연동, `boundary-contracts/conformance/` 모음 자체의 실행(이 리포지토리에서는 읽기 전용 참고만 했다).
 
 
