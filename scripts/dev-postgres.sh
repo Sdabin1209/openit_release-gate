@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 시험용 PostgreSQL: scripts/dev-postgres.sh up|url|down. ../deploy/scripts/dev-postgres.sh 가 있으면 그것을 쓴다.
+# 시험용 PostgreSQL: scripts/dev-postgres.sh up|down. ../deploy/scripts/dev-postgres.sh 가 있으면 그것을 `gate` 데이터베이스로 쓴다.
 # up은 접속 문자열을 표준 출력에 한 줄로 낸다(TEST_DATABASE_URL=$(scripts/dev-postgres.sh up)). 로컬 시험 전용 값이다.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-if [ -x "$here/../deploy/scripts/dev-postgres.sh" ]; then exec "$here/../deploy/scripts/dev-postgres.sh" "$@"; fi
+if [ -x "$here/../deploy/scripts/dev-postgres.sh" ]; then exec "$here/../deploy/scripts/dev-postgres.sh" "${1:-}" gate; fi
 DOCKER="${DOCKER:-docker}"
 proj="release-gate-devpg"
 dc() { "$DOCKER" compose -p "$proj" -f "$here/compose.dev.yaml" "$@"; }
