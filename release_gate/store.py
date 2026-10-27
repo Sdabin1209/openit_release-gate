@@ -422,21 +422,38 @@ class ReleaseFiles:
         for p in base.iterdir():
             if p.name.startswith((".tmp-", ".bundle-")):
                 try:
-                    if now - p.stat().st_mtime > max_age_seconds:
+                    # 디렉터리 자신의 mtime은 하위 파일을 쓰는 동안 바뀌지 않는다(진행 중인 큰 복사를 지울 수 있다).
+                    # 트리 전체에서 가장 최근 mtime을 기준으로 삼아, 파일이 계속 쓰이는 동안은 새 것으로 본다.
+                    newest = max([p.stat().st_mtime] + [q.stat().st_mtime for q in p.rglob("*")])
+                    if now - newest > max_age_seconds:
                         shutil.rmtree(p, ignore_errors=True)
                         n += 1
                 except OSError:
                     pass
         return n
 
-    def prune_release_files(self, release_id: str) -> int:
-        """릴리스의 어댑터 사본을 지우고 PRUNED 표시를 남긴다(매니페스트·판정·승인 기록은 DB에 그대로). 지운 바이트 수."""
+    def prune_unprotected(self, release_id: str, keep: int) -> Optional[int]:
+        """보호 대상이 아니면 어댑터 사본을 정리하고 지운 바이트 수를, 보호 대상이면 None을 돌려준다.
+        **보호 대상 확인과 PRUNED 표시를 포인터 전환과 같은 락·트랜잭션 안에서 한다**: 대상을 고른 뒤 운영자가 그 릴리스를 활성화해도
+        여기서 다시 확인하므로 활성 릴리스가 정리되지 않고, 표시 뒤에는 `switch_pointer`가 PRUNED 릴리스로의 전환을 거부한다.
+        표시를 먼저 하고 파일 삭제는 락 밖에서 한다(큰 삭제가 읽기를 막지 않게)."""
+        from .retention import protected_ids
         base = self.root / "releases" / release_id
+        with self._pointer_guard():
+            if release_id in protected_ids(self, keep):
+                return None
+            if self.is_pruned(release_id):
+                return 0
+            (base / "PRUNED").write_text("adapters pruned\n", encoding="utf-8")
         ad = base / "adapters"
         size = sum(f.stat().st_size for f in ad.rglob("*") if f.is_file()) if ad.is_dir() else 0
         shutil.rmtree(ad, ignore_errors=True)
-        (base / "PRUNED").write_text("adapters pruned\n", encoding="utf-8")
         return size
+
+    def _refuse_pruned_target(self, new_pointer: dict) -> None:
+        rid = new_pointer.get("release_id")
+        if rid and self.is_pruned(rid):
+            raise BoundaryError("FAILED_PRECONDITION", f"어댑터 사본이 정리된 릴리스로는 전환할 수 없다: {rid}", {"reason": "PRUNED"})
 
     def is_pruned(self, release_id: str) -> bool:
         return (self.root / "releases" / release_id / "PRUNED").exists()
@@ -727,9 +744,13 @@ class SqliteStore(ReleaseFiles, Store):
     def pointer_history(self):
         return [json.loads(r[0]) for r in self._q("SELECT record FROM pointer_history ORDER BY pointer_version")]
 
+    def _pointer_guard(self):
+        return self._Txn(self)
+
     def switch_pointer(self, expected_version, new_pointer, receipt=None):
         self._w()
         with self._Txn(self) as c:
+            self._refuse_pruned_target(new_pointer)       # 같은 트랜잭션에서 확인: 정리와 전환이 엇갈리지 않는다
             row = c.execute("SELECT MAX(pointer_version) FROM pointer_history").fetchone()
             cur = row[0] or 0
             if cur != expected_version or new_pointer["pointer_version"] != cur + 1:

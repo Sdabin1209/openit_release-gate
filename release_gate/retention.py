@@ -47,21 +47,29 @@ def _all_releases(store: Store) -> list[dict]:
 
 
 def protected_ids(store: Store, keep: int) -> set:
-    rels = _all_releases(store)
-    prot = {r["release_id"] for r in rels[:max(keep, 0)]}
+    """정리하지 않는 릴리스. keep=0이어도 아래 셋은 항상 보호한다(0은 '최근 N개 보호 없음'일 뿐 활성까지 지우라는 뜻이 아니다):
+    ① 활성 ② 직전에 활성이던(롤백 대상) ③ 승인됐지만 아직 활성화되지 않은 최신 릴리스(마지막 활성보다 늦게 만든 것, 활성이 한 번도 없으면 전부)."""
+    rels = _all_releases(store)                              # 최신부터
+    ids = [r["release_id"] for r in rels]
+    prot = set(ids[:max(keep, 0)])
     hist = store.pointer_history()
-    if hist:
-        prot.add(hist[-1]["release_id"])                     # 활성
-        for h in reversed(hist[:-1]):                        # 직전에 활성이던(다른) 릴리스 = 롤백 대상
-            if h["release_id"] != hist[-1]["release_id"]:
-                prot.add(h["release_id"])
-                break
+    if not hist:
+        return set(ids)                                      # 아직 활성화한 적이 없으면 전부 활성화 전 후보다
+    active = hist[-1]["release_id"]
+    prot.add(active)
+    for h in reversed(hist[:-1]):
+        if h["release_id"] != active:
+            prot.add(h["release_id"])
+            break
+    ever = {h["release_id"] for h in hist}
+    if active in ids:
+        prot.update(r for r in ids[:ids.index(active)] if r not in ever)      # 활성보다 새 것 중 활성화된 적 없는 것
     return prot
 
 
 def plan_bundles(store: Store, keep: int) -> list[str]:
     """어댑터 사본을 정리할 릴리스 ID(이미 정리된 것은 제외). 파일 저장소가 아니면 비어 있다."""
-    if not hasattr(store, "prune_release_files"):
+    if not hasattr(store, "prune_unprotected"):
         return []
     prot = protected_ids(store, keep)
     return [r["release_id"] for r in _all_releases(store) if r["release_id"] not in prot and not store.is_pruned(r["release_id"])]
@@ -96,7 +104,11 @@ def prune(store: Store, policy: RetentionPolicy, *, now: datetime, apply: bool) 
     attempts_cut = ts(now - timedelta(days=policy.attempts_days))
     out = {"applied": apply, "bundle_release_ids": bundles, "submission_ids": subs, "freed_bytes": None, "attempts_purged": None}
     if apply:
-        out["freed_bytes"] = sum(store.prune_release_files(rid) for rid in bundles)
+        # 대상은 위 계획이 아니라 **삭제 직전에 다시** 확인해 정한다(계획 뒤 활성화된 릴리스는 건너뛴다). 원자성은 store.prune_unprotected
+        done = [(rid, store.prune_unprotected(rid, policy.keep_releases)) for rid in bundles]
+        out["bundle_release_ids"] = [rid for rid, n in done if n is not None]
+        out["skipped_protected"] = [rid for rid, n in done if n is None]
+        out["freed_bytes"] = sum(n for _, n in done if n)
         for sid in subs:
             store.delete_submission(sid)
         out["attempts_purged"] = store.purge_attempts(attempts_cut)

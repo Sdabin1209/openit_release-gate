@@ -190,6 +190,8 @@ class _Handler(BaseHTTPRequestHandler):
                 raise ValueError("JSON 객체가 아니다")
             self._parsed = v
             return v
+        except RecursionError as e:   # 깊게 중첩된 JSON: 500이 아니라 잘못된 본문(400)
+            raise BoundaryError("INVALID_RECORD", "본문의 JSON이 너무 깊게 중첩되어 있다") from e
         except OSError as e:          # 소켓 시간 초과·끊김: 본문을 제때 받지 못했다
             raise BoundaryError("INVALID_RECORD", f"본문을 받지 못했다: {type(e).__name__}") from e
         except ValueError as e:

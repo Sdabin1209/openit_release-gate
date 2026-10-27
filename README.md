@@ -76,7 +76,7 @@ python -m release_gate prune [--dry-run]                # 보존 정책대로 �
 
 DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문장 기본 3초, `/readyz` DB 확인 기본 2초(별도 연결), 수집·판정 잡은 DB 무응답 시 종료 코드 75. 이 PC의 로컬 PostgreSQL 컨테이너(`docker pause`)로 확인했고(`tests/test_pg_timeouts.py`), pytest는 PostgreSQL 없이 270 통과 150 건너뜀, PostgreSQL 포함 403 통과 17 건너뜀, 0 실패(이웃·파일 장애 시험을 더한 뒤의 값은 아래). 상세와 근거는 `docs/boundary.md` "DB 대기 상한". 이 PC 컨테이너 조합에서의 재측정은 deploy E2E 5p에서 헤드가 한다.
 
-이웃(I1·I3)·번들 파일 장애(FAULT_MATRIX C1·C2·C3·C5·C7·C8): 가짜 상류 서버(멈춤·느림·5xx·깨진 본문·401/403)와 파일 쓰기 실패 시험을 더했다(`tests/test_upstream_faults.py`). 현재 pytest는 PostgreSQL 없이 346 통과 216 건너뜀, PostgreSQL 포함 526 통과 36 건너뜀, 0 실패(전수 점검 수정 시험 포함). 동작과 한계는 `docs/boundary.md` 장애 영향.
+이웃(I1·I3)·번들 파일 장애(FAULT_MATRIX C1·C2·C3·C5·C7·C8): 가짜 상류 서버(멈춤·느림·5xx·깨진 본문·401/403)와 파일 쓰기 실패 시험을 더했다(`tests/test_upstream_faults.py`). 현재 pytest는 PostgreSQL 없이 356 통과 230 건너뜀, PostgreSQL 포함 544 통과 42 건너뜀, 0 실패(전수 점검 수정 시험 포함). 동작과 한계는 `docs/boundary.md` 장애 영향.
 
 확인하지 못한 것(STATUS):
 - 실제 question-authoring·model-registry·승인자 화면과의 연동(deploy E2E 몫). 시험은 대역과 같은 방식의 HTTP 서버로 했다.

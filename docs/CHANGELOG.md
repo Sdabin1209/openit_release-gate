@@ -1,5 +1,10 @@
 # 변경 이력
 
+## (미배포) 정리와 활성화 경쟁 수정 (재점검 M1)
+
+- `prune`이 계획 뒤 활성화된 릴리스를 정리해 활성 포인터가 PRUNED를 가리킬 수 있던 것을 고쳤다: 삭제 직전 포인터 락 안에서 보호 대상 재확인, `switch_pointer`가 PRUNED 대상 전환 거부. 보호에 "활성화 전 승인 릴리스"를 더하고 keep=0도 활성·직전·활성화 전은 지우지 않는다.
+- 임시 디렉터리 정리의 mtime 기준을 트리 전체의 최신 mtime으로, 깊은 JSON을 400으로, 종료 때 Loop join.
+
 ## (미배포) model-runtime v0.7.3 따라가기
 
 - `MODEL_RUNTIME_TAG` 기본값 v0.7.2 -> v0.7.3(`scripts/build_image.sh`, runbook). 기준 0.7.3에서 0.7.2 패키지는 반려된다(D80 완전 일치, `tests/test_new_tags.py`). 게이트 코드는 변경 없음.

@@ -315,6 +315,8 @@ def run_until_signal(srv, loop, store, grace: float) -> None:
         stopped.wait(grace + 5)
     finally:
         loop.stop_event.set()
+        if loop.is_alive():
+            loop.join(min(grace, 10.0))     # 진행 중인 주기 작업이 끝나길 기다린 뒤 저장소를 닫는다(닫힌 연결에 쓰지 않게)
         store.close()
         log.info("gate-service 종료")
 

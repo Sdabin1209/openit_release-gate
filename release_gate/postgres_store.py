@@ -411,8 +411,12 @@ class PostgresStore(ReleaseFiles, Store):
     def pointer_history(self):
         return [json.loads(r[0]) for r in self._q("SELECT record FROM pointer_history ORDER BY pointer_version")]
 
+    def _pointer_guard(self):
+        return self._Txn(self, _LOCK_POINTER)
+
     def switch_pointer(self, expected_version, new_pointer, receipt=None):
         with self._Txn(self, _LOCK_POINTER) as c:
+            self._refuse_pruned_target(new_pointer)       # 같은 락 안에서 확인: 정리와 전환이 엇갈리지 않는다
             cur = c.execute("SELECT MAX(pointer_version) FROM pointer_history").fetchone()[0] or 0
             if cur != expected_version or new_pointer["pointer_version"] != cur + 1:
                 return False

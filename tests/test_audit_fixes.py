@@ -177,7 +177,7 @@ def test_prune_removes_old_rejected_keeps_approved_and_prunes_unused_bundles(wor
     for i in range(1, 6):                                       # 승인된 릴리스 5개
         rels.append(world.make_release(world.subject(qs=world.q.add("qs-main", i))))
     world.reg.service.activate(rels[0], requested_by_role="operator", requested_by="u1")
-    world.reg.service.activate(rels[1], requested_by_role="operator", requested_by="u1")      # 활성 rels[1], 직전 rels[0]
+    world.reg.service.activate(rels[3], requested_by_role="operator", requested_by="u1")      # 활성 rels[3], 직전 rels[0], 활성화 전 최신 rels[4]
     # 자동 반려 접수 하나(오래된 것) + 새 접수 하나
     bad = world.subject(qs=world.q.add("qs-bad", 1))
     bad["lora_a"] = dict(bad["lora_a"], content_hash="sha256:" + "0" * 64)
@@ -186,7 +186,7 @@ def test_prune_removes_old_rejected_keeps_approved_and_prunes_unused_bundles(wor
     assert world.reg.store.latest_decision(old)["result"] == "REJECT"
     fresh = world.reg.service.submit_candidate(world.subject(qs=world.q.add("qs-main", 9)), requested_by_role="operator")["submission_id"]
     now = datetime.now(timezone.utc) + timedelta(days=100)       # 100일 뒤 시점으로 판단
-    pol = RetentionPolicy(keep_releases=2)
+    pol = RetentionPolicy(keep_releases=1)
     dry = retention.prune(store, pol, now=now, apply=False)
     assert old in dry["submission_ids"] and dry["freed_bytes"] is None
     assert store.get_submission(old)                                # dry-run은 지우지 않는다
@@ -199,9 +199,9 @@ def test_prune_removes_old_rejected_keeps_approved_and_prunes_unused_bundles(wor
         assert world.reg.reader.get_release(rid)["release_id"] == rid
         assert any(d["release_id"] == rid for d in store.find_decisions()[0] if d.get("release_id"))
     assert len(store.pointer_history()) == 2
-    # 어댑터 사본: 최근 2개(rels[3], rels[4]) + 활성 rels[1] + 직전 rels[0] 보호, rels[2]만 정리
-    assert out["bundle_release_ids"] == [rels[2]]
-    assert store.is_pruned(rels[2]) and not store.is_pruned(rels[0]) and not store.is_pruned(rels[4])
+    # 어댑터 사본: 활성 rels[3], 직전 rels[0], 활성화 전 최신 rels[4], 최근 1개 rels[4]는 보호. rels[1], rels[2]만 정리
+    assert out["bundle_release_ids"] == [rels[2], rels[1]]
+    assert store.is_pruned(rels[2]) and store.is_pruned(rels[1]) and not store.is_pruned(rels[0]) and not store.is_pruned(rels[4])
     with pytest.raises(BoundaryError) as e:
         world.reg.service.activate(rels[2], requested_by_role="operator")
     assert e.value.code == "FAILED_PRECONDITION" and e.value.details["reason"] == "PRUNED"
@@ -351,3 +351,143 @@ def test_serve_exits_cleanly_on_sigterm(tmp_path):
     finally:
         if p.poll() is None:
             p.kill()
+
+
+# ---- 정리와 활성화의 경쟁 (재점검 M1) ----
+
+def _releases(world, n):
+    return [world.make_release(world.subject(qs=world.q.add("qs-main", i))) for i in range(1, n + 1)]
+
+
+def test_plan_then_activate_then_apply_never_prunes_the_active_release(world):
+    """계획(dry-run) 뒤에 운영자가 대상 릴리스를 활성화하고 apply를 실행해도 활성 릴리스는 정리되지 않는다."""
+    store = _file_store(world)
+    rels = _releases(world, 4)
+    world.reg.service.activate(rels[3], requested_by_role="operator", requested_by="u1")
+    pol = RetentionPolicy(keep_releases=0)
+    now = datetime.now(timezone.utc)
+    plan = retention.prune(store, pol, now=now, apply=False)
+    assert rels[1] in plan["bundle_release_ids"]                       # 계획 시점에는 정리 대상
+    world.reg.service.activate(rels[1], requested_by_role="operator", requested_by="u1")      # 계획 뒤 활성화
+    out = retention.prune(store, pol, now=now, apply=True)
+    assert rels[1] not in out["bundle_release_ids"] and not store.is_pruned(rels[1])
+    ptr = store.get_pointer()
+    assert ptr["release_id"] == rels[1] and not store.is_pruned(ptr["release_id"])
+    assert world.reg.reader.load_bundle(rels[1], dest=world.reg.store.root / "chk").manifest["release_id"] == rels[1]
+
+
+def test_keep_zero_still_protects_active_previous_and_unactivated_newest(world):
+    store = _file_store(world)
+    rels = _releases(world, 5)
+    world.reg.service.activate(rels[0], requested_by_role="operator", requested_by="u1")
+    world.reg.service.activate(rels[2], requested_by_role="operator", requested_by="u1")
+    prot = retention.protected_ids(store, 0)
+    assert {rels[2], rels[0], rels[3], rels[4]} <= prot and rels[1] not in prot      # 활성, 직전, 활성화 전의 더 새 승인 릴리스
+    out = retention.prune(store, RetentionPolicy(keep_releases=0), now=datetime.now(timezone.utc), apply=True)
+    assert out["bundle_release_ids"] == [rels[1]]
+
+
+def test_no_pointer_yet_protects_every_approved_release(world):
+    store = _file_store(world)
+    rels = _releases(world, 3)
+    out = retention.prune(store, RetentionPolicy(keep_releases=0), now=datetime.now(timezone.utc), apply=True)
+    assert out["bundle_release_ids"] == [] and not any(store.is_pruned(r) for r in rels)
+
+
+def test_switch_to_a_pruned_release_is_refused_in_the_same_transaction(world):
+    store = _file_store(world)
+    rels = _releases(world, 3)
+    world.reg.service.activate(rels[2], requested_by_role="operator", requested_by="u1")
+    assert store.prune_unprotected(rels[0], 0) is not None             # rels[0]은 보호 대상이 아니다
+    cur = store.get_pointer()
+    new = {**cur, "pointer_version": cur["pointer_version"] + 1, "release_id": rels[0]}
+    with pytest.raises(BoundaryError) as e:
+        store.switch_pointer(cur["pointer_version"], new)              # 활성화 검증을 건너뛴 직접 전환도 막힌다
+    assert e.value.code == "FAILED_PRECONDITION" and store.get_pointer() == cur
+
+
+def test_concurrent_prune_and_activate_never_leave_pointer_on_pruned_release(world):
+    store = _file_store(world)
+    rels = _releases(world, 6)
+    world.reg.service.activate(rels[5], requested_by_role="operator", requested_by="u1")
+    pol = RetentionPolicy(keep_releases=0)
+    now = datetime.now(timezone.utc)
+    bad, stop = [], threading.Event()
+
+    def activator():
+        i = 0
+        while not stop.is_set():
+            try:
+                world.reg.service.activate(rels[i % 5], requested_by_role="operator", requested_by="u1")
+            except BoundaryError as e:
+                if e.code != "FAILED_PRECONDITION":
+                    bad.append(e.code)
+            ptr = store.get_pointer()
+            if store.is_pruned(ptr["release_id"]):
+                bad.append("POINTER_ON_PRUNED")
+            i += 1
+
+    def pruner():
+        for _ in range(6):
+            retention.prune(store, pol, now=now, apply=True)
+            time.sleep(0.02)
+
+    ts_ = [threading.Thread(target=activator) for _ in range(2)]
+    [t.start() for t in ts_]
+    p = threading.Thread(target=pruner); p.start(); p.join(30)
+    stop.set(); [t.join(10) for t in ts_]
+    assert bad == [], bad
+    ptr = store.get_pointer()
+    assert not store.is_pruned(ptr["release_id"])
+    world.reg.reader.load_bundle(ptr["release_id"], dest=store.root / "final")        # 활성 릴리스의 번들은 온전하다
+
+
+# ---- L급: 임시 디렉터리 정리, 깊은 JSON, Loop join ----
+
+def test_purge_stale_tmp_keeps_dirs_with_recent_writes_inside(world):
+    store = _file_store(world)
+    base = store.root / "releases"
+    busy, dead = base / ".tmp-rel-x-busy", base / ".tmp-rel-x-dead"
+    for d in (busy, dead):
+        (d / "adapters" / "LORA_A").mkdir(parents=True)
+        (d / "adapters" / "LORA_A" / "adapter.bin").write_bytes(b"x")
+    old = time.time() - 7200
+    for p in (busy, busy / "adapters", busy / "adapters" / "LORA_A", dead, dead / "adapters", dead / "adapters" / "LORA_A", dead / "adapters" / "LORA_A" / "adapter.bin"):
+        os.utime(p, (old, old))
+    # busy: 디렉터리 mtime은 오래됐지만 안의 파일은 방금 쓰였다(큰 복사 진행 중)
+    assert store.purge_stale_tmp(3600) == 1
+    assert busy.exists() and not dead.exists()
+
+
+def test_deeply_nested_json_is_400_not_500(world):
+    srv, port = _serve(world)
+    try:
+        body = b"[" * 100000 + b"]" * 100000
+        r = _raw(port, b"POST /v1/submissions HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer wt\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(body) + body)
+        assert b" 400 " in r.split(b"\r\n")[0]
+    finally:
+        srv.shutdown()
+
+
+def test_loop_is_joined_before_store_close(world):
+    from release_gate.app import Loop
+    order = []
+    started = threading.Event()
+
+    def task():
+        started.set()
+        time.sleep(0.5)
+        order.append("task-done")
+    loop = Loop(60, [task])
+    loop.start()
+    started.wait(2)
+
+    class _Srv:
+        shutting_down = False
+        def serve_forever(self): order.append("served")
+        def graceful_stop(self, g): return 0
+        def inflight(self): return 0
+    class _Store:
+        def close(self): order.append("closed")
+    gate_main.run_until_signal(_Srv(), loop, _Store(), 2.0)
+    assert order.index("task-done") < order.index("closed")        # 진행 중인 주기 작업이 끝난 뒤에 저장소를 닫는다
