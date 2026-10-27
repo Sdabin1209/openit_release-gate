@@ -6,6 +6,8 @@ import threading
 
 import pytest
 
+import dataclasses
+
 from conftest import tamper_decisions
 
 from boundary_contracts.clients import HttpGateService, HttpReleaseReader
@@ -16,6 +18,9 @@ from test_conformance import rollback_req, tamper
 
 @pytest.fixture
 def srv(world):
+    # SDK 클라이언트는 X-Openit-User를 보내지 못한다. 이 시험의 operator 토큰은 서비스 호출로 취급한다(GATE_SERVICE_ROLES와 같은 설정).
+    world.reg.service.config = dataclasses.replace(world.reg.service.config,
+                                                   service_roles=frozenset({"ops-feedback", "operator"}))
     s = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"r-surv": "survey-service", "r-ops": "ops-feedback"},
                        write_tokens={"w-op": "operator", "w-ops": "ops-feedback"},
                        status=lambda: {"gate_policy_version": "EMPTY", "can_pass": False})

@@ -99,20 +99,28 @@ class GateServiceImpl:
         """GET /v1/submissions/{id}/review-report. 자동 검사가 끝난 제출만(아니면 CONFLICT, HTTP 409)."""
         return review_report_for(self.store, self.schemas, self.clock, submission_id)
 
-    def _pointer(self, expected: int, release_id: str, cause: str, rollback: Optional[tuple] = None) -> Optional[dict]:
+    @staticmethod
+    def _actor_ext(role: str, actor: Optional[str]) -> dict:
+        """행위자 기록(D85). ext의 키는 영역 이름이다. 요청자는 헤더로 정해진 값이며 본문의 자기 신고가 아니다."""
+        return {"release-gate": {"requested_by": actor or f"role:{role}", "requested_by_role": role}}
+
+    def _pointer(self, expected: int, release_id: str, cause: str, rollback: Optional[tuple] = None,
+                 actor: Optional[tuple] = None) -> Optional[dict]:
         """expected 버전에서 다음 버전으로 원자적으로 바꾼다. 그 사이 바뀌었으면 None.
         rollback=(request_id, request_hash)이면 영수증을 같은 트랜잭션에 저장한다."""
         p = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "release_id": release_id,
              "pointer_version": expected + 1, "activated_at": ts(self.clock()), "cause": cause}
+        if actor:
+            p["ext"] = self._actor_ext(*actor)
         self.schemas.validate("ActivePointer", p)
         receipt = None
         if rollback:
-            r = self._receipt(rollback[0], "APPLIED", None, p)
+            r = self._receipt(rollback[0], "APPLIED", None, p, actor)
             self.schemas.validate("RollbackReceipt", r)
             receipt = (rollback[0], rollback[1], r)
         return p if self.store.switch_pointer(expected, p, receipt) else None
 
-    def activate(self, release_id: str, *, requested_by_role: str) -> dict:
+    def activate(self, release_id: str, *, requested_by_role: str, requested_by: Optional[str] = None) -> dict:
         _check_role(requested_by_role, self.config.activate_roles, "활성화")
         self.store.get_release(release_id)            # NOT_FOUND
         verify_in_tempdir(self.store, release_id)      # PASS 아님: FAILED_PRECONDITION, 해시 불일치: INTEGRITY_ERROR
@@ -120,14 +128,19 @@ class GateServiceImpl:
             cur = self.store.get_pointer()
             if cur and cur["release_id"] == release_id:
                 return cur                              # 이미 활성: 멱등
-            new = self._pointer(cur["pointer_version"] if cur else 0, release_id, "ACTIVATE")
+            new = self._pointer(cur["pointer_version"] if cur else 0, release_id, "ACTIVATE",
+                                actor=(requested_by_role, requested_by))
             if new:
                 return new
         raise BoundaryError("UNAVAILABLE", "활성 포인터가 계속 바뀌고 있어 변경하지 못했다")
 
-    def request_rollback(self, request: dict) -> dict:
+    def request_rollback(self, request: dict, *, requested_by_role: Optional[str] = None,
+                         requested_by: Optional[str] = None) -> dict:
+        """requested_by_role/requested_by가 주어지면(HTTP 면: 토큰과 X-Openit-User) 본문의 requested_by_role은 쓰지 않는다."""
         self.schemas.validate("RollbackRequest", request)
-        _check_role(request["requested_by_role"], self.config.rollback_roles, "롤백 요청")
+        role = requested_by_role or request["requested_by_role"]
+        _check_role(role, self.config.rollback_roles, "롤백 요청")
+        actor = (role, requested_by)
         rid, h = request["request_id"], canonical.sha256_hash(request)
         for _ in range(5):
             prev = self.store.get_receipt(rid)
@@ -138,22 +151,25 @@ class GateServiceImpl:
             cur = self.store.get_pointer()  # 판단과 변경에 같은 시점의 포인터를 쓴다. 그 사이 바뀌면 변경이 거부된다.
             reason = self._rollback_blocker(request, cur)
             if reason is None:
-                if self._pointer(cur["pointer_version"], request["to_release_id"], "ROLLBACK", (rid, h)) is None:
+                if self._pointer(cur["pointer_version"], request["to_release_id"], "ROLLBACK", (rid, h), actor) is None:
                     continue  # 그 사이 포인터나 영수증이 바뀌었다: 처음부터 다시 판단
                 continue      # 저장된 영수증을 위의 get_receipt로 돌려준다
-            rej = self._receipt(rid, "REJECTED", reason, None)
+            rej = self._receipt(rid, "REJECTED", reason, None, actor)
             self.schemas.validate("RollbackReceipt", rej)
             self.store.put_receipt(rid, h, rej)
         raise BoundaryError("UNAVAILABLE", "활성 포인터가 계속 바뀌고 있어 롤백하지 못했다")
 
     # --- 내부
-    def _receipt(self, rid: str, status: str, reason: Optional[str], pointer: Optional[dict]) -> dict:
+    def _receipt(self, rid: str, status: str, reason: Optional[str], pointer: Optional[dict],
+                 actor: Optional[tuple] = None) -> dict:
         r = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "request_id": rid, "status": status,
              "decided_at": ts(self.clock())}
         if reason:
             r["reason"] = reason
         if pointer:
             r["active_pointer"] = pointer
+        if actor:
+            r["ext"] = self._actor_ext(*actor)
         return r
 
     def _rollback_blocker(self, req: dict, cur: Optional[dict]) -> Optional[str]:

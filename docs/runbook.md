@@ -15,6 +15,7 @@ scripts/smoke.sh                                         # v2.0.2 태그의 whee
 
 | 이름 | 뜻 |
 | --- | --- |
+| `GATE_SERVICE_ROLES`, `GATE_ACTIVATE_ROLES`, `GATE_ROLLBACK_ROLES` | 쉼표 구분 역할 집합(선택). 기본: 서비스 역할 `ops-feedback`, 활성화 `operator`, 롤백 `ops-feedback,operator`. 서비스 역할 토큰은 `X-Openit-User` 없이 activate·rollback을 호출할 수 있고 행위자는 `service:<역할>`로 기록된다. 그 밖의 역할(사람 계정 `operator`)은 게이트웨이가 붙인 헤더가 없으면 401이다(D85) |
 | `GATE_DATABASE_URL` (비밀: `GATE_DATABASE_URL_FILE` 우선) | 있으면 레코드는 PostgreSQL(서비스별 데이터베이스·계정, 운영). 없으면 `GATE_DATA_DIR`의 SQLite(개발·시험 기본). 서버와 잡(collect, judge)이 같은 선택을 쓴다. `/readyz`에는 DB 종류(`database`)만 나온다 |
 | `GATE_DATA_DIR` | 레지스트리 디렉터리(볼륨). 기본 `/data`. 번들 파일(`releases/`)은 DB 종류와 상관없이 여기에 둔다. SQLite 모드에서는 DB 파일도 여기에 있다 |
 | `GATE_SURVEY_SCHEMA_DIR` | 문진 스키마(이미지에 포함). 경계 계약 스키마는 boundary-contracts 패키지에 들어 있다 |

@@ -32,11 +32,13 @@ def raw(base, path, token):
         return e.code, e.headers.get("Content-Type"), e.read()
 
 
-def call(base, path, body=None, token=None):
+def call(base, path, body=None, token=None, user=None):
     req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(),
                                  method="GET" if body is None else "POST")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
+    if user:
+        req.add_header("X-Openit-User", user)
     try:
         with urllib.request.urlopen(req) as r:
             return r.status, json.loads(r.read())
@@ -67,14 +69,14 @@ def test_activate_and_rollback_over_http(world, server):
     r1 = world.make_release()
     qs2 = world.q.add("qs-main", 2)
     r2 = world.make_release(world.subject(qs=qs2))
-    assert call(server, "/v1/activate", {"release_id": "rel-none"}, "wt")[0] == 404
-    assert call(server, "/v1/activate", {"release_id": r2}, "wt")[0] == 200
+    assert call(server, "/v1/activate", {"release_id": "rel-none"}, "wt", user="alice")[0] == 404
+    assert call(server, "/v1/activate", {"release_id": r2}, "wt", user="alice")[0] == 200
     st, body = call(server, "/v1/active-pointer", token="rt")
     assert body["item"]["release_id"] == r2
     req = {"pipeline_schema_version": "2.0", "request_id": "rb-h", "requested_at": "2026-10-15T00:00:00Z",
            "from_release_id": r2, "to_release_id": r1, "reason": "x", "evidence_refs": ["e1"],
            "requested_by_role": "ops-feedback"}
-    assert call(server, "/v1/rollback", req, "wt")[0] == 403          # 토큰 역할(operator) != 요청의 ops-feedback
+    assert call(server, "/v1/rollback", req, "wq", user="alice")[0] == 403          # 토큰 역할(question-authoring)에 권한이 없다. 본문의 ops-feedback 주장은 쓰지 않는다
     st, rc = call(server, "/v1/rollback", req, "wo")
     assert st == 200 and rc["status"] == "APPLIED"
     assert call(server, "/v1/rollback", dict(req, reason="y"), "wo")[0] == 409
@@ -194,7 +196,7 @@ def test_review_report_and_approval_over_http(world, server):
     d = call(server, f"/v1/decisions?submission_id={sid}", token="rt")[1]["items"][0]
     assert d["result"] == "PASS" and d["approval_id"] == ap["approval_id"]
     rid = d["release_id"]
-    assert call(server, "/v1/activate", {"release_id": rid}, "wt")[0] == 200       # PASS 릴리스만 활성화된다
+    assert call(server, "/v1/activate", {"release_id": rid}, "wt", user="alice")[0] == 200       # PASS 릴리스만 활성화된다
 
 
 def test_approval_needs_engine_and_valid_body(world, server):

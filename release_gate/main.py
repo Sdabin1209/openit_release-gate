@@ -127,11 +127,22 @@ def _neighbors(cfg: dict):
     return i1, i3
 
 
+def _role_overrides() -> dict:
+    """GATE_ACTIVATE_ROLES, GATE_ROLLBACK_ROLES, GATE_SERVICE_ROLES(쉼표 구분)가 있으면 기본 역할 집합을 바꾼다."""
+    out = {}
+    for env, key in (("GATE_ACTIVATE_ROLES", "activate_roles"), ("GATE_ROLLBACK_ROLES", "rollback_roles"),
+                     ("GATE_SERVICE_ROLES", "service_roles")):
+        v = os.environ.get(env)
+        if v is not None:
+            out[key] = frozenset(x.strip() for x in v.split(",") if x.strip())
+    return out
+
+
 def _gate_config(survey: SurveySchema) -> GateConfig:
     te, mr = lib_versions()
     return GateConfig(
         supported_runtime_contract_version=int(_env("GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION", str(survey.contract_version))),
-        turn_engine_version=te, model_runtime_version=mr)
+        turn_engine_version=te, model_runtime_version=mr, **_role_overrides())
 
 
 def _tokens(name: str, required: bool) -> dict:

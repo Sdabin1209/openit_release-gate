@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
-# 시험용 PostgreSQL: scripts/dev-postgres.sh up|down. ../deploy/scripts/dev-postgres.sh 가 있으면 그것을 `gate` 데이터베이스로 쓴다.
-# up은 접속 문자열을 표준 출력에 한 줄로 낸다(TEST_DATABASE_URL=$(scripts/dev-postgres.sh up)). 로컬 시험 전용 값이다.
+# 시험용 PostgreSQL: scripts/dev-postgres.sh up|down. deploy의 일회용 서버(../deploy/scripts/dev-postgres.sh)를 `gate` 데이터베이스로 부른다.
+# up은 접속 문자열을 표준 출력에 한 줄로 낸다: export TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)"
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-if [ -x "$here/../deploy/scripts/dev-postgres.sh" ]; then exec "$here/../deploy/scripts/dev-postgres.sh" "${1:-}" gate; fi
-DOCKER="${DOCKER:-docker}"
-proj="release-gate-devpg"
-dc() { "$DOCKER" compose -p "$proj" -f "$here/compose.dev.yaml" "$@"; }
-url() {
-  local hp; hp="$(dc port postgres 5432 | head -1 | tr -d '\r')"
-  echo "postgresql://gate:gate-dev-only@127.0.0.1:${hp##*:}/gate"
-}
+script="$here/../deploy/scripts/dev-postgres.sh"
+[ -x "$script" ] || { echo "오류: ../deploy/scripts/dev-postgres.sh 가 없다(deploy 리포지토리를 옆에 둔다)" >&2; exit 1; }
 case "${1:-}" in
-  up) dc up -d --wait >/dev/null 2>&1 || { echo "오류: postgres 기동 실패" >&2; exit 1; }; url ;;
-  url) url ;;
-  down) dc down -v >/dev/null 2>&1 ;;
-  *) echo "사용: $0 up|url|down" >&2; exit 2 ;;
+  up|down) exec "$script" "$1" gate ;;
+  *) echo "사용: $0 up|down" >&2; exit 2 ;;
 esac

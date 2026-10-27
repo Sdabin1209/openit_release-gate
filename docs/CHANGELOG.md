@@ -4,7 +4,12 @@
 
 - 운영 저장소로 PostgreSQL(`postgres_store.py`, psycopg[binary] 3.3.6 고정)을 더했다. `GATE_DATABASE_URL`(비밀, `_FILE` 우선)이 있으면 서버와 잡이 PostgreSQL을, 없으면 `GATE_DATA_DIR`의 SQLite를 쓴다. 번들 파일은 파일 시스템 그대로. 표준 이유: 서비스별 데이터베이스·계정을 가진 서버가 백업·접근 제어·동시 접속의 표준 경로다.
 - `/readyz`에 `database`(memory·sqlite·postgresql) 추가. 접속 문자열·암호는 로그·/readyz·오류에 나오지 않는다(`tests/test_postgres.py`).
-- 적합성 시험을 `memory`·`sqlite`·`postgres`로 매개변수화. `compose.dev.yaml`, `scripts/dev-postgres.sh` 추가.
+- 적합성 시험을 `memory`·`sqlite`·`postgres`로 매개변수화. `scripts/dev-postgres.sh` 추가(deploy의 일회용 서버를 `gate` 데이터베이스로 부르는 래퍼. 이 리포의 compose 파일은 두지 않는다).
+
+## (미배포) activate·rollback 행위자 식별 (D85)
+
+- `POST /v1/activate`, `/v1/rollback`: 역할은 토큰, 행위자는 `X-Openit-User`로 정한다. 본문의 `requested_by_role`은 쓰지 않는다. 사람 역할 토큰에 헤더가 없으면 401, 서비스 역할(`GATE_SERVICE_ROLES`, 기본 `ops-feedback`)은 헤더 없이 허용하고 `service:<역할>`로 기록한다. 행위자는 활성 포인터·롤백 영수증(승인·반려 모두)의 `ext["release-gate"]`에 남는다(계약 스키마 변경 없음). 이전에는 본문 역할이 토큰과 다르면 403이었으나 이제 무시한다.
+- 호출자 영향: SDK 클라이언트(`HttpGateService`)는 헤더를 못 보내므로, operator 토큰으로 직접 부르는 deploy의 e2e·demo 단계는 `GATE_SERVICE_ROLES`에 operator를 넣거나 헤더를 붙이는 호출로 바꿔야 한다.
 
 ## (미배포) model-runtime v0.7.1 따라가기 (D80)
 

@@ -212,13 +212,25 @@ class _Handler(BaseHTTPRequestHandler):
                     raise BoundaryError("INVALID_RECORD", "X-Openit-User가 ID 형식이 아니다")
                 rec, created = eng.decide(b, token_role=role, approver_id=user)
                 return (201 if created else 200), rec
+            if path in ("/v1/activate", "/v1/rollback"):
+                # D85(PUBLIC_API E): 역할은 토큰에서, 행위자는 게이트웨이가 붙인 X-Openit-User에서 정한다. 본문 값은 쓰지 않는다.
+                role = self._write_role(None)
+                cfg = r.service.config
+                if role not in (cfg.activate_roles if path == "/v1/activate" else cfg.rollback_roles):
+                    raise BoundaryError("PERMISSION_DENIED", f"역할 {role}은 이 요청의 권한이 없다")
+                user = self.headers.get("X-Openit-User")
+                if user is not None and not _ID.match(user):
+                    raise BoundaryError("INVALID_RECORD", "X-Openit-User가 ID 형식이 아니다")
+                if user is None:
+                    if role not in r.service.config.service_roles:
+                        return 401, {"code": "PERMISSION_DENIED", "message": "X-Openit-User 헤더가 없다(게이트웨이가 붙인 행위자 식별이 필요하다)"}
+                    user = f"service:{role}"
+                if path == "/v1/activate":
+                    return 200, r.service.activate(str(b.get("release_id", "")), requested_by_role=role, requested_by=user)
+                return 200, r.service.request_rollback(b, requested_by_role=role, requested_by=user)
             role = self._write_role(b.get("requested_by_role"))
             if path == "/v1/submissions":
                 return 202, r.service.submit_candidate(b.get("subject"), requested_by_role=role)
-            if path == "/v1/activate":
-                return 200, r.service.activate(str(b.get("release_id", "")), requested_by_role=role)
-            if path == "/v1/rollback":
-                return 200, r.service.request_rollback(b)
             raise BoundaryError("NOT_FOUND", f"경로가 없다: {path}")
         self._run(go)
 
