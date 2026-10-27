@@ -61,7 +61,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 {
   "data_dir": "/data",
   "i1_factory": "release_gate.factories:http_question_reader",
-  "i1_options": {"base_url": "http://question-authoring:8080", "token": "…(비밀은 설정 파일에 넣지 말고 GATE_I1_TOKEN_FILE로 준다)"},
+  "i1_options": {"base_url": "http://question-authoring:8080", "token": {"secret": "GATE_I1_TOKEN"}},
   "i3_factory": "release_gate.factories:http_model_registry",
   "i3_options": {"base_url": "http://model-registry:8080"},
   "watch": {"question_sets": ["qs-main"], "lora_a": ["lora-a"], "lora_b": ["lora-b"]},
@@ -111,4 +111,4 @@ docker run -v /srv/secrets/gate:/run/secrets:ro \
 
 - 파일은 컨테이너의 비root 사용자가 읽을 수 있어야 한다(모드 0644 이상 또는 해당 uid 소유). 이미지와 리포지토리에는 넣지 않는다.
 - 파일이 없거나 비어 있으면 값 없이 이유만 담긴 오류로 시작이 중단된다. 비밀 값은 로그, `/readyz`, 오류 본문, 예외 메시지에 나오지 않는다(`tests/test_secrets.py`, `scripts/smoke.sh`가 `inspect`·`exec env`·로그에 평문이 없음을 확인한다).
-- 설정 파일(JSON)의 `i1_options.token`에도 비밀을 쓰지 않는다.
+- 설정 파일(JSON)에는 비밀 값을 적을 수 없다. `i1_options`, `i3_options`에서 `token`, `secret`, `password` 등 비밀 같은 키에 문자열을 직접 적으면 시작을 거부한다(오류에는 키 경로만 나온다). 비밀은 이름으로만 받는다: `{"secret": "GATE_I1_TOKEN"}`(옛 `{"env": "이름"}`도 같은 뜻). 둘 다 `read_secret(이름)`으로 풀려서 `이름_FILE` 파일이 우선이고 없으면 환경 변수다.

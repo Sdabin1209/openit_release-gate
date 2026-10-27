@@ -91,3 +91,42 @@ def test_server_never_echoes_secrets(world, caplog):
     for secret in (RT, WT):
         assert secret not in blob
     assert all(json.loads(b) is not None for b in bodies if b.strip())
+
+
+# ---- 설정 파일의 인라인 비밀 거부 ----
+
+INLINE = "INLINE-SECRET-ddd444"
+
+
+def _cfg(tmp_path, opts):
+    f = tmp_path / "cfg.json"
+    f.write_text(json.dumps({"i1_factory": "release_gate.factories:http_question_reader", "i1_options": opts}))
+    return str(f)
+
+
+def test_inline_secret_in_config_rejected_without_value(tmp_path):
+    for opts in ({"base_url": "http://x", "token": INLINE}, {"base_url": "http://x", "api_key": INLINE},
+                 {"base_url": "http://x", "headers": {"Authorization": INLINE}}):
+        with pytest.raises(SystemExit) as e:
+            gate_main.load_config(_cfg(tmp_path, opts))
+        msg = str(e.value)
+        assert INLINE not in msg and "NAME_FILE" in msg
+
+
+def test_make_rejects_inline_secret_without_value():
+    with pytest.raises(SystemExit) as e:
+        gate_main.make("release_gate.factories:http_question_reader", {"base_url": "http://x", "token": INLINE})
+    assert INLINE not in str(e.value) and "token" in str(e.value)
+
+
+def test_secret_name_in_config_resolves_via_read_secret(tmp_path, monkeypatch):
+    f = tmp_path / "tok"; f.write_text(I1)
+    monkeypatch.setenv("MY_TOK_FILE", str(f))
+    cfg = gate_main.load_config(_cfg(tmp_path, {"base_url": "http://x", "token": {"secret": "MY_TOK"}}))
+    assert gate_main._resolve_options(cfg["i1_options"])["token"] == I1
+    monkeypatch.setenv("OTHER_TOK", "env-val-eee555")
+    assert gate_main._resolve_options({"token": {"env": "OTHER_TOK"}})["token"] == "env-val-eee555"
+    monkeypatch.delenv("NOPE_TOK", raising=False)
+    with pytest.raises(SystemExit) as e:
+        gate_main._resolve_options({"token": {"secret": "NOPE_TOK"}})
+    assert "NOPE_TOK_FILE" in str(e.value)

@@ -60,12 +60,52 @@ def lib_versions() -> tuple[str, str]:
             os.environ.get("GATE_MODEL_RUNTIME_VERSION") or installed_version("model-runtime", "model_runtime"))
 
 
+_SECRET_KEY_PARTS = ("token", "secret", "password", "passwd", "credential", "apikey", "api_key", "authorization", "private_key")
+
+
+def _check_inline_secrets(value, path: str) -> None:
+    """비밀을 읽지 않고 인라인 비밀만 거부한다(검사는 _resolve_options와 같은 규칙)."""
+    if isinstance(value, dict) and set(value) not in ({"secret"}, {"env"}):
+        for k, v in value.items():
+            if any(p in str(k).lower() for p in _SECRET_KEY_PARTS) and isinstance(v, str):
+                _resolve_options({k: v}, path)
+            _check_inline_secrets(v, f"{path}.{k}")
+    elif isinstance(value, list):
+        for i, v in enumerate(value):
+            _check_inline_secrets(v, f"{path}[{i}]")
+
+
+def _resolve_options(value, path: str = "options"):
+    """설정의 옵션에서 비밀을 푼다. 비밀 이름만 받는다: {"secret": "NAME"} 또는 {"env": "NAME"} -> read_secret(NAME).
+    비밀처럼 보이는 키(token, secret, password ...)에 값이 직접 적혀 있으면 시작을 거부한다. 오류에는 키 경로만 싣고 값은 싣지 않는다."""
+    if isinstance(value, dict):
+        if set(value) in ({"secret"}, {"env"}):
+            name = value.get("secret", value.get("env"))
+            if not isinstance(name, str) or not name:
+                raise SystemExit(f"설정 {path}: 비밀 이름은 비어 있지 않은 문자열이어야 한다. 비밀은 NAME_FILE로 준다")
+            got = read_secret(name)
+            if got is None:
+                raise SystemExit(f"설정 {path}: 비밀 {name}(또는 {name}_FILE)이(가) 없다. 비밀은 NAME_FILE로 준다")
+            return got
+        out = {}
+        for k, v in value.items():
+            low = str(k).lower()
+            if any(p in low for p in _SECRET_KEY_PARTS) and isinstance(v, str):
+                raise SystemExit(f"설정 {path}.{k}: 비밀 값을 설정 파일에 직접 적을 수 없다. "
+                                 f'비밀은 NAME_FILE로 주고 설정에는 {{"secret": "NAME"}}만 쓴다')
+            out[k] = _resolve_options(v, f"{path}.{k}")
+        return out
+    if isinstance(value, list):
+        return [_resolve_options(v, f"{path}[{i}]") for i, v in enumerate(value)]
+    return value
+
+
 def make(spec: str | None, options: dict | None = None):
-    """'module:callable'을 불러 options를 키워드 인자로 호출한다."""
+    """'module:callable'을 불러 options를 키워드 인자로 호출한다. 옵션의 비밀은 이름으로만 받는다."""
     if not spec:
         return None
     mod, _, fn = spec.partition(":")
-    return getattr(importlib.import_module(mod), fn)(**(options or {}))
+    return getattr(importlib.import_module(mod), fn)(**_resolve_options(options or {}))
 
 
 def load_config(path: str | None) -> dict:
@@ -76,6 +116,8 @@ def load_config(path: str | None) -> dict:
         cfg = json.load(f)
     if not isinstance(cfg, dict):
         raise SystemExit("설정 파일은 JSON 객체여야 한다")
+    for k in ("i1_options", "i3_options"):   # 시작 때 바로 거부한다(비밀 값은 읽지 않고 키 이름만 검사)
+        _check_inline_secrets(cfg.get(k) or {}, k)
     return cfg
 
 

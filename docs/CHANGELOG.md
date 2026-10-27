@@ -4,6 +4,7 @@
 
 - 서비스 토큰(`GATE_READ_TOKENS`, `GATE_WRITE_TOKENS`, `GATE_READ_TOKEN`)과 I1·I3 토큰(`GATE_I1_TOKEN`, `GATE_I3_TOKEN`)을 `boundary_contracts.read_secret`으로 읽는다(서버, 잡, factories). `NAME_FILE` 우선, 없으면 환경 변수. `docker exec env`/`inspect`로 평문이 보이던 문제의 근본 수정.
 - `BOUNDARY_CONTRACTS_TAG` 기본값 v2.0.1 -> v2.0.2(`requirements.txt`, `scripts/stage_context.sh`, runbook, `docs/boundary.md`). turn-engine·model-runtime 태그는 올리지 않았다.
+- 설정 JSON(`i1_options`, `i3_options`)에 비밀 값을 직접 적으면 시작을 거부한다(오류에 값 없음, 키 경로와 NAME_FILE 안내만). 비밀은 `{"secret": "NAME"}`/`{"env": "NAME"}` -> `read_secret`.
 - `tests/test_secrets.py` 추가. `scripts/smoke.sh`가 비밀을 파일로 주고 inspect·exec env·로그에 평문이 없음을 확인한다.
 
 ## (미배포) turn-engine v0.3.1 따라가기 (D80)

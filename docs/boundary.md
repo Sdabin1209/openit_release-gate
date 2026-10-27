@@ -55,3 +55,5 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 ## 비밀 (D84)
 
 서비스 토큰(`GATE_READ_TOKENS`, `GATE_WRITE_TOKENS`)과 이웃 호출 토큰(`GATE_I1_TOKEN`, `GATE_I3_TOKEN`)은 `boundary_contracts.read_secret(NAME)`으로 읽는다. `NAME_FILE`(파일 경로)이 우선이고 없으면 `NAME` 환경 변수(개발용)다. 값은 로그, `/readyz`, 오류 본문, 예외 메시지에 싣지 않는다. 운영 방법은 `docs/runbook.md`의 "비밀은 NAME_FILE로" 절.
+
+설정 파일(JSON)은 비밀 값을 직접 받지 않는다. 직접 적으면 시작을 거부하고, `{"secret": "NAME"}`(또는 `{"env": "NAME"}`)만 `read_secret(NAME)`으로 푼다.
