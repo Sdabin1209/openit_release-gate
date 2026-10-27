@@ -1,5 +1,6 @@
-# STATUS (2026-10-27, boundary-contracts v2.0.1, model-runtime v0.6.5)
+# STATUS (2026-10-27, turn-engine v0.3.1, boundary-contracts v2.0.1, model-runtime v0.6.5)
 
+- turn-engine 기본 태그를 v0.3.1로 올렸다(v0.3.0은 boundary v2.0.0 고정이라 v2.0.1과 충돌). 0.3.0 반려 시험 추가. 확인: pytest, scripts/smoke.sh(라벨 turn-engine 0.3.1). push 안 함.
 - boundary-contracts v2.0.1(ActionExtraction 순서만 바뀐 PATCH), model-runtime v0.6.5(relax-3)로 올렸다. relax_policy_version은 게이트가 다루지 않는 불투명 값이라 코드 변경 없음, 0.6.4 반려 시험 추가. 확인: pytest 217 통과 7 건너뜀 0 실패, scripts/smoke.sh(라벨 contracts.boundary 2.0.1, model-runtime 0.6.5, readyz 0.6.5). push 안 함.
 - model-runtime 기본 태그를 v0.6.4로 올렸다(relax-2). relax_policy_version/supported_features를 다루는 게이트 코드·픽스처는 없어 변경 없음. 확인: pytest 215 통과 7 건너뜀 0 실패, scripts/smoke.sh(라벨 model-runtime 0.6.4, readyz 0.6.4). push 안 함.
 - 2.0.0 이전 완료(상세는 CHANGELOG 0.7.0). 확인: pytest, scripts/smoke.sh(라벨 contracts.boundary=2.0.0). 아직 하지 않은 것: push, 태그(헤드 몫).

@@ -1,5 +1,9 @@
 # 변경 이력
 
+## (미배포) turn-engine v0.3.1 따라가기 (D80)
+
+- `TURN_ENGINE_TAG` 기본값 v0.3.0 -> v0.3.1(`scripts/build_image.sh`, runbook). turn-engine v0.3.0 태그가 boundary-contracts v2.0.0을 고정해 v2.0.1과 충돌해서 v0.3.1(boundary v2.0.1)이 태그됐다. 기준 0.3.1에서 0.3.0 이하 패키지는 반려된다(`tests/test_new_tags.py`에 0.3.0 케이스 추가). 코드 변경 없음.
+
 ## (미배포) boundary-contracts v2.0.1, model-runtime v0.6.5 따라가기 (D80)
 
 - `BOUNDARY_CONTRACTS_TAG` 기본값 v2.0.0 -> v2.0.1(`requirements.txt`, `scripts/stage_context.sh`, runbook, `docs/boundary.md`). v2.0.1은 ActionExtraction properties 순서만 사전순으로 바꾼 PATCH다.
