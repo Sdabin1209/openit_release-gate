@@ -238,3 +238,23 @@ def test_collect_job_ends_nonzero_when_db_paused(pg_url, pausable, monkeypatch, 
     rc = gate_main.main(["collect", "--config", str(cfgfile)])
     assert rc == gate_main.EX_TEMPFAIL and time.monotonic() - t < 6
     assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["status"] == "failed"
+
+
+def test_activate_and_rollback_with_paused_db_end_503_and_keep_active_release(pg_url, pausable, schemas, survey, config, tmp_path):
+    """C8: DB 무응답 중 activate는 상한 안에 UNAVAILABLE이고 활성 포인터는 그대로다. 복구 뒤 같은 요청이 통과한다."""
+    from conftest import World
+    pause, unpause = pausable
+    reg = postgres_registry(pg_url, tmp_path / "d", schemas, config, connect_timeout=1, statement_timeout=1, probe_timeout=1)
+    w = World(tmp_path, schemas, survey, config, reg)
+    r1 = w.make_release()
+    r2 = w.make_release(w.subject(qs=w.q.add("qs-main", 2)))
+    reg.service.activate(r1, requested_by_role="operator")
+    before = reg.reader.get_active_pointer()
+    pause()
+    t = time.monotonic()
+    with pytest.raises(BoundaryError) as e:
+        reg.service.activate(r2, requested_by_role="operator")
+    assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 5
+    unpause()
+    assert reg.reader.get_active_pointer() == before
+    assert reg.service.activate(r2, requested_by_role="operator")["release_id"] == r2

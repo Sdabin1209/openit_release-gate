@@ -24,6 +24,7 @@ scripts/smoke.sh                                         # v2.0.2 태그의 whee
 | `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` | 선택(덮어쓰기). 없으면 **설치된 turn-engine, model-runtime 패키지의 실제 버전**을 읽고, 없으면 `unset`. 이 값이 릴리스 매니페스트에 기록되고 학습 때 버전과의 일치 검사(CONTRACT_COMPAT)에 쓰인다. `/readyz`에 보인다 |
 | `GATE_POLICY_FILE` | gate_policy JSON. 없으면 EMPTY(통과 불가) |
 | `GATE_READ_TOKENS`, `GATE_WRITE_TOKENS` (또는 `*_FILE`) | 필수. 비밀이므로 `GATE_READ_TOKENS_FILE`, `GATE_WRITE_TOKENS_FILE`로 파일 경로를 주는 것이 표준이다(아래 "비밀은 NAME_FILE로"). `역할=토큰,역할=토큰` 형식으로 역할에 묶는다. 읽기 예: `survey-service=…,ops-feedback=…,question-authoring=…,model-lab=…`, 쓰기 예: `operator=…,ops-feedback=…,question-authoring=…,model-lab=…`. 읽기 토큰은 쓰기 경로에서 403, 쓰기 토큰은 읽기 면에서 403이다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
+| `GATE_I1_TIMEOUT`, `GATE_I3_TIMEOUT` | I1·I3 HTTP 읽기 timeout(초, 소켓 읽기 단위). 기본 10(이전 30). 장애 동작은 boundary.md 장애 영향 |
 | `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`(설정 파일의 `i1_factory`, `i3_factory`가 우선). 둘 다 있어야 판정이 켜진다. HTTP 클라이언트는 `release_gate.factories:http_question_reader`, `release_gate.factories:http_model_registry`(`boundary_contracts.clients`, v1.2.0에서 확인). 이 둘은 `GATE_I1_URL`, `GATE_I3_URL`(선택 `*_TIMEOUT`)과 비밀 `GATE_I1_TOKEN`, `GATE_I3_TOKEN`(`*_FILE` 우선)을 읽는다 |
 | `GATE_POLL_SECONDS`, `PORT` | 주기(기본 60), 포트(기본 8080) |
 

@@ -1,4 +1,5 @@
 # STATUS (2026-10-27, turn-engine v0.4.0, boundary-contracts v2.0.2, model-runtime v0.7.2)
+- 2026-10-28 이웃·파일 장애(C1·C2·C3·C5·C7·C8): 구현, 시험(tests/test_upstream_faults.py), boundary.md 장애 절 갱신. pytest PostgreSQL 없이 320 통과 195 건너뜀, 포함 485 통과 30 건너뜀, 0 실패. scripts/smoke.sh 통과. 못 한 것: 실제 이웃과의 장애 주입, 느린 조금씩 응답의 전체 시간 상한, 디스크 경보. push 안 함.
 - 2026-10-28 DB 대기 상한(P0-3/C4): 구현, 시험, 문서 완료. pytest PostgreSQL 없이 270 통과 150 건너뜀, 포함 403 통과 17 건너뜀. scripts/smoke.sh 통과(SMOKE OK, sqlite 모드, 라벨 정상). 못 한 것: 실제 compose/gateway 경로, deploy E2E 5p 재측정(헤드). push 안 함.
 
 - model-runtime 기본 태그를 v0.7.2로 올렸다(가짜 A 정정 출력 추가, 하위 호환. turn-engine v0.4.0, boundary v2.0.2 그대로). 코드 변경 없음, 0.7.1 반려 시험 추가, 잠금 파일은 model-runtime이 없어 불변. 확인: venv에 model-runtime 0.7.2 설치(이웃 로컬 폴더에서, 태그 소스 아님), pytest 263 통과 145 건너뜀 0 실패, scripts/smoke.sh 통과(라벨 model-runtime 0.7.2, readyz 0.4.0/0.7.2). push 안 함.

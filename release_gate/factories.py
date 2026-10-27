@@ -2,6 +2,7 @@
 
 HTTP 클라이언트(boundary_contracts.clients의 HttpQuestionReader, HttpModelRegistry)를 만든다. 이 파일은 진입점 쪽이라
 base_url과 token이 인자로 오지 않으면 환경 변수(GATE_I1_URL, GATE_I3_URL)와 비밀(GATE_I1_TOKEN, GATE_I3_TOKEN: `_FILE` 경로 우선, 없으면 환경 변수, read_secret)에서 읽는다.
+읽기 timeout 기본 10초(소켓 읽기 단위. `GATE_I1_TIMEOUT`, `GATE_I3_TIMEOUT`로 바꾼다).
 클라이언트가 들어 있지 않은 boundary-contracts 버전에서는 명확한 오류로 끝난다.
 """
 from __future__ import annotations
@@ -21,7 +22,7 @@ def _client(cls_name: str, prefix: str, base_url, token, timeout):
     tok = token or read_secret(f"{prefix}_TOKEN")
     if not url or not tok:
         raise SystemExit(f"{prefix}_URL과 {prefix}_TOKEN이 필요하다")
-    return cls(base_url=url, token=tok, timeout=float(timeout or os.environ.get(f"{prefix}_TIMEOUT", "30")))
+    return cls(base_url=url, token=tok, timeout=float(timeout or os.environ.get(f"{prefix}_TIMEOUT", "10")))
 
 
 def http_question_reader(base_url=None, token=None, timeout=None):

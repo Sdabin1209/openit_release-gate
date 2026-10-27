@@ -1,6 +1,7 @@
 """판정 엔진(GateEngine)과 I5 GateService 구현."""
 from __future__ import annotations
 
+import logging
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -196,6 +197,9 @@ def _sub_hex(sid: str) -> str:
     return sid[4:]
 
 
+log = logging.getLogger("gate")
+
+
 class GateEngine:
     """접수 -> 자동 검사 -> 승인 요청(AWAITING_APPROVAL) -> 사람의 결정 -> 판정(D53).
     advance()는 멱등이며 여러 번 불러도 같은 판정을 한 번만 남긴다. 승인 없이 PASS를 만드는 경로는 없다."""
@@ -207,21 +211,38 @@ class GateEngine:
         self.policy, self.models, self.clock = policy, models, clock
         self.checks = checks or CheckRegistry()
         self.loader = SubjectLoader(questions, models, schemas)
+        self.last_error: Optional[dict] = None   # 직전 process_pending의 문제(/readyz가 보여 준다). 없으면 None
 
     # --- 자동 검사
     def process_pending(self) -> list[dict]:
         """자동 검사 전의 접수를 진행하고 (반려로) 끝난 판정을 돌려준다. 통과한 접수는 AWAITING_APPROVAL로 간다.
-        I1·I3가 UNAVAILABLE이면 그 접수는 다음 주기로 미룬다."""
-        out = []
-        for sid in self.store.submission_ids(("RECEIVED",)):
-            try:
-                d = self.advance(sid)
-            except BoundaryError as e:
-                if e.retryable:
+        - I1·I3가 UNAVAILABLE(멈춤·느림·5xx·깨진 본문)이면 이번 주기를 거기서 멈추고 나머지는 다음 주기로 미룬다
+          (같은 이웃에 접수 수만큼 시간 초과를 겹쳐 기다리지 않는다). 접수 기록은 그대로 RECEIVED다.
+        - 인증 실패(PERMISSION_DENIED)는 모든 접수에 같으므로 즉시 올린다. 반려 판정을 남기지 않는다.
+        - 그 밖의 오류는 그 접수만 건너뛰고 나머지를 계속한 뒤, 끝에서 첫 오류를 올린다(한 접수가 뒤를 막지 않는다)."""
+        out, errors = [], []
+        self.last_error = None
+        try:
+            for sid in self.store.submission_ids(("RECEIVED",)):
+                try:
+                    d = self.advance(sid)
+                except BoundaryError as e:
+                    if e.code == "PERMISSION_DENIED":
+                        raise
+                    if e.retryable:
+                        self.last_error = {"code": e.code, "message": e.message[:200]}
+                        break
+                    log.error("접수 %s 진행 실패(%s): %s", sid, e.code, e.message)
+                    errors.append(e)
                     continue
-                raise
-            if d:
-                out.append(d)
+                if d:
+                    out.append(d)
+        except BoundaryError as e:
+            self.last_error = {"code": e.code, "message": e.message[:200]}
+            raise
+        if errors:
+            self.last_error = {"code": errors[0].code, "message": errors[0].message[:200]}
+            raise errors[0]
         return out
 
     def advance(self, sid: str) -> Optional[dict]:

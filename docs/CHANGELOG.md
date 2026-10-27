@@ -1,5 +1,14 @@
 # 변경 이력
 
+## (미배포) 이웃·파일 장애 처리 (FAULT_MATRIX C1·C2·C3·C5·C7·C8)
+
+- I1·I3 인증 실패(PERMISSION_DENIED)를 내용 문제로 취급해 반려 판정을 남기던 것을 고쳤다(오류로 올리고 접수는 RECEIVED 유지).
+- 판정 진행(`process_pending`): 일시 오류에서 주기를 멈추고, 재시도 불가 오류는 그 접수만 건너뛴다. 마지막 오류는 `engine.last_error`, Loop 상태(`last_run_at`, `consecutive_failures`, `last_error`)와 함께 `/readyz`의 `judging_loop`에 나온다.
+- 수집기: 깨진 항목(INTEGRITY_ERROR·UNSUPPORTED_VERSION·INVALID_RECORD)만 건너뛰고 나머지를 제출, 잡은 `partial`로 종료 코드 1. 잡의 재시도 불가 BoundaryError는 `failed`와 종료 코드 1(재시도 가능은 75).
+- I1·I3 읽기 timeout 기본 30초 -> 10초.
+- 번들 쓰기: 디스크 가득·쓰기 불가·rename 실패는 503이고 임시 디렉터리를 지운다. 행 없이 남은 릴리스 디렉터리는 다음 생성 때 치운다. 메모리 저장소의 포인터 전환을 전부-아니면-전무로 고쳤다.
+- 시험 `tests/test_upstream_faults.py`(94개 매개변수 항목, PostgreSQL 없이 일부 SKIP), `tests/test_pg_timeouts.py`에 activate 1개.
+
 ## (미배포) PostgreSQL 대기 상한과 /readyz 상한 (FAULT_MATRIX P0-3 / C4)
 
 - 이전: 주 연결에 서버 쪽 `statement_timeout`이 없었고 `connect_timeout`은 고정 10초였다. 얼어붙은 서버(`docker pause`)에서는 기존 연결의 문장이 무한 대기했다(측정: 일시 정지한 서버에 대한 `ping()`이 120초가 지나도 안 돌아옴). `/readyz`는 주 연결과 그 락으로 확인해 요청 처리와 같이 막혔다.

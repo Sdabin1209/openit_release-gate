@@ -293,7 +293,7 @@ class PostgresStore(ReleaseFiles, Store):
                           (json.dumps(work, ensure_ascii=False), work["state"], decision["submission_id"]))
                 if staged is not None:
                     # SQLite 구현과 같다: 파일 이동은 커밋 전에. 이동이 실패하면 롤백, 이동 뒤 커밋 실패 시 행 없는 디렉터리는 읽기에 보이지 않는다.
-                    staged.rename(self.root / "releases" / release.manifest["release_id"])
+                    self._publish_release_dir(staged, release.manifest["release_id"])
                     staged = None
         except pgerr.IntegrityError as e:
             raise BoundaryError("CONFLICT", f"저장 충돌: {_safe(e)}") from None

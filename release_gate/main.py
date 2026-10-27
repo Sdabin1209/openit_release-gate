@@ -191,6 +191,22 @@ def _build(cfg: dict):
     return schemas, survey, config, reg
 
 
+def make_status(policy, judging, config, reg, engine, loop):
+    """/readyz에 붙는 보조 수치를 만드는 함수."""
+    def status() -> dict:
+        st = {"gate_policy_version": policy.version, "judging": judging,
+              "awaiting_approval": len(reg.store.submission_ids(("AWAITING_APPROVAL",))),
+              "turn_engine_version": config.turn_engine_version,
+              "model_runtime_version": config.model_runtime_version}
+        if engine is not None:
+            # 이웃(I1·I3) 문제가 조용히 묻히지 않게 한다(FAULT_POLICY 9). 503으로 만들지는 않는다: 읽기는 이웃과 무관하게 계속된다.
+            err = engine.last_error or loop.last_error
+            st["judging_loop"] = {**loop.state(), "neighbor_error": engine.last_error,
+                                  "upstream_auth_failed": bool(err and err["code"] == "PERMISSION_DENIED")}
+        return st
+    return status
+
+
 def serve() -> None:
     _logging()
     cfg = load_config(os.environ.get("GATE_CONFIG"))
@@ -202,12 +218,11 @@ def serve() -> None:
         engine = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry())
         tasks.append(engine.process_pending)
         judging = "enabled"
-    status = lambda: {"gate_policy_version": policy.version, "judging": judging,
-                      "awaiting_approval": len(reg.store.submission_ids(("AWAITING_APPROVAL",))),
-                      "turn_engine_version": config.turn_engine_version,
-                      "model_runtime_version": config.model_runtime_version}
+    loop = Loop(float(_env("GATE_POLL_SECONDS", "60")), tasks)
+
+    status = make_status(policy, judging, config, reg, engine, loop)
     # 후보 수집은 여기서 돌리지 않는다. 스케줄러가 `collect`를 부른다(D39).
-    Loop(float(_env("GATE_POLL_SECONDS", "60")), tasks).start()
+    loop.start()
     read_tokens = _tokens("GATE_READ_TOKENS", False)
     single = read_secret("GATE_READ_TOKEN")
     if single:  # 이전 설정과의 호환: 역할 이름 없는 단일 읽기 토큰
@@ -238,8 +253,13 @@ def collect(cfg: dict) -> int:
             print(json.dumps({"job": "collect", "status": "deferred", "reason": e.message}, ensure_ascii=False))
             return EX_TEMPFAIL
         raise
-    print(json.dumps({"job": "collect", "status": "ok", "submitted": len(made),
-                      "new": len(reg.store.submission_ids()) - before}, ensure_ascii=False))
+    out = {"job": "collect", "status": "ok", "submitted": len(made), "new": len(reg.store.submission_ids()) - before}
+    if c.skipped:
+        # 읽지 못한 항목이 있으면 나머지는 제출했더라도 성공으로 끝내지 않는다(스케줄러의 FAIL 기록에 보이게 한다)
+        out.update({"status": "partial", "skipped": c.skipped})
+        print(json.dumps(out, ensure_ascii=False))
+        return 1
+    print(json.dumps(out, ensure_ascii=False))
     return 0
 
 
@@ -270,9 +290,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             return {"collect": collect, "judge": judge}[a.cmd](cfg)
         except BoundaryError as e:
-            if not e.retryable:
-                raise
-            # DB가 닿지 않거나 응답이 없을 때: 상한 안에 오류가 올라오므로 무한 대기하지 않고 비정상 종료 코드로 끝난다(재시도 가능)
+            # 상한 안에 오류가 올라오므로 무한 대기하지 않고 비정상 종료 코드로 끝난다(DB·이웃 무응답 포함).
+            # 재시도 가능(UNAVAILABLE)이면 75, 인증 실패 등 재시도로 풀리지 않는 것은 1(조용히 삼키지 않는다, FAULT_POLICY 9)
             print(json.dumps({"job": a.cmd, "status": "failed", "code": e.code, "reason": e.message}, ensure_ascii=False))
-            return EX_TEMPFAIL
+            return EX_TEMPFAIL if e.retryable else 1
     return 0

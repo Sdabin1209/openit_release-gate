@@ -276,9 +276,11 @@ class MemoryStore(Store):
                 return False
             if receipt is not None and receipt[0] in self._receipts:
                 return False
-            self._pointers.append(json.loads(json.dumps(new_pointer)))
-            if receipt is not None:
-                self._receipts[receipt[0]] = (receipt[1], json.loads(json.dumps(receipt[2])))
+            ptr = json.loads(json.dumps(new_pointer))      # 복사(직렬화)를 모두 끝낸 뒤에 반영한다: 중간에 실패해도 반쯤 바뀌지 않는다
+            rec = (receipt[1], json.loads(json.dumps(receipt[2]))) if receipt is not None else None
+            self._pointers.append(ptr)
+            if rec is not None:
+                self._receipts[receipt[0]] = rec
             return True
 
     def get_receipt(self, request_id):
@@ -315,15 +317,34 @@ class ReleaseFiles:
         rid = release.manifest["release_id"]
         final = self.root / "releases" / rid
         if final.exists():
-            raise BoundaryError("CONFLICT", f"release_id 충돌: {rid}")
+            try:
+                self.get_release(rid)
+            except BoundaryError as e:
+                if e.code != "NOT_FOUND":
+                    raise
+                # 행 없는 디렉터리: 이전 커밋이 실패해 남은 찌꺼기다(읽기는 행을 기준으로 하므로 보이지 않았다). 치우고 다시 만든다
+                shutil.rmtree(final, ignore_errors=True)
+            else:
+                raise BoundaryError("CONFLICT", f"release_id 충돌: {rid}")
         tmp = self.root / "releases" / f".tmp-{rid}"
         shutil.rmtree(tmp, ignore_errors=True)
-        (tmp / "adapters").mkdir(parents=True)
-        (tmp / "eval_reports.json").write_text(json.dumps(dict(release.eval_reports or {}), ensure_ascii=False), encoding="utf-8")
-        (tmp / "question_bank.json").write_text(json.dumps(release.question_bank, ensure_ascii=False), encoding="utf-8")
-        for role, src in release.adapters.items():
-            shutil.copytree(src, tmp / "adapters" / role)
+        try:
+            (tmp / "adapters").mkdir(parents=True)
+            (tmp / "eval_reports.json").write_text(json.dumps(dict(release.eval_reports or {}), ensure_ascii=False), encoding="utf-8")
+            (tmp / "question_bank.json").write_text(json.dumps(release.question_bank, ensure_ascii=False), encoding="utf-8")
+            for role, src in release.adapters.items():
+                shutil.copytree(src, tmp / "adapters" / role)
+        except OSError as e:     # 디스크 가득·쓰기 불가·권한(FAULT_POLICY 13): 반쯤 쓴 임시 디렉터리를 지우고 503. 기록은 남지 않는다(호출 쪽 트랜잭션이 롤백)
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise BoundaryError("UNAVAILABLE", f"릴리스 묶음 파일을 쓸 수 없다: {type(e).__name__}") from None
         return tmp
+
+    def _publish_release_dir(self, staged: Path, rid: str) -> None:
+        """임시 디렉터리를 최종 이름으로 옮긴다(같은 파일 시스템의 rename: 읽기는 완성된 디렉터리만 본다)."""
+        try:
+            staged.rename(self.root / "releases" / rid)
+        except OSError as e:
+            raise BoundaryError("UNAVAILABLE", f"릴리스 묶음을 옮길 수 없다: {type(e).__name__}") from None
 
     def get_release_reports(self, release_id):
         try:
@@ -487,7 +508,7 @@ class SqliteStore(ReleaseFiles, Store):
                 if staged is not None:
                     # 파일 이동은 트랜잭션 안에서 한다. 이동이 실패하면 롤백되고, 이동 뒤 커밋이 실패하면
                     # 행 없는 디렉터리가 남을 수 있으나 읽기는 행을 기준으로 하므로 보이지 않는다(런북의 정리 항목).
-                    staged.rename(self.root / "releases" / release.manifest["release_id"])
+                    self._publish_release_dir(staged, release.manifest["release_id"])
                     staged = None
         except sqlite3.IntegrityError as e:
             raise BoundaryError("CONFLICT", f"저장 충돌: {e}") from e

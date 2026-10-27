@@ -67,22 +67,22 @@ class SubjectLoader:
             else:
                 d.bank = bank
         except BoundaryError as e:
-            if e.retryable:
-                raise
+            if e.retryable or e.code == "PERMISSION_DENIED":
+                raise      # 인증 실패는 내용의 문제가 아니다: 반려 판정을 남기지 않고 올린다(FAULT_POLICY 9)
             d.problems.append(f"문항 세트를 읽지 못했다: {e.code}")
         try:
             d.reviews = list(self.questions.get_reviews(qref))
             d.reviews_ok = True
         except BoundaryError as e:
-            if e.retryable:
-                raise
+            if e.retryable or e.code == "PERMISSION_DENIED":
+                raise      # 인증 실패는 내용의 문제가 아니다: 반려 판정을 남기지 않고 올린다(FAULT_POLICY 9)
             d.problems.append(f"검수 기록을 읽지 못했다: {e.code}")
         for key, role in (("lora_a", "LORA_A"), ("lora_b", "LORA_B")):
             ref = subject[key]
             try:
                 m = self.models.get_manifest(ref["id"], ref["version"])
             except BoundaryError as e:
-                if e.retryable:
+                if e.retryable or e.code == "PERMISSION_DENIED":
                     raise
                 d.problems.append(f"{role} 매니페스트를 읽지 못했다: {e.code}")
                 continue
@@ -98,8 +98,8 @@ class SubjectLoader:
         try:
             raw = self.models.get_eval_report(m["eval_report_ref"])
         except BoundaryError as e:
-            if e.retryable:
-                raise
+            if e.retryable or e.code == "PERMISSION_DENIED":
+                raise      # 인증 실패는 내용의 문제가 아니다: 반려 판정을 남기지 않고 올린다(FAULT_POLICY 9)
             d.report_problems.append(f"{role}: 평가 보고서 {m['eval_report_ref']}를 읽지 못했다({e.code})")
             return
         try:
