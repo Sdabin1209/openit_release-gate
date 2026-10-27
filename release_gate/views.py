@@ -16,15 +16,24 @@ from .store import Store
 STATUSES = ("PENDING_CHECK", "AWAITING_APPROVAL", "REJECTED_AUTO", "REJECTED_HUMAN", "PASSED")
 
 
+_STATES_OF = {"PENDING_CHECK": ("RECEIVED",), "AWAITING_APPROVAL": ("AWAITING_APPROVAL",),
+              "REJECTED_AUTO": ("DECIDED",), "REJECTED_HUMAN": ("DECIDED",), "PASSED": ("DECIDED",)}
+_CHUNK = 200
+
+
 def submission_view(store: Store, sid: str) -> dict:
     sub = store.get_submission(sid)  # NOT_FOUND
     w = store.get_work(sid)
+    return _view(sub, w, store.latest_decision(sid) if w["state"] == "DECIDED" else None)
+
+
+def _view(sub: dict, w: dict, d: Optional[dict]) -> dict:
+    sid = sub["submission_id"]
     view = {"submission_id": sid, "submitted_at": sub["submitted_at"], "submitted_by_role": sub["submitted_by_role"],
             "subject": sub["subject"], "decision_id": None, "approval_id": None, "release_id": None}
     if w["state"] == "AWAITING_APPROVAL":
         view.update(status="AWAITING_APPROVAL", updated_at=w.get("awaiting_at") or sub["submitted_at"])
         return view
-    d = store.latest_decision(sid) if w["state"] == "DECIDED" else None
     if d is None:
         view.update(status="PENDING_CHECK", updated_at=sub["submitted_at"])
         return view
@@ -45,15 +54,19 @@ def list_submission_views(store: Store, *, status: Optional[str] = None, cursor:
         before = None if cursor is None else int(cursor)
     except (TypeError, ValueError):
         raise BoundaryError("INVALID_RECORD", "cursor 형식이 틀렸다") from None
+    # 접수 한 건당 쿼리 2개(N+1)를 피한다: 접수·작업 상태·최신 판정을 한 쿼리(JOIN)로 묶음 단위로 읽고, 상태로 먼저 거른다.
+    states = _STATES_OF.get(status) if status else None
     items, last = [], None
-    for seq, sid in reversed(store.submission_seqs()):
-        if before is not None and seq >= before:
-            continue
-        v = submission_view(store, sid)
-        if status is not None and v["status"] != status:
-            continue
-        if len(items) == limit:
-            return items, str(last)   # 더 있다
-        items.append(v)
-        last = seq
-    return items, None
+    while True:
+        rows = store.submission_rows(states=states, before=before, limit=_CHUNK)
+        for seq, sub, w, d in rows:
+            v = _view(sub, w, d if w["state"] == "DECIDED" else None)
+            if status is not None and v["status"] != status:
+                continue
+            if len(items) == limit:
+                return items, str(last)   # 더 있다
+            items.append(v)
+            last = seq
+        if len(rows) < _CHUNK:
+            return items, None
+        before = rows[-1][0]

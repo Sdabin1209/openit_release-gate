@@ -85,6 +85,15 @@ class GateServiceImpl:
         rec = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "submission_id": "sub-" + key[7:39],
                "submitted_at": ts(self.clock()), "submitted_by_role": requested_by_role, "subject": subject}
         self.schemas.validate("GateSubmission", rec)
+        cap = self.config.max_pending_submissions
+        if cap is not None and self.store.count_submissions(("RECEIVED", "AWAITING_APPROVAL")) >= cap:
+            try:
+                return self.store.get_submission(rec["submission_id"])      # 이미 있는 조합은 제한과 무관하게 같은 접수를 돌려준다(멱등)
+            except BoundaryError as e:
+                if e.code != "NOT_FOUND":
+                    raise
+            raise BoundaryError("FAILED_PRECONDITION", f"결정 전 접수가 상한({cap})에 이르렀다. 승인·반려로 줄이거나 상한(GATE_MAX_PENDING_SUBMISSIONS)을 조정한다",
+                                {"reason": "SUBMISSION_LIMIT"})
         existing, _ = self.store.put_submission(rec, key)
         return existing
 
@@ -342,7 +351,9 @@ class GateEngine:
         d["release_id"] = "rel-" + _sub_hex(sid)
         d["approver"] = {"role": approval["approver_role"], "id": approval["approver_id"]}
         d["approval_id"] = approval["approval_id"]
-        with tempfile.TemporaryDirectory(prefix="bundle-") as tmp:
+        # 파일 저장소면 어댑터를 릴리스 디렉터리와 같은 파일 시스템에 받아 두고 복사 없이 옮긴다(수 GB 어댑터를 두 번 쓰지 않는다)
+        work_dir = getattr(self.store, "work_dir", None)
+        with tempfile.TemporaryDirectory(prefix=".bundle-", dir=str(work_dir) if work_dir else None) as tmp:
             adapters, ext_adapters = {}, {}
             for role, key in (("LORA_A", "lora_a"), ("LORA_B", "lora_b")):
                 m, ref = data.manifests[role], subject[key]
@@ -365,7 +376,8 @@ class GateEngine:
                    "model_runtime_version": self.config.model_runtime_version, "adapters": ext_adapters}
             man["content_hash"] = canonical.content_hash(man)
             self.schemas.validate("ReleaseManifest", man)
-            self._commit(sid, d, approval, ReleaseParts(man, data.bank, adapters, data.eval_reports))
+            movable = work_dir is not None and all(Path(a).resolve().is_relative_to(Path(tmp).resolve()) for a in adapters.values())
+            self._commit(sid, d, approval, ReleaseParts(man, data.bank, adapters, data.eval_reports, movable=movable))
 
     def _commit(self, sid, d, approval, release=None):
         self.schemas.validate("GateDecision", d)

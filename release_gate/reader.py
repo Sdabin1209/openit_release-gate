@@ -11,8 +11,10 @@ from boundary_contracts.sdk import ReleaseBundle
 
 from .store import ROLES, Store
 
-def verify_release(store: Store, release_id: str, dest: Path) -> ReleaseBundle:
-    """릴리스 묶음을 dest에 풀고 모든 해시를 검증한다. 통과하지 않은 릴리스는 FAILED_PRECONDITION."""
+def verify_release(store: Store, release_id: str, dest: Optional[Path]) -> ReleaseBundle:
+    """릴리스 묶음의 모든 해시를 검증한다. 통과하지 않은 릴리스는 FAILED_PRECONDITION.
+    dest가 있으면 거기에 풀어 돌려준다(load_bundle). dest가 None이면 파일 저장소는 복사 없이 릴리스 디렉터리를 그대로 읽어 검증한다
+    (읽기 전용으로 쓸 것. 활성화·롤백 검증·번들 전송에서 수 GB 어댑터를 통째로 복사하지 않는다. 검증 강도는 같다: 같은 해시 계산)."""
     manifest = store.get_release(release_id)
     if canonical.content_hash(manifest) != manifest["content_hash"]:
         raise BoundaryError("INTEGRITY_ERROR", f"릴리스 매니페스트의 content_hash가 맞지 않는다: {release_id}")
@@ -24,8 +26,9 @@ def verify_release(store: Store, release_id: str, dest: Path) -> ReleaseBundle:
         raise
     if decision.get("result") != "PASS" or decision.get("release_id") != release_id:
         raise BoundaryError("FAILED_PRECONDITION", f"통과(PASS)하지 않은 릴리스다: {release_id}")
-    Path(dest).mkdir(parents=True, exist_ok=True)
-    bank, adapters = store.read_release_parts(release_id, Path(dest))
+    if dest is not None:
+        Path(dest).mkdir(parents=True, exist_ok=True)
+    bank, adapters = store.read_release_parts(release_id, Path(dest) if dest is not None else None)
     if canonical.sha256_hash(bank) != manifest["question_set"]["content_hash"]:
         raise BoundaryError("INTEGRITY_ERROR", f"묶음의 문항 세트 해시가 매니페스트와 다르다: {release_id}")
     expected = manifest.get("adapters", {})
@@ -71,8 +74,15 @@ class ReleaseReaderImpl:
         return self._store.list_releases(cursor=cursor, limit=limit)
 
 
+def _in_place(store: Store) -> bool:
+    return hasattr(store, "work_dir")     # 파일 저장소(SQLite·PostgreSQL). 메모리 저장소는 풀어야 파일이 생긴다
+
+
 def verify_in_tempdir(store: Store, release_id: str) -> None:
-    """활성화 직전의 무결성 확인. 풀어 본 뒤 임시 디렉터리를 지운다."""
+    """활성화·롤백 직전의 무결성 확인. 파일 저장소는 복사 없이 제자리에서 해시만 계산한다(메모리 저장소는 임시 디렉터리에 푼다)."""
+    if _in_place(store):
+        verify_release(store, release_id, None)
+        return
     with tempfile.TemporaryDirectory(prefix="verify-") as d:
         verify_release(store, release_id, Path(d))
 
@@ -85,7 +95,8 @@ def write_bundle_tar(store: Store, release_id: str, out) -> None:
     import tarfile
 
     with tempfile.TemporaryDirectory(prefix="bundle-tar-") as d:
-        b = verify_release(store, release_id, Path(d))
+        # 보내기 전에 모든 해시를 검증한다. 파일 저장소는 복사 없이 제자리에서 읽는다(수신 쪽 클라이언트도 해시를 다시 확인한다)
+        b = verify_release(store, release_id, None if _in_place(store) else Path(d))
         with tarfile.open(fileobj=out, mode="w|") as tar:
             for name, obj in (("manifest.json", b.manifest), ("question_bank.json", b.question_bank)):
                 data = json.dumps(obj, ensure_ascii=False).encode("utf-8")

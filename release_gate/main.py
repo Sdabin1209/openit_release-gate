@@ -14,12 +14,15 @@ import importlib.metadata
 import json
 import logging
 import os
+import signal
 import sys
+import threading
+import time
 
 from boundary_contracts import read_secret
 from boundary_contracts.errors import BoundaryError
 
-from .app import GateHTTPServer, Loop
+from .app import DEFAULT_MAX_CONNECTIONS, DEFAULT_REQUEST_TIMEOUT, GateHTTPServer, Loop
 from .checks import CheckRegistry
 from .collector import CandidateCollector
 from .config import GateConfig
@@ -27,7 +30,10 @@ from .gate import GateEngine
 from .policy import GatePolicy
 from .postgres_store import DEFAULT_CONNECT_TIMEOUT, DEFAULT_PROBE_TIMEOUT, DEFAULT_STATEMENT_TIMEOUT
 from .registry import open_registry
+from .retention import (DEFAULT_ATTEMPTS_DAYS, DEFAULT_KEEP_RELEASES, DEFAULT_REJECTED_DAYS, RetentionPolicy,
+                        prune as retention_prune, summary as retention_summary)
 from .schemas import SchemaSet, SurveySchema
+from .util import utc_now
 from .store import SqliteStore
 
 log = logging.getLogger("gate")
@@ -144,7 +150,8 @@ def _gate_config(survey: SurveySchema) -> GateConfig:
     te, mr = lib_versions()
     return GateConfig(
         supported_runtime_contract_version=int(_env("GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION", str(survey.contract_version))),
-        turn_engine_version=te, model_runtime_version=mr, **_role_overrides())
+        turn_engine_version=te, model_runtime_version=mr,
+        max_pending_submissions=_opt_int("GATE_MAX_PENDING_SUBMISSIONS"), **_role_overrides())
 
 
 def _tokens(name: str, required: bool) -> dict:
@@ -162,6 +169,40 @@ def _tokens(name: str, required: bool) -> dict:
 
 def _logging() -> None:
     logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+
+
+def _opt_int(name: str, minimum: int = 1) -> "int | None":
+    """선택 정수 설정. 없으면 None. 있으면 minimum 이상이어야 한다."""
+    raw = os.environ.get(name)
+    if raw in (None, ""):
+        return None
+    try:
+        v = int(raw)
+    except ValueError:
+        raise SystemExit(f"{name}은(는) 정수여야 한다") from None
+    if v < minimum:
+        raise SystemExit(f"{name}은(는) {minimum} 이상이어야 한다")
+    return v
+
+
+def _retention_policy() -> RetentionPolicy:
+    """보존 설정. 무기한(없음·none·null·0·음수)은 허용하지 않는다(D88 U4). 값이 없으면 잠정 기본값."""
+    def one(name: str, default: int, minimum: int) -> int:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        if raw.strip().lower() in ("", "none", "null", "forever", "unlimited"):
+            raise SystemExit(f"{name}: 무기한 보존은 허용하지 않는다(양의 정수 일수)")
+        try:
+            v = int(raw)
+        except ValueError:
+            raise SystemExit(f"{name}은(는) 정수여야 한다") from None
+        if v < minimum:
+            raise SystemExit(f"{name}은(는) {minimum} 이상이어야 한다")
+        return v
+    return RetentionPolicy(keep_releases=one("GATE_RETAIN_KEEP_RELEASES", DEFAULT_KEEP_RELEASES, 0),
+                           rejected_days=one("GATE_RETAIN_REJECTED_DAYS", DEFAULT_REJECTED_DAYS, 1),
+                           attempts_days=one("GATE_RETAIN_ATTEMPTS_DAYS", DEFAULT_ATTEMPTS_DAYS, 1))
 
 
 def _seconds(name: str, default: float) -> float:
@@ -191,8 +232,10 @@ def _build(cfg: dict):
     return schemas, survey, config, reg
 
 
-def make_status(policy, judging, config, reg, engine, loop):
+def make_status(policy, judging, config, reg, engine, loop, retention: "RetentionPolicy | None" = None):
     """/readyz에 붙는 보조 수치를 만드는 함수."""
+    cache = {"at": 0.0, "v": None}
+
     def status() -> dict:
         st = {"gate_policy_version": policy.version, "judging": judging,
               "awaiting_approval": len(reg.store.submission_ids(("AWAITING_APPROVAL",))),
@@ -203,6 +246,10 @@ def make_status(policy, judging, config, reg, engine, loop):
             err = engine.last_error or loop.last_error
             st["judging_loop"] = {**loop.state(), "neighbor_error": engine.last_error,
                                   "upstream_auth_failed": bool(err and err["code"] == "PERMISSION_DENIED")}
+        if retention is not None:       # 보존 현황은 60초 캐시(목록 훑기를 /readyz마다 하지 않는다)
+            if cache["v"] is None or time.monotonic() - cache["at"] > 60:
+                cache["v"], cache["at"] = retention_summary(reg.store, retention), time.monotonic()
+            st["retention"] = cache["v"]
         return st
     return status
 
@@ -218,9 +265,11 @@ def serve() -> None:
         engine = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry())
         tasks.append(engine.process_pending)
         judging = "enabled"
-    loop = Loop(float(_env("GATE_POLL_SECONDS", "60")), tasks)
+    loop = Loop(_seconds("GATE_POLL_SECONDS", 60.0), tasks)
+    retention = _retention_policy()           # 잘못된 값이면 시작을 거부한다
+    port = _opt_int("PORT") or 8080
 
-    status = make_status(policy, judging, config, reg, engine, loop)
+    status = make_status(policy, judging, config, reg, engine, loop, retention)
     # 후보 수집은 여기서 돌리지 않는다. 스케줄러가 `collect`를 부른다(D39).
     loop.start()
     read_tokens = _tokens("GATE_READ_TOKENS", False)
@@ -229,11 +278,43 @@ def serve() -> None:
         read_tokens[single] = "reader"
     if not read_tokens:
         raise SystemExit("비밀 GATE_READ_TOKENS(또는 GATE_READ_TOKENS_FILE)이(가) 필요하다")
-    srv = GateHTTPServer(("0.0.0.0", int(_env("PORT", "8080"))), reg, read_tokens=read_tokens,
-                         write_tokens=_tokens("GATE_WRITE_TOKENS", True), status=status, engine=engine)
+    srv = GateHTTPServer(("0.0.0.0", port), reg, read_tokens=read_tokens,
+                         write_tokens=_tokens("GATE_WRITE_TOKENS", True), status=status, engine=engine,
+                         request_timeout=_seconds("GATE_REQUEST_TIMEOUT_SECONDS", DEFAULT_REQUEST_TIMEOUT),
+                         max_connections=_opt_int("GATE_MAX_CONNECTIONS") or DEFAULT_MAX_CONNECTIONS)
     log.info("gate-service 시작: policy=%s judging=%s turn-engine=%s model-runtime=%s", policy.version, judging,
              config.turn_engine_version, config.model_runtime_version)
-    srv.serve_forever()
+    grace = _seconds("GATE_SHUTDOWN_GRACE_SECONDS", 20.0)
+    run_until_signal(srv, loop, reg.store, grace)
+
+
+def run_until_signal(srv, loop, store, grace: float) -> None:
+    """SIGTERM·SIGINT를 받으면 우아하게 끝낸다: /readyz를 shutting_down으로 바꾸고 새 연결을 받지 않고, 처리 중인 요청이 끝나길
+    grace초까지 기다린 뒤 주기 작업을 멈추고 저장소를 닫는다. PID 1이어도 동작한다(핸들러를 직접 건다)."""
+    def on_signal(signum, _frame):
+        log.info("종료 신호 %s: 새 연결을 받지 않고 처리 중인 요청을 기다린다(최대 %.0f초)", signum, grace)
+        threading.Thread(target=_stop, daemon=True, name="gate-stop").start()
+
+    stopped = threading.Event()
+
+    def _stop():
+        try:
+            left = srv.graceful_stop(grace)
+            if left:
+                log.warning("종료 시한 안에 끝나지 않은 요청 %d건", left)
+        finally:
+            stopped.set()
+
+    signal.signal(signal.SIGTERM, on_signal)
+    signal.signal(signal.SIGINT, on_signal)
+    try:
+        srv.serve_forever()
+        # serve_forever가 돌려주면 shutdown()이 불린 것이다. _stop 스레드가 대기를 마칠 때까지 기다린다
+        stopped.wait(grace + 5)
+    finally:
+        loop.stop_event.set()
+        store.close()
+        log.info("gate-service 종료")
 
 
 def collect(cfg: dict) -> int:
@@ -274,13 +355,23 @@ def judge(cfg: dict) -> int:
     return 0
 
 
+def prune(cfg: dict, *, dry_run: bool = False) -> int:
+    """보존 정책(docs/adr, retention.py)대로 정리하는 run-once 잡. 멱등. 스케줄러가 주기로 부른다(D39)."""
+    policy = _retention_policy()
+    _, _, _, reg = _build(cfg)
+    out = retention_prune(reg.store, policy, now=utc_now(), apply=not dry_run)
+    print(json.dumps({"job": "prune", "status": "ok", **out}, ensure_ascii=False))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="release_gate", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = p.add_subparsers(dest="cmd", required=True)
     sp.add_parser("serve")
-    for n in ("collect", "judge"):
+    for n in ("collect", "judge", "prune"):
         c = sp.add_parser(n)
         c.add_argument("--config", help="설정 파일(JSON)")
+    sp.choices["prune"].add_argument("--dry-run", action="store_true", help="지우지 않고 대상만 낸다")
     a = p.parse_args(argv)
     if a.cmd == "serve":
         serve()
@@ -288,6 +379,8 @@ def main(argv: list[str] | None = None) -> int:
         _logging()
         cfg = load_config(a.config)
         try:
+            if a.cmd == "prune":
+                return prune(cfg, dry_run=a.dry_run)
             return {"collect": collect, "judge": judge}[a.cmd](cfg)
         except BoundaryError as e:
             # 상한 안에 오류가 올라오므로 무한 대기하지 않고 비정상 종료 코드로 끝난다(DB·이웃 무응답 포함).

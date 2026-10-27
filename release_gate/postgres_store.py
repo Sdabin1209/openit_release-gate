@@ -37,6 +37,9 @@ _SCHEMA = [
     """CREATE TABLE IF NOT EXISTS pointer_history(pointer_version BIGINT PRIMARY KEY, record TEXT NOT NULL)""",
     """CREATE TABLE IF NOT EXISTS approvals(submission_id TEXT PRIMARY KEY, approval_id TEXT UNIQUE NOT NULL, record TEXT NOT NULL)""",
     """CREATE TABLE IF NOT EXISTS receipts(request_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, record TEXT NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS attempts(seq BIGSERIAL PRIMARY KEY, at TEXT NOT NULL, record TEXT NOT NULL)""",
+    """CREATE INDEX IF NOT EXISTS idx_submissions_state ON submissions(state, seq)""",
+    """CREATE INDEX IF NOT EXISTS idx_decisions_submission ON decisions(submission_id, seq)""",
 ]
 # DB 대기 상한(초). 설정으로 바꾼다(GATE_DB_CONNECT_TIMEOUT_SECONDS 등, main.py). 근거는 docs/boundary.md "DB 대기 상한":
 # 정상일 때 문장 하나는 수 ms이고 쓰기 하나는 몇 문장이라 3초면 느린 디스크·잠깐의 잠금 대기는 견딘다.
@@ -186,6 +189,32 @@ class PostgresStore(ReleaseFiles, Store):
         except psycopg.Error as e:
             raise BoundaryError("UNAVAILABLE", f"레지스트리를 읽을 수 없다: {_safe(e)}") from None
 
+    def record_attempt(self, rec):
+        with self._Txn(self, _LOCK_SUBMIT) as c:
+            c.execute("INSERT INTO attempts(at, record) VALUES(%s,%s)", (rec["at"], json.dumps(rec, ensure_ascii=False)))
+
+    def list_attempts(self, limit=100):
+        return [json.loads(r[0]) for r in self._q("SELECT record FROM attempts ORDER BY seq DESC LIMIT %s", (limit,))]
+
+    def purge_attempts(self, before):
+        with self._Txn(self, _LOCK_SUBMIT) as c:
+            return c.execute("DELETE FROM attempts WHERE at < %s", (before,)).rowcount
+
+    def delete_submission(self, submission_id):
+        with self._Txn(self, _LOCK_DECISION) as c:
+            c.execute("DELETE FROM approvals WHERE submission_id=%s", (submission_id,))
+            c.execute("DELETE FROM decisions WHERE submission_id=%s", (submission_id,))
+            return c.execute("DELETE FROM submissions WHERE submission_id=%s", (submission_id,)).rowcount > 0
+
+    def close(self) -> None:
+        with self._lock:
+            c, self._c = self._c, None
+            if c is not None:
+                try:
+                    c.close()
+                except Exception:
+                    pass
+
     def ping(self) -> None:
         """/readyz용 확인. 주 연결·락을 쓰지 않는 별도 짧은 연결로 `probe_timeout` 안에 끝낸다(안 끝나면 UNAVAILABLE).
         요청 처리가 주 연결을 쥐고 기다리는 중이어도 막히지 않는다."""
@@ -239,8 +268,28 @@ class PostgresStore(ReleaseFiles, Store):
         return json.loads(rows[0][0])
 
     def submission_ids(self, states=None):
-        rows = self._q("SELECT submission_id, state FROM submissions ORDER BY seq")
-        return [r[0] for r in rows if states is None or r[1] in states]
+        if states is None:
+            return [r[0] for r in self._q("SELECT submission_id FROM submissions ORDER BY seq")]
+        return [r[0] for r in self._q("SELECT submission_id FROM submissions WHERE state = ANY(%s) ORDER BY seq", (list(states),))]
+
+    def submission_rows(self, *, states=None, before=None, limit=200):
+        where, args = [], []
+        if states is not None:
+            where.append("s.state = ANY(%s)")
+            args.append(list(states))
+        if before is not None:
+            where.append("s.seq < %s")
+            args.append(before)
+        sql = ("SELECT s.seq, s.record, s.work, d.record FROM submissions s LEFT JOIN decisions d ON d.seq = "
+               "(SELECT MAX(seq) FROM decisions WHERE submission_id = s.submission_id)"
+               + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY s.seq DESC LIMIT %s")
+        return [(r[0], json.loads(r[1]), json.loads(r[2]), json.loads(r[3]) if r[3] else None)
+                for r in self._q(sql, (*args, limit))]
+
+    def count_submissions(self, states=None):
+        if states is None:
+            return self._q("SELECT COUNT(*) FROM submissions")[0][0]
+        return self._q("SELECT COUNT(*) FROM submissions WHERE state = ANY(%s)", (list(states),))[0][0]
 
     def submission_seqs(self):
         return [(r[0], r[1]) for r in self._q("SELECT seq, submission_id FROM submissions ORDER BY seq")]
@@ -272,6 +321,14 @@ class PostgresStore(ReleaseFiles, Store):
     def commit_decision(self, decision, work, release=None, approval=None):
         did = decision["decision_id"]
         staged = None
+        if release is not None:
+            try:                                           # 이미 있는 판정이면 복사할 필요가 없다(멱등)
+                _same(self.get_decision(did), decision, did)
+                return decision
+            except BoundaryError as e:
+                if e.code != "NOT_FOUND":
+                    raise
+            staged = self._stage_release(release)          # 큰 복사는 락·트랜잭션 밖에서(읽기 /v1/active-pointer를 막지 않는다)
         try:
             with self._Txn(self, _LOCK_DECISION) as c:
                 row = c.execute("SELECT record FROM decisions WHERE decision_id=%s", (did,)).fetchone()
@@ -282,7 +339,6 @@ class PostgresStore(ReleaseFiles, Store):
                     c.execute("INSERT INTO approvals(submission_id, approval_id, record) VALUES(%s,%s,%s)",
                               (approval["submission_id"], approval["approval_id"], json.dumps(approval, ensure_ascii=False)))
                 if release is not None:
-                    staged = self._stage_release(release)
                     c.execute("INSERT INTO releases(release_id,record) VALUES(%s,%s)",
                               (release.manifest["release_id"], json.dumps(release.manifest, ensure_ascii=False)))
                 s = decision["subject"]
@@ -292,7 +348,7 @@ class PostgresStore(ReleaseFiles, Store):
                 c.execute("UPDATE submissions SET work=%s, state=%s WHERE submission_id=%s",
                           (json.dumps(work, ensure_ascii=False), work["state"], decision["submission_id"]))
                 if staged is not None:
-                    # SQLite 구현과 같다: 파일 이동은 커밋 전에. 이동이 실패하면 롤백, 이동 뒤 커밋 실패 시 행 없는 디렉터리는 읽기에 보이지 않는다.
+                    # 락 안에서는 이름 바꾸기(rename)만 한다. 이동 뒤 커밋이 실패해 행 없는 디렉터리가 남아도 읽기에 보이지 않고 다음 생성 때 치운다.
                     self._publish_release_dir(staged, release.manifest["release_id"])
                     staged = None
         except pgerr.IntegrityError as e:

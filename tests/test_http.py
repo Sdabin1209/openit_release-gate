@@ -32,7 +32,19 @@ def raw(base, path, token):
         return e.code, e.headers.get("Content-Type"), e.read()
 
 
-def call(base, path, body=None, token=None, user=None):
+AUTO = "auto"      # 승인 호출에는 게이트웨이가 붙이는 X-Openit-User를 흉내 낸다(D88 U7: 헤더가 필수). user=None이면 헤더를 붙이지 않는다
+
+
+def _gw_user(path, body, token):
+    if path == "/v1/approvals" and token == "wa":
+        a = (body or {}).get("approver_id")
+        return a if isinstance(a, str) and a else "gw-user"
+    return None
+
+
+def call(base, path, body=None, token=None, user=AUTO):
+    if user == AUTO:
+        user = _gw_user(path, body, token)
     req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(),
                                  method="GET" if body is None else "POST")
     if token:
@@ -287,8 +299,12 @@ def hcall(base, path, body=None, token=None, headers=None):
                                  method="GET" if body is None else "POST")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
-    for k, v in (headers or {}).items():
-        req.add_header(k, v)
+    headers = dict(headers or {})
+    if "X-Openit-User" not in headers and _gw_user(path, body, token):
+        headers["X-Openit-User"] = _gw_user(path, body, token)
+    for k, v in headers.items():
+        if v is not None:
+            req.add_header(k, v)
     try:
         with urllib.request.urlopen(req) as r:
             return r.status, json.loads(r.read()), r.headers
@@ -332,20 +348,35 @@ def test_conflict_reasons_stale_and_already_decided(world, server):
     assert hcall(server, "/v1/approvals", dict(body, report_hash=h2), "wa")[0] == 200            # 같은 결정은 멱등
 
 
-def test_x_openit_user_header_wins_over_body(world, server):
+def test_x_openit_user_header_is_the_approver(world, server):
     sid = _awaiting(world, server)
-    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "body-user", "approver_role": "release-approver"}
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_role": "release-approver"}
     assert hcall(server, "/v1/approvals", body, "wa", {"X-Openit-User": "bad id!"})[0] == 400      # Id 형식이 아니다
     assert hcall(server, "/v1/approvals", body, "wa", {"X-Openit-User": "x" * 129})[0] == 400
     assert world.reg.store.get_approval(sid) is None
-    st, ap, _ = hcall(server, "/v1/approvals", body, "wa", {"X-Openit-User": "gw-user-7"})
+    st, ap, _ = hcall(server, "/v1/approvals", body, "wa", {"X-Openit-User": "gw-user-7"})      # 본문에 approver_id가 없어도 헤더 값이 기록된다
     assert st == 201 and ap["approver_id"] == "gw-user-7"
     d = world.reg.store.latest_decision(sid)
     assert d["approver"]["id"] == "gw-user-7"
     world.schemas.validate("GateApproval", ap)
 
 
-def test_body_approver_id_used_without_header(world, server):
+def test_approval_without_header_is_401_and_records_nothing_but_the_attempt(world, server):
+    """D88 U7: 헤더가 없으면 본문 approver_id가 있어도 거부한다. 승인·판정은 남지 않고 거부 시도는 행위자 없이(역할만) 남는다."""
     sid = _awaiting(world, server)
-    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "body-user", "approver_role": "release-approver"}
-    assert hcall(server, "/v1/approvals", body, "wa")[1]["approver_id"] == "body-user"
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "self-claimed", "approver_role": "release-approver"}
+    st, e, _ = hcall(server, "/v1/approvals", body, "wa", {"X-Openit-User": None})
+    assert st == 401 and e["code"] == "PERMISSION_DENIED"
+    assert world.reg.store.get_approval(sid) is None and world.reg.store.latest_decision(sid) is None
+    att = world.reg.store.list_attempts()[0]
+    assert att["status"] == 401 and att["role"] == "release-approver" and att["user"] is None and att["target"] == sid
+
+
+def test_approval_header_differs_from_body_is_400_and_attempt_has_actor(world, server):
+    sid = _awaiting(world, server)
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "someone-else", "approver_role": "release-approver"}
+    st, e, _ = hcall(server, "/v1/approvals", body, "wa", {"X-Openit-User": "gw-user-7"})
+    assert st == 400 and world.reg.store.get_approval(sid) is None
+    att = world.reg.store.list_attempts()[0]
+    assert att["user"] == "gw-user-7" and att["status"] == 400 and att["code"] == "INVALID_RECORD"      # 거부된 시도도 행위자와 함께 남는다
+    assert hcall(server, "/v1/approvals", dict(body, approver_id="gw-user-7"), "wa", {"X-Openit-User": "gw-user-7"})[0] == 201

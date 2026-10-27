@@ -26,6 +26,7 @@ from boundary_contracts.errors import BoundaryError
 
 from .reader import write_bundle_tar
 from .registry import Registry
+from .util import ts, utc_now
 
 log = logging.getLogger("gate")
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -34,15 +35,76 @@ _STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, 
            "INTEGRITY_ERROR": 422, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
 
 
+DEFAULT_REQUEST_TIMEOUT = 30.0     # 소켓 읽기·쓰기 단위(초). 느린 연결이 스레드를 영구히 붙잡지 않게 한다
+DEFAULT_MAX_CONNECTIONS = 64       # 동시에 처리하는 연결 수 상한. 넘으면 503(재시도 가능)을 바로 돌려준다
+_CTRL = re.compile(r"[\x00-\x1f\x7f]")
+
+
 class GateHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, addr, registry: Registry, *, read_tokens: dict, write_tokens: dict,
-                 status: Callable[[], dict], engine=None):
-        super().__init__(addr, _Handler)
+                 status: Callable[[], dict], engine=None, request_timeout: float = DEFAULT_REQUEST_TIMEOUT,
+                 max_connections: int = DEFAULT_MAX_CONNECTIONS):
+        handler = type("GateHandler", (_Handler,), {"timeout": request_timeout})
+        super().__init__(addr, handler)
+        self.shutting_down = False
+        self._slots = threading.BoundedSemaphore(max_connections)
+        self._inflight = 0
+        self._inflight_cv = threading.Condition()
         self.engine = engine  # 승인 결정(decide)에 필요하다. I1·I3가 연결되지 않으면 None
         self.registry, self.read_tokens, self.write_tokens, self.status = registry, dict(read_tokens), dict(write_tokens), status
         self._last_status: dict = {}
+
+    # --- 연결 수 상한과 우아한 종료
+    def process_request(self, request, client_address):
+        if not self._slots.acquire(blocking=False):
+            try:
+                body = json.dumps({"code": "UNAVAILABLE", "message": "동시 연결이 상한에 이르렀다", "retryable": True}).encode()
+                request.sendall(b"HTTP/1.0 503 Service Unavailable\r\nContent-Type: application/json\r\nRetry-After: 1\r\n"
+                                b"Content-Length: %d\r\n\r\n" % len(body) + body)
+            except OSError:
+                pass
+            self.shutdown_request(request)
+            return
+        with self._inflight_cv:
+            self._inflight += 1
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._done()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._done()
+
+    def _done(self) -> None:
+        self._slots.release()
+        with self._inflight_cv:
+            self._inflight -= 1
+            self._inflight_cv.notify_all()
+
+    def inflight(self) -> int:
+        with self._inflight_cv:
+            return self._inflight
+
+    def graceful_stop(self, grace: float) -> int:
+        """우아한 종료: /readyz를 shutting_down(503)으로 바꾸고, 새 연결을 받지 않고(수신 소켓을 닫는다), 처리 중인 요청이 끝나길
+        최대 grace초 기다린다. 아직 처리 중인 요청 수를 돌려준다(0이면 모두 끝났다). serve_forever를 돌리는 스레드가 아닌 곳에서 부른다."""
+        self.shutting_down = True
+        self.shutdown()
+        self.server_close()
+        deadline = time.monotonic() + grace
+        with self._inflight_cv:
+            while self._inflight > 0:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    break
+                self._inflight_cv.wait(left)
+            return self._inflight
 
     def readyz_status(self) -> dict:
         """/readyz의 보조 수치(승인 대기 건수 등). 주 연결로 읽으므로 주 연결이 막혀 있으면 기다리지 않고 마지막 값을 낸다(`db_stats_stale`).
@@ -71,7 +133,15 @@ class _Handler(BaseHTTPRequestHandler):
     server: GateHTTPServer
 
     def log_message(self, fmt, *args):  # 표준 출력으로 낸다
-        log.info("%s %s", self.address_string(), fmt % args)
+        # 제어 문자는 치환한다(요청 줄에 넣은 개행·이스케이프로 로그를 위조하지 못하게). 행위자(토큰 역할, X-Openit-User)를 붙인다:
+        # 거부·실패한 요청도 이 줄에 남는다(토큰이 틀리면 role=-). 본문·토큰 값은 싣지 않는다.
+        try:
+            user = self.headers.get("X-Openit-User")
+            role = self._role_of(self.server.read_tokens) or self._role_of(self.server.write_tokens)
+        except AttributeError:        # 요청 줄을 읽기 전의 오류(헤더가 아직 없음)
+            user = role = None
+        log.info("%s %s role=%s user=%s", self.address_string(), _CTRL.sub("?", fmt % args)[:300], _CTRL.sub("?", role or "-")[:64],
+                 _CTRL.sub("?", user or "-")[:64])
 
     def _send(self, code: int, body, headers: Optional[dict] = None) -> None:
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -86,8 +156,9 @@ class _Handler(BaseHTTPRequestHandler):
     def _role_of(self, tokens: dict):
         got = self.headers.get("Authorization", "")
         if got.startswith("Bearer "):
+            presented = got[7:].encode("utf-8", "replace")      # bytes로 비교한다: 비ASCII 문자가 있어도 TypeError(500)가 되지 않는다
             for tok, role in tokens.items():
-                if hmac.compare_digest(got[7:], tok):
+                if hmac.compare_digest(presented, tok.encode("utf-8")):
                     return role
         return None
 
@@ -109,16 +180,21 @@ class _Handler(BaseHTTPRequestHandler):
     def _body(self) -> dict:
         try:
             n = int(self.headers.get("Content-Length", "0"))
+            if n < 0:
+                raise ValueError("Content-Length가 음수다")
             if n > 1 << 20:
                 raise ValueError("본문이 너무 크다")
             v = json.loads(self.rfile.read(n) or b"{}")
             if not isinstance(v, dict):
                 raise ValueError("JSON 객체가 아니다")
+            self._parsed = v
             return v
+        except OSError as e:          # 소켓 시간 초과·끊김: 본문을 제때 받지 못했다
+            raise BoundaryError("INVALID_RECORD", f"본문을 받지 못했다: {type(e).__name__}") from e
         except ValueError as e:
             raise BoundaryError("INVALID_RECORD", f"본문을 읽을 수 없다: {e}") from e
 
-    def _run(self, fn) -> None:
+    def _run(self, fn, after=None) -> None:
         headers = None
         try:
             res = fn()
@@ -133,7 +209,32 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception:  # 서비스는 죽지 않는다. 원인은 로그에 남긴다.
             log.exception("처리 중 예외")
             code, body = 500, {"code": "INTERNAL", "message": "내부 오류"}
+        self._last = (code, body if isinstance(body, dict) else {})
+        if after is not None:
+            after()           # 응답을 보내기 전에 기록한다(보낸 응답은 되돌릴 수 없고, 기록이 응답을 늦추지는 않는다)
         self._send(code, body, headers)
+
+    def _record_attempt(self, path: str) -> None:
+        """거부·실패한 쓰기 시도(승인·활성화·롤백·접수)를 행위자와 함께 남긴다(추가 전용, 보존 기간 뒤 정리).
+        유효한 쓰기 토큰의 요청만 남긴다: 토큰이 틀린 요청은 누구인지 알 수 없고 DB를 키울 수 있어 접근 로그에만 남는다."""
+        code, body = getattr(self, "_last", (0, {}))
+        role = self._role_of(self.server.write_tokens)
+        if code < 400 or role is None:
+            return
+        parsed = getattr(self, "_parsed", None) or {}
+        user = self.headers.get("X-Openit-User")
+        rec = {"at": ts(utc_now()), "method": "POST", "path": path[:64], "status": code, "code": str(body.get("code", ""))[:32],
+               "reason": str((body.get("details") or {}).get("reason", ""))[:32] if isinstance(body.get("details"), dict) else "",
+               "role": role, "user": user if user and _ID.match(user) else None}
+        for k in ("submission_id", "release_id", "request_id"):
+            v = parsed.get(k)
+            if isinstance(v, str) and _ID.match(v):
+                rec["target"] = v
+                break
+        try:
+            self.server.registry.store.record_attempt(rec)
+        except Exception:      # 기록이 안 돼도 응답은 이미 나갔다. 접근 로그에는 남아 있다
+            log.warning("시도 기록 실패")
 
     def _page(self, q: dict) -> tuple:
         def one(k, d):
@@ -177,6 +278,8 @@ class _Handler(BaseHTTPRequestHandler):
             if path == "/healthz":
                 return 200, {"status": "ok"}
             if path == "/readyz":
+                if self.server.shutting_down:
+                    return 503, {"status": "shutting_down"}
                 try:
                     r.store.ping()         # PostgreSQL이면 주 연결·락을 쓰지 않는 별도 짧은 확인(상한 probe_timeout)
                     st = self.server.readyz_status()
@@ -228,12 +331,17 @@ class _Handler(BaseHTTPRequestHandler):
             b = self._body()
             if path == "/v1/approvals":
                 role = self._write_role(b.get("approver_role"))
+                user = self.headers.get("X-Openit-User")
+                if user is None:
+                    # D88 U7: 승인자는 게이트웨이가 인증한 개인이어야 한다(활성화와 같다). 본문의 자기 신고 approver_id로는 기록하지 않는다
+                    return 401, {"code": "PERMISSION_DENIED", "message": "X-Openit-User 헤더가 없다(게이트웨이가 붙인 승인자 식별이 필요하다)"}
+                if not _ID.match(user):
+                    raise BoundaryError("INVALID_RECORD", "X-Openit-User가 ID 형식이 아니다")
+                if "approver_id" in b and b["approver_id"] != user:
+                    raise BoundaryError("INVALID_RECORD", "본문의 approver_id가 인증된 사용자(X-Openit-User)와 다르다")
                 eng = self.server.engine
                 if eng is None:
                     raise BoundaryError("UNAVAILABLE", "승인 결정에는 I1·I3 연결이 필요하다(GATE_I1_FACTORY, GATE_I3_FACTORY)")
-                user = self.headers.get("X-Openit-User")
-                if user is not None and not _ID.match(user):
-                    raise BoundaryError("INVALID_RECORD", "X-Openit-User가 ID 형식이 아니다")
                 rec, created = eng.decide(b, token_role=role, approver_id=user)
                 return (201 if created else 200), rec
             if path in ("/v1/activate", "/v1/rollback"):
@@ -257,7 +365,7 @@ class _Handler(BaseHTTPRequestHandler):
             if path == "/v1/submissions":
                 return 202, r.service.submit_candidate(b.get("subject"), requested_by_role=role)
             raise BoundaryError("NOT_FOUND", f"경로가 없다: {path}")
-        self._run(go)
+        self._run(go, after=lambda: self._record_attempt(self.path.split("?")[0]))
 
 
 class Loop(threading.Thread):

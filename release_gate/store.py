@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
+import uuid
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -26,6 +28,7 @@ class ReleaseParts:
     question_bank: dict
     adapters: Mapping[str, Path]  # role -> 원본 디렉터리(저장소가 복사해 간다)
     eval_reports: Optional[Mapping[str, dict]] = None  # role -> EvaluationReport. 다음 승인 보고서의 기준값으로 쓴다
+    movable: bool = False  # True면 adapters의 디렉터리를 저장소가 옮겨 간다(같은 파일 시스템이면 복사 없음). 원본은 사라진다
 
 
 def ref_key(ref: dict) -> str:
@@ -73,6 +76,9 @@ class Store:
     def put_submission(self, record: dict, subject_key: str) -> tuple[dict, bool]: ...
     def get_submission(self, submission_id: str) -> dict: ...
     def submission_ids(self, states: Optional[tuple] = None) -> list[str]: ...
+    def submission_rows(self, *, states: Optional[tuple] = None, before: Optional[int] = None, limit: int = 200) -> list[tuple]: ...
+    # (seq, 접수, 작업 상태, 최신 판정 또는 None), 최신부터, seq < before. 목록 화면용(건마다 쿼리하지 않는다)
+    def count_submissions(self, states: Optional[tuple] = None) -> int: ...
     def submission_seqs(self) -> list[tuple]: ...   # (seq, submission_id), 오래된 것부터. seq는 접수 순서로 늘어난다
     def get_work(self, submission_id: str) -> dict: ...
     def update_work(self, submission_id: str, fn: Callable[[dict], Optional[dict]]) -> dict: ...
@@ -96,6 +102,13 @@ class Store:
     def get_receipt(self, request_id: str) -> Optional[tuple]: ...
     def put_receipt(self, request_id: str, request_hash: str, receipt: dict) -> tuple: ...
     def ping(self) -> None: ...
+    def close(self) -> None: ...        # 종료 때 연결을 닫는다(여러 번 불러도 안전)
+    # 거부·실패한 쓰기 시도의 행위자 기록(추가 전용 감사). 성공한 쓰기는 판정·승인·포인터 기록 자체가 행위자를 담는다
+    def record_attempt(self, rec: dict) -> None: ...
+    def list_attempts(self, limit: int = 100) -> list[dict]: ...     # 최신부터
+    def purge_attempts(self, before: str) -> int: ...                # rec["at"] < before 인 것을 지운다(보존 기간)
+    # 보존 정리: 접수 한 건과 그 판정·승인 기록을 지운다(호출 쪽 retention이 대상을 가린다. 승인(PASS)·릴리스는 지우지 않는다)
+    def delete_submission(self, submission_id: str) -> bool: ...
 
 
 # --------------------------------------------------------------------------- 메모리
@@ -115,9 +128,37 @@ class MemoryStore(Store):
         self._receipts: dict[str, tuple] = {}
         self._approvals: dict[str, dict] = {}
         self._release_reports: dict[str, dict] = {}
+        self._attempts: list[dict] = []
 
     def ping(self) -> None:
         return None
+
+    def record_attempt(self, rec):
+        with self._lock:
+            self._attempts.append(json.loads(json.dumps(rec)))
+
+    def list_attempts(self, limit=100):
+        with self._lock:
+            return json.loads(json.dumps(self._attempts[::-1][:limit]))
+
+    def purge_attempts(self, before):
+        with self._lock:
+            keep = [a for a in self._attempts if a["at"] >= before]
+            n = len(self._attempts) - len(keep)
+            self._attempts = keep
+            return n
+
+    def delete_submission(self, submission_id):
+        with self._lock:
+            if submission_id not in self._subs:
+                return False
+            del self._subs[submission_id]
+            self._sub_by_key = {k: v for k, v in self._sub_by_key.items() if v != submission_id}
+            self._work.pop(submission_id, None)
+            self._approvals.pop(submission_id, None)
+            self._decisions = [d for d in self._decisions if d.get("submission_id") != submission_id]
+            self._decision_by_id = {d["decision_id"]: i for i, d in enumerate(self._decisions)}
+            return True
 
     def put_submission(self, record, subject_key):
         with self._lock:
@@ -145,6 +186,27 @@ class MemoryStore(Store):
     def submission_seqs(self):
         with self._lock:
             return [(i + 1, sid) for i, sid in enumerate(self._subs)]
+
+    def submission_rows(self, *, states=None, before=None, limit=200):
+        out = []
+        with self._lock:
+            for i, sid in reversed(list(enumerate(self._subs))):
+                seq = i + 1
+                if before is not None and seq >= before:
+                    continue
+                w = self._work[sid]
+                if states is not None and w["state"] not in states:
+                    continue
+                d = next((x for x in reversed(self._decisions) if x.get("submission_id") == sid), None)
+                out.append((seq, json.loads(json.dumps(self._subs[sid])), json.loads(json.dumps(w)),
+                            json.loads(json.dumps(d)) if d else None))
+                if len(out) == limit:
+                    break
+        return out
+
+    def count_submissions(self, states=None):
+        with self._lock:
+            return sum(1 for s in self._subs if states is None or self._work[s]["state"] in states)
 
     def get_work(self, submission_id):
         with self._lock:
@@ -306,6 +368,9 @@ CREATE TABLE IF NOT EXISTS releases(seq INTEGER PRIMARY KEY AUTOINCREMENT, relea
 CREATE TABLE IF NOT EXISTS pointer_history(pointer_version INTEGER PRIMARY KEY, record TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS approvals(submission_id TEXT PRIMARY KEY, approval_id TEXT UNIQUE NOT NULL, record TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS receipts(request_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, record TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS attempts(seq INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, record TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_submissions_state ON submissions(state, seq);
+CREATE INDEX IF NOT EXISTS idx_decisions_submission ON decisions(submission_id, seq);
 """
 
 
@@ -313,38 +378,68 @@ class ReleaseFiles:
     """번들 파일(<root>/releases/<release_id>/)을 다루는 공통 부분. SQLite·PostgreSQL 구현이 같은 파일 규칙을 쓴다(파일은 DB 대상이 아니다)."""
     root: Path
 
+    @property
+    def work_dir(self) -> Path:
+        """어댑터를 받아 둘 임시 위치(릴리스 디렉터리와 같은 파일 시스템: 단계 이동이 복사 없이 rename이다)."""
+        return self.root / "releases"
+
     def _stage_release(self, release: ReleaseParts) -> Path:
+        """릴리스 묶음을 임시 디렉터리에 만든다. **저장소 락·트랜잭션 밖에서** 부른다(큰 파일 복사가 읽기를 막지 않게).
+        임시 이름에 고유 값을 붙여 같은 릴리스를 동시에 만들어도 서로 섞이지 않는다. release.movable이면 어댑터를 옮긴다(rename)."""
         rid = release.manifest["release_id"]
-        final = self.root / "releases" / rid
-        if final.exists():
-            try:
-                self.get_release(rid)
-            except BoundaryError as e:
-                if e.code != "NOT_FOUND":
-                    raise
-                # 행 없는 디렉터리: 이전 커밋이 실패해 남은 찌꺼기다(읽기는 행을 기준으로 하므로 보이지 않았다). 치우고 다시 만든다
-                shutil.rmtree(final, ignore_errors=True)
-            else:
-                raise BoundaryError("CONFLICT", f"release_id 충돌: {rid}")
-        tmp = self.root / "releases" / f".tmp-{rid}"
-        shutil.rmtree(tmp, ignore_errors=True)
+        tmp = self.root / "releases" / f".tmp-{rid}-{uuid.uuid4().hex[:8]}"
         try:
             (tmp / "adapters").mkdir(parents=True)
             (tmp / "eval_reports.json").write_text(json.dumps(dict(release.eval_reports or {}), ensure_ascii=False), encoding="utf-8")
             (tmp / "question_bank.json").write_text(json.dumps(release.question_bank, ensure_ascii=False), encoding="utf-8")
             for role, src in release.adapters.items():
-                shutil.copytree(src, tmp / "adapters" / role)
-        except OSError as e:     # 디스크 가득·쓰기 불가·권한(FAULT_POLICY 13): 반쯤 쓴 임시 디렉터리를 지우고 503. 기록은 남지 않는다(호출 쪽 트랜잭션이 롤백)
+                if release.movable:
+                    shutil.move(str(src), str(tmp / "adapters" / role))
+                else:
+                    shutil.copytree(src, tmp / "adapters" / role)
+        except OSError as e:     # 디스크 가득·쓰기 불가·권한(FAULT_POLICY 13): 반쯤 쓴 임시 디렉터리를 지우고 503. 기록은 남지 않는다
             shutil.rmtree(tmp, ignore_errors=True)
             raise BoundaryError("UNAVAILABLE", f"릴리스 묶음 파일을 쓸 수 없다: {type(e).__name__}") from None
         return tmp
 
     def _publish_release_dir(self, staged: Path, rid: str) -> None:
-        """임시 디렉터리를 최종 이름으로 옮긴다(같은 파일 시스템의 rename: 읽기는 완성된 디렉터리만 본다)."""
+        """임시 디렉터리를 최종 이름으로 옮긴다(같은 파일 시스템의 rename: 읽기는 완성된 디렉터리만 본다).
+        호출 시점에 릴리스 행 삽입이 이미 성공했으므로(중복이면 거기서 CONFLICT) 같은 이름의 디렉터리는 행 없이 남은 찌꺼기다."""
+        final = self.root / "releases" / rid
         try:
-            staged.rename(self.root / "releases" / rid)
+            if final.exists():
+                shutil.rmtree(final, ignore_errors=True)
+            staged.rename(final)
         except OSError as e:
             raise BoundaryError("UNAVAILABLE", f"릴리스 묶음을 옮길 수 없다: {type(e).__name__}") from None
+
+    def purge_stale_tmp(self, max_age_seconds: float = 3600.0) -> int:
+        """오래된 임시 디렉터리(.tmp-*, .bundle-*)를 지운다(비정상 종료의 찌꺼기). 새 것은 다른 프로세스가 쓰는 중일 수 있어 둔다."""
+        n, now = 0, time.time()
+        base = self.root / "releases"
+        if not base.is_dir():
+            return 0
+        for p in base.iterdir():
+            if p.name.startswith((".tmp-", ".bundle-")):
+                try:
+                    if now - p.stat().st_mtime > max_age_seconds:
+                        shutil.rmtree(p, ignore_errors=True)
+                        n += 1
+                except OSError:
+                    pass
+        return n
+
+    def prune_release_files(self, release_id: str) -> int:
+        """릴리스의 어댑터 사본을 지우고 PRUNED 표시를 남긴다(매니페스트·판정·승인 기록은 DB에 그대로). 지운 바이트 수."""
+        base = self.root / "releases" / release_id
+        ad = base / "adapters"
+        size = sum(f.stat().st_size for f in ad.rglob("*") if f.is_file()) if ad.is_dir() else 0
+        shutil.rmtree(ad, ignore_errors=True)
+        (base / "PRUNED").write_text("adapters pruned\n", encoding="utf-8")
+        return size
+
+    def is_pruned(self, release_id: str) -> bool:
+        return (self.root / "releases" / release_id / "PRUNED").exists()
 
     def get_release_reports(self, release_id):
         try:
@@ -352,9 +447,13 @@ class ReleaseFiles:
         except (OSError, ValueError):
             return {}  # 기준 보고서가 없는 릴리스(비교 기준 없음)
 
-    def read_release_parts(self, release_id, dest):
+    def read_release_parts(self, release_id, dest=None):
+        """문항 세트와 역할별 어댑터 디렉터리. dest가 None이면 복사하지 않고 릴리스 디렉터리를 그대로 가리킨다(읽기 전용으로 쓸 것).
+        dest가 있으면 그곳에 복사한다."""
         self.get_release(release_id)
         base = self.root / "releases" / release_id
+        if (base / "PRUNED").exists():
+            raise BoundaryError("FAILED_PRECONDITION", f"어댑터 사본이 정리된 릴리스다: {release_id}", {"reason": "PRUNED"})
         try:
             bank = json.loads((base / "question_bank.json").read_text(encoding="utf-8"))
         except (OSError, ValueError) as e:
@@ -363,8 +462,11 @@ class ReleaseFiles:
         for role in ROLES:
             src = base / "adapters" / role
             if src.is_dir():
-                shutil.copytree(src, Path(dest) / role, dirs_exist_ok=True)
-                out[role] = Path(dest) / role
+                if dest is None:
+                    out[role] = src
+                else:
+                    shutil.copytree(src, Path(dest) / role, dirs_exist_ok=True)
+                    out[role] = Path(dest) / role
         return bank, out
 
 
@@ -390,6 +492,33 @@ class SqliteStore(ReleaseFiles, Store):
             self._c.isolation_level = None
         except sqlite3.Error as e:
             raise BoundaryError("UNAVAILABLE", f"레지스트리를 열 수 없다: {e}") from e
+
+    def close(self) -> None:
+        with self._lock:
+            try:
+                self._c.close()
+            except sqlite3.Error:
+                pass
+
+    def record_attempt(self, rec):
+        self._w()
+        with self._Txn(self) as c:
+            c.execute("INSERT INTO attempts(at, record) VALUES(?,?)", (rec["at"], json.dumps(rec, ensure_ascii=False)))
+
+    def list_attempts(self, limit=100):
+        return [json.loads(r[0]) for r in self._q("SELECT record FROM attempts ORDER BY seq DESC LIMIT ?", (limit,))]
+
+    def purge_attempts(self, before):
+        self._w()
+        with self._Txn(self) as c:
+            return c.execute("DELETE FROM attempts WHERE at < ?", (before,)).rowcount
+
+    def delete_submission(self, submission_id):
+        self._w()
+        with self._Txn(self) as c:
+            c.execute("DELETE FROM approvals WHERE submission_id=?", (submission_id,))
+            c.execute("DELETE FROM decisions WHERE submission_id=?", (submission_id,))
+            return c.execute("DELETE FROM submissions WHERE submission_id=?", (submission_id,)).rowcount > 0
 
     def ping(self) -> None:
         try:
@@ -451,11 +580,33 @@ class SqliteStore(ReleaseFiles, Store):
         return json.loads(rows[0][0])
 
     def submission_ids(self, states=None):
-        rows = self._q("SELECT submission_id, state FROM submissions ORDER BY seq")
-        return [r[0] for r in rows if states is None or r[1] in states]
+        if states is None:
+            return [r[0] for r in self._q("SELECT submission_id FROM submissions ORDER BY seq")]
+        ph = ",".join("?" * len(states))
+        return [r[0] for r in self._q(f"SELECT submission_id FROM submissions WHERE state IN ({ph}) ORDER BY seq", tuple(states))]
 
     def submission_seqs(self):
         return [(r[0], r[1]) for r in self._q("SELECT seq, submission_id FROM submissions ORDER BY seq")]
+
+    def submission_rows(self, *, states=None, before=None, limit=200):
+        where, args = [], []
+        if states is not None:
+            where.append("s.state IN (%s)" % ",".join("?" * len(states)))
+            args += list(states)
+        if before is not None:
+            where.append("s.seq < ?")
+            args.append(before)
+        sql = ("SELECT s.seq, s.record, s.work, d.record FROM submissions s LEFT JOIN decisions d ON d.seq = "
+               "(SELECT MAX(seq) FROM decisions WHERE submission_id = s.submission_id)"
+               + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY s.seq DESC LIMIT ?")
+        return [(r[0], json.loads(r[1]), json.loads(r[2]), json.loads(r[3]) if r[3] else None)
+                for r in self._q(sql, (*args, limit))]
+
+    def count_submissions(self, states=None):
+        if states is None:
+            return self._q("SELECT COUNT(*) FROM submissions")[0][0]
+        ph = ",".join("?" * len(states))
+        return self._q(f"SELECT COUNT(*) FROM submissions WHERE state IN ({ph})", tuple(states))[0][0]
 
     def get_work(self, submission_id):
         rows = self._q("SELECT work FROM submissions WHERE submission_id=?", (submission_id,))
@@ -486,6 +637,14 @@ class SqliteStore(ReleaseFiles, Store):
         self._w()
         did = decision["decision_id"]
         staged = None
+        if release is not None:
+            try:                                           # 이미 있는 판정이면 복사할 필요가 없다(멱등)
+                _same(self.get_decision(did), decision, did)
+                return decision
+            except BoundaryError as e:
+                if e.code != "NOT_FOUND":
+                    raise
+            staged = self._stage_release(release)          # 큰 복사는 락 밖에서(읽기 /v1/active-pointer를 막지 않는다)
         try:
             with self._Txn(self) as c:
                 row = c.execute("SELECT record FROM decisions WHERE decision_id=?", (did,)).fetchone()
@@ -496,7 +655,6 @@ class SqliteStore(ReleaseFiles, Store):
                     c.execute("INSERT INTO approvals(submission_id, approval_id, record) VALUES(?,?,?)",
                               (approval["submission_id"], approval["approval_id"], json.dumps(approval, ensure_ascii=False)))
                 if release is not None:
-                    staged = self._stage_release(release)
                     c.execute("INSERT INTO releases(release_id,record) VALUES(?,?)",
                               (release.manifest["release_id"], json.dumps(release.manifest, ensure_ascii=False)))
                 s = decision["subject"]
@@ -506,8 +664,8 @@ class SqliteStore(ReleaseFiles, Store):
                 c.execute("UPDATE submissions SET work=?, state=? WHERE submission_id=?",
                           (json.dumps(work, ensure_ascii=False), work["state"], decision["submission_id"]))
                 if staged is not None:
-                    # 파일 이동은 트랜잭션 안에서 한다. 이동이 실패하면 롤백되고, 이동 뒤 커밋이 실패하면
-                    # 행 없는 디렉터리가 남을 수 있으나 읽기는 행을 기준으로 하므로 보이지 않는다(런북의 정리 항목).
+                    # 락 안에서는 이름 바꾸기(rename)만 한다. 이동이 실패하면 롤백되고, 이동 뒤 커밋이 실패하면
+                    # 행 없는 디렉터리가 남을 수 있으나 읽기는 행을 기준으로 하므로 보이지 않는다(다음 생성 때 치운다).
                     self._publish_release_dir(staged, release.manifest["release_id"])
                     staged = None
         except sqlite3.IntegrityError as e:

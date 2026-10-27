@@ -306,6 +306,10 @@ def test_bundle_write_failure_is_503_and_leaves_no_trace(world, monkeypatch, err
         @staticmethod
         def copytree(*a, **k):
             raise OSError(err, "disk")
+
+        @staticmethod
+        def move(*a, **k):
+            raise OSError(err, "disk")
     monkeypatch.setattr(store_mod, "shutil", _Shutil())
     with pytest.raises(BoundaryError) as e:
         world.engine().decide(_approve_body(sid), token_role="release-approver")
