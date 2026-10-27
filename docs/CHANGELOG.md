@@ -1,5 +1,10 @@
 # 변경 이력
 
+## (미배포) turn-engine v0.4.0, model-runtime v0.7.0 따라가기 (D80)
+
+- `TURN_ENGINE_TAG` 기본값 v0.3.1 -> v0.4.0, `MODEL_RUNTIME_TAG` 기본값 v0.6.5 -> v0.7.0(`scripts/build_image.sh`, runbook). 기준 0.4.0/0.7.0에서 turn-engine 0.3.1 이하, model-runtime 0.6.5 이하 패키지는 반려된다(`tests/test_new_tags.py`에 0.3.1, 0.6.5 케이스 추가).
+- turn-engine v0.4.0은 v1 폐기 함수를 제거했고 boundary-contracts v2.0.2를 고정한다. model-runtime v0.7.0은 비밀 파일화, prompt-3 제거, RUNTIME_VERSION 0.7이다. 게이트 코드는 이 값들을 다루지 않아 코드 변경은 없다.
+
 ## (미배포) 비밀을 NAME_FILE로, boundary-contracts v2.0.2 (D84)
 
 - 서비스 토큰(`GATE_READ_TOKENS`, `GATE_WRITE_TOKENS`, `GATE_READ_TOKEN`)과 I1·I3 토큰(`GATE_I1_TOKEN`, `GATE_I3_TOKEN`)을 `boundary_contracts.read_secret`으로 읽는다(서버, 잡, factories). `NAME_FILE` 우선, 없으면 환경 변수. `docker exec env`/`inspect`로 평문이 보이던 문제의 근본 수정.
