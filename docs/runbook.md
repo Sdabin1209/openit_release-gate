@@ -4,9 +4,9 @@
 
 ```
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ../boundary-contracts -e '.[test]'      # 운영·CI는 requirements.txt(v2.0.1 태그 고정)
+pip install -e ../boundary-contracts -e '.[test]'      # 운영·CI는 requirements.txt(v2.0.2 태그 고정)
 python -m pytest -q                                      # 단위, 적합성(메모리·SQLite), HTTP
-scripts/smoke.sh                                         # v2.0.1 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(표준 `docker`, 데몬에 못 닿으면 중단)
+scripts/smoke.sh                                         # v2.0.2 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(표준 `docker`, 데몬에 못 닿으면 중단)
 ```
 
 ## 환경 변수 (gate-service)
@@ -18,8 +18,8 @@ scripts/smoke.sh                                         # v2.0.1 태그의 whee
 | `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION` | 빌드 때 고정한 문진 스키마 정수 버전 |
 | `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` | 선택(덮어쓰기). 없으면 **설치된 turn-engine, model-runtime 패키지의 실제 버전**을 읽고, 없으면 `unset`. 이 값이 릴리스 매니페스트에 기록되고 학습 때 버전과의 일치 검사(CONTRACT_COMPAT)에 쓰인다. `/readyz`에 보인다 |
 | `GATE_POLICY_FILE` | gate_policy JSON. 없으면 EMPTY(통과 불가) |
-| `GATE_READ_TOKENS`, `GATE_WRITE_TOKENS` | 필수. `역할=토큰,역할=토큰` 형식으로 역할에 묶는다. 읽기 예: `survey-service=…,ops-feedback=…,question-authoring=…,model-lab=…`, 쓰기 예: `operator=…,ops-feedback=…,question-authoring=…,model-lab=…`. 읽기 토큰은 쓰기 경로에서 403, 쓰기 토큰은 읽기 면에서 403이다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
-| `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`(설정 파일의 `i1_factory`, `i3_factory`가 우선). 둘 다 있어야 판정이 켜진다. HTTP 클라이언트는 `release_gate.factories:http_question_reader`, `release_gate.factories:http_model_registry`(`boundary_contracts.clients`, v1.2.0에서 확인). 이 둘은 `GATE_I1_URL`, `GATE_I1_TOKEN`, `GATE_I3_URL`, `GATE_I3_TOKEN`(선택 `*_TIMEOUT`)을 읽는다 |
+| `GATE_READ_TOKENS`, `GATE_WRITE_TOKENS` (또는 `*_FILE`) | 필수. 비밀이므로 `GATE_READ_TOKENS_FILE`, `GATE_WRITE_TOKENS_FILE`로 파일 경로를 주는 것이 표준이다(아래 "비밀은 NAME_FILE로"). `역할=토큰,역할=토큰` 형식으로 역할에 묶는다. 읽기 예: `survey-service=…,ops-feedback=…,question-authoring=…,model-lab=…`, 쓰기 예: `operator=…,ops-feedback=…,question-authoring=…,model-lab=…`. 읽기 토큰은 쓰기 경로에서 403, 쓰기 토큰은 읽기 면에서 403이다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
+| `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`(설정 파일의 `i1_factory`, `i3_factory`가 우선). 둘 다 있어야 판정이 켜진다. HTTP 클라이언트는 `release_gate.factories:http_question_reader`, `release_gate.factories:http_model_registry`(`boundary_contracts.clients`, v1.2.0에서 확인). 이 둘은 `GATE_I1_URL`, `GATE_I3_URL`(선택 `*_TIMEOUT`)과 비밀 `GATE_I1_TOKEN`, `GATE_I3_TOKEN`(`*_FILE` 우선)을 읽는다 |
 | `GATE_POLL_SECONDS`, `PORT` | 주기(기본 60), 포트(기본 8080) |
 
 
@@ -61,7 +61,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 {
   "data_dir": "/data",
   "i1_factory": "release_gate.factories:http_question_reader",
-  "i1_options": {"base_url": "http://question-authoring:8080", "token": "…(비밀은 파일 대신 GATE_I1_TOKEN 환경 변수 권장)"},
+  "i1_options": {"base_url": "http://question-authoring:8080", "token": "…(비밀은 설정 파일에 넣지 말고 GATE_I1_TOKEN_FILE로 준다)"},
   "i3_factory": "release_gate.factories:http_model_registry",
   "i3_options": {"base_url": "http://model-registry:8080"},
   "watch": {"question_sets": ["qs-main"], "lora_a": ["lora-a"], "lora_b": ["lora-b"]},
@@ -73,7 +73,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 
 ## 이미지
 
-`scripts/build_image.sh [태그]`가 빌드한다. 컨텍스트에는 boundary-contracts 태그(기본 `v2.0.1`, `BOUNDARY_CONTRACTS_TAG`)의 wheel이 들어가고, turn-engine(기본 `v0.3.1`, `TURN_ENGINE_TAG`)과 model-runtime(기본 `v0.6.5`, `MODEL_RUNTIME_TAG`)은 이웃 리포지토리를 `git archive <태그>`로 꺼내 wheel을 만들어 함께 설치한다(리포지토리는 수정하지 않는다). `GATE_LIB_WHEELS_DIR`를 주면 그 안의 wheel을 대신 쓴다. 라벨은 `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`이고 값은 컨텍스트의 wheel 이름에서 읽는다. wheel이 없으면(직접 `docker build`할 때 등) `unset`이며, 그러면 학습 때 버전 일치 검사가 모든 후보를 반려한다.
+`scripts/build_image.sh [태그]`가 빌드한다. 컨텍스트에는 boundary-contracts 태그(기본 `v2.0.2`, `BOUNDARY_CONTRACTS_TAG`)의 wheel이 들어가고, turn-engine(기본 `v0.3.1`, `TURN_ENGINE_TAG`)과 model-runtime(기본 `v0.6.5`, `MODEL_RUNTIME_TAG`)은 이웃 리포지토리를 `git archive <태그>`로 꺼내 wheel을 만들어 함께 설치한다(리포지토리는 수정하지 않는다). `GATE_LIB_WHEELS_DIR`를 주면 그 안의 wheel을 대신 쓴다. 라벨은 `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`이고 값은 컨텍스트의 wheel 이름에서 읽는다. wheel이 없으면(직접 `docker build`할 때 등) `unset`이며, 그러면 학습 때 버전 일치 검사가 모든 후보를 반려한다.
 
 ## 상태 확인
 
@@ -92,3 +92,23 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 - 백업: 서비스를 멈추거나 `sqlite3 registry.sqlite3 ".backup ..."`으로 DB를 복사하고 `releases/` 디렉터리를 함께 복사한다. 둘이 한 쌍이다.
 - 정리: `releases/` 아래 `.tmp-*` 디렉터리와 DB에 행이 없는 릴리스 디렉터리는 중단된 쓰기의 잔재이고 읽기에 영향이 없다. 서비스가 멈춘 뒤 지워도 된다.
 - 릴리스, 판정, 포인터 이력은 삭제하지 않는다(불변).
+
+## 비밀은 NAME_FILE로 (D84)
+
+환경 변수는 `docker inspect`와 `docker exec ... env`로 평문이 보인다. 그래서 토큰은 파일로 주고 `NAME_FILE`에 경로를 건다. 서버(`serve`)와 잡(`collect`, `judge`, factories) 모두 `boundary_contracts.read_secret(NAME)`으로 읽는다: `NAME_FILE`이 있으면 그 파일 내용(앞뒤 공백 제거), 없으면 `NAME` 환경 변수(개발용).
+
+| 비밀 | 파일 경로 변수 | 내용 |
+| --- | --- | --- |
+| 읽기 토큰 | `GATE_READ_TOKENS_FILE` | `역할=토큰,역할=토큰` (이전 호환 `GATE_READ_TOKEN_FILE`: 토큰 하나) |
+| 쓰기 토큰 | `GATE_WRITE_TOKENS_FILE` | `역할=토큰,역할=토큰` |
+| I1 토큰 | `GATE_I1_TOKEN_FILE` | 토큰 하나 |
+| I3 토큰 | `GATE_I3_TOKEN_FILE` | 토큰 하나 |
+
+```sh
+docker run -v /srv/secrets/gate:/run/secrets:ro \
+  -e GATE_READ_TOKENS_FILE=/run/secrets/read_tokens -e GATE_WRITE_TOKENS_FILE=/run/secrets/write_tokens ...
+```
+
+- 파일은 컨테이너의 비root 사용자가 읽을 수 있어야 한다(모드 0644 이상 또는 해당 uid 소유). 이미지와 리포지토리에는 넣지 않는다.
+- 파일이 없거나 비어 있으면 값 없이 이유만 담긴 오류로 시작이 중단된다. 비밀 값은 로그, `/readyz`, 오류 본문, 예외 메시지에 나오지 않는다(`tests/test_secrets.py`, `scripts/smoke.sh`가 `inspect`·`exec env`·로그에 평문이 없음을 확인한다).
+- 설정 파일(JSON)의 `i1_options.token`에도 비밀을 쓰지 않는다.

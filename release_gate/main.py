@@ -16,6 +16,8 @@ import logging
 import os
 import sys
 
+from boundary_contracts import read_secret
+
 from .app import GateHTTPServer, Loop
 from .checks import CheckRegistry
 from .collector import CandidateCollector
@@ -38,7 +40,8 @@ def _env(name: str, default: str | None = None) -> str:
 
 
 def _csv(name: str) -> list[str]:
-    return [x.strip() for x in os.environ.get(name, "").split(",") if x.strip()]
+    """비밀 목록(NAME_FILE 우선, 없으면 NAME 환경 변수)을 쉼표로 나눈다."""
+    return [x.strip() for x in (read_secret(name) or "").split(",") if x.strip()]
 
 
 def installed_version(*dist_names: str) -> str:
@@ -95,10 +98,10 @@ def _tokens(name: str, required: bool) -> dict:
     for item in _csv(name):
         role, _, tok = item.partition("=")
         if not role or not tok:
-            raise SystemExit(f"{name} 형식: 역할=토큰,역할=토큰")
+            raise SystemExit(f"{name} 형식: 역할=토큰,역할=토큰")  # 값은 오류에 싣지 않는다
         out[tok] = role
     if required and not out:
-        raise SystemExit(f"환경 변수 {name}이(가) 필요하다")
+        raise SystemExit(f"비밀 {name}(또는 {name}_FILE)이(가) 필요하다")
     return out
 
 
@@ -132,10 +135,11 @@ def serve() -> None:
     # 후보 수집은 여기서 돌리지 않는다. 스케줄러가 `collect`를 부른다(D39).
     Loop(float(_env("GATE_POLL_SECONDS", "60")), tasks).start()
     read_tokens = _tokens("GATE_READ_TOKENS", False)
-    if os.environ.get("GATE_READ_TOKEN"):  # 이전 설정과의 호환: 역할 이름 없는 단일 읽기 토큰
-        read_tokens[os.environ["GATE_READ_TOKEN"]] = "reader"
+    single = read_secret("GATE_READ_TOKEN")
+    if single:  # 이전 설정과의 호환: 역할 이름 없는 단일 읽기 토큰
+        read_tokens[single] = "reader"
     if not read_tokens:
-        raise SystemExit("환경 변수 GATE_READ_TOKENS이(가) 필요하다")
+        raise SystemExit("비밀 GATE_READ_TOKENS(또는 GATE_READ_TOKENS_FILE)이(가) 필요하다")
     srv = GateHTTPServer(("0.0.0.0", int(_env("PORT", "8080"))), reg, read_tokens=read_tokens,
                          write_tokens=_tokens("GATE_WRITE_TOKENS", True), status=status, engine=engine)
     log.info("gate-service 시작: policy=%s judging=%s turn-engine=%s model-runtime=%s", policy.version, judging,

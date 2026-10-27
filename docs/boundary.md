@@ -17,7 +17,7 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 
 ## 생산하는 계약
 
-`GateDecision`(`reject_codes`, `SKIPPED` 포함), `ReleaseManifest`(`adapters[role].system_prompt` 포함, D75), `GateSubmission`, `ActivePointer`, `RollbackReceipt`. 전부 쓰기 전에 boundary-contracts v2.0.1 스키마로 검증한다. `ext`는 쓰지 않는다.
+`GateDecision`(`reject_codes`, `SKIPPED` 포함), `ReleaseManifest`(`adapters[role].system_prompt` 포함, D75), `GateSubmission`, `ActivePointer`, `RollbackReceipt`. 전부 쓰기 전에 boundary-contracts v2.0.2 스키마로 검증한다. `ext`는 쓰지 않는다.
 
 ## 소비하는 것과 지원 버전
 
@@ -51,3 +51,7 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 ## 하지 않는 것
 
 문항·모델을 만들거나 고치지 않는다. 문진 스키마와 `boundary-contracts`를 수정하지 않는다(변경 요청은 `docs/change-requests/`). 합격선을 정하지 않는다. 출고는 승인자가 정한다(D53).
+
+## 비밀 (D84)
+
+서비스 토큰(`GATE_READ_TOKENS`, `GATE_WRITE_TOKENS`)과 이웃 호출 토큰(`GATE_I1_TOKEN`, `GATE_I3_TOKEN`)은 `boundary_contracts.read_secret(NAME)`으로 읽는다. `NAME_FILE`(파일 경로)이 우선이고 없으면 `NAME` 환경 변수(개발용)다. 값은 로그, `/readyz`, 오류 본문, 예외 메시지에 싣지 않는다. 운영 방법은 `docs/runbook.md`의 "비밀은 NAME_FILE로" 절.

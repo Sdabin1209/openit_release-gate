@@ -1,5 +1,11 @@
 # 변경 이력
 
+## (미배포) 비밀을 NAME_FILE로, boundary-contracts v2.0.2 (D84)
+
+- 서비스 토큰(`GATE_READ_TOKENS`, `GATE_WRITE_TOKENS`, `GATE_READ_TOKEN`)과 I1·I3 토큰(`GATE_I1_TOKEN`, `GATE_I3_TOKEN`)을 `boundary_contracts.read_secret`으로 읽는다(서버, 잡, factories). `NAME_FILE` 우선, 없으면 환경 변수. `docker exec env`/`inspect`로 평문이 보이던 문제의 근본 수정.
+- `BOUNDARY_CONTRACTS_TAG` 기본값 v2.0.1 -> v2.0.2(`requirements.txt`, `scripts/stage_context.sh`, runbook, `docs/boundary.md`). turn-engine·model-runtime 태그는 올리지 않았다.
+- `tests/test_secrets.py` 추가. `scripts/smoke.sh`가 비밀을 파일로 주고 inspect·exec env·로그에 평문이 없음을 확인한다.
+
 ## (미배포) turn-engine v0.3.1 따라가기 (D80)
 
 - `TURN_ENGINE_TAG` 기본값 v0.3.0 -> v0.3.1(`scripts/build_image.sh`, runbook). turn-engine v0.3.0 태그가 boundary-contracts v2.0.0을 고정해 v2.0.1과 충돌해서 v0.3.1(boundary v2.0.1)이 태그됐다. 기준 0.3.1에서 0.3.0 이하 패키지는 반려된다(`tests/test_new_tags.py`에 0.3.0 케이스 추가). 코드 변경 없음.
