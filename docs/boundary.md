@@ -45,6 +45,19 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 | PostgreSQL 중지·연결 불가·응답 없음 | 문장·접속은 상한(기본 3초, 얼어붙은 서버는 +1초) 안에 UNAVAILABLE로 끝나 승인·활성화 요청이 무한 대기하지 않는다. `/readyz`는 기본 2초 안에 503(접속 정보 없음), `/healthz`는 200. DB가 돌아오면 재시작 없이 다음 호출·`/readyz`가 정상이 된다. 수집·판정 잡은 상한 안에 종료 코드 75로 끝난다. 읽기 전용 SQLite 연결은 이 경로와 무관 |
 | 레지스트리 파일 손상 | `load_bundle`/활성화가 INTEGRITY_ERROR. 롤백은 손상된 대상으로 되돌리기를 REJECTED로 거부한다 |
 
+## 감사 지적 처리 (전수 점검 2026-10-28)
+
+- 우아한 종료(A4): SIGTERM·SIGINT에 `/readyz`를 `shutting_down`(503)으로 바꾸고 새 연결을 거부, 처리 중 요청을 `GATE_SHUTDOWN_GRACE_SECONDS`(기본 20)까지 기다린 뒤 주기 작업을 멈추고 저장소를 닫는다. 확인한 것: 실제 `serve` 프로세스가 SIGTERM에 종료 코드 0으로 끝남, 처리 중 요청이 완료됨(`tests/test_audit_fixes.py`). 확인하지 못한 것: 컨테이너에서 PID 1로 받는 경우와 deploy의 `stop_grace_period`.
+- 락 보유(A7): 번들 복사는 저장소 락·트랜잭션 밖에서 한다(락 안은 rename뿐). 복사 1초 동안 `get_pointer`·`list_releases`가 0.4초 넘게 막히지 않음을 시험(지연 주입). 실제 큰 어댑터로는 **측정 안 함**.
+- 큰 어댑터(G3): 활성화·롤백 검증·번들 GET은 복사 없이 제자리에서 해시를 계산한다(해시 계산 비용 O(크기)는 남는다. 캐시는 안전성을 약화하므로 두지 않음). 승인 때 I3에서 받은 어댑터는 같은 파일 시스템에서 복사 없이 옮긴다. 번들 GET은 검증 후 tar 임시 파일 한 벌을 만든다.
+- 목록(G2): `GET /v1/submissions`는 접수·상태·최신 판정을 JOIN 한 쿼리를 묶음 단위로 읽는다(접수 15건에서 쿼리 2개 이하 시험). 상태·판정 인덱스를 추가했다.
+- 요청 한도(A9, B4, B5, B11): 소켓 timeout(`GATE_REQUEST_TIMEOUT_SECONDS`, 30), 동시 연결 상한(`GATE_MAX_CONNECTIONS`, 64, 넘으면 503), 음수 `Content-Length` 400, 비ASCII `Authorization` 403(이전 500), 접근 로그의 제어 문자 치환.
+- 행위자 기록(C6): 접근 로그에 `role=<토큰 역할> user=<X-Openit-User>`가 붙는다(거부된 요청 포함, 토큰이 틀리면 `role=-`). 유효한 쓰기 토큰의 거부·실패한 쓰기 시도는 `attempts` 테이블에 행위자와 함께 남는다(보존 365일). 한계: 이미 활성인 릴리스의 재활성화(멱등 성공)와 번들·판정 열람은 기록하지 않는다. attempts를 읽는 HTTP 경로는 없다(SQL로 조회).
+- 접수 상한(A6): `GATE_MAX_PENDING_SUBMISSIONS`(기본 없음=제한 없음)을 주면 결정 전 접수가 그 수에 이르렀을 때 새 조합을 412(`SUBMISSION_LIMIT`)로 거부한다.
+- 보존(C3, A6; D88 U4): `python -m release_gate prune`(기본 반려·미승인 접수 90일, 시도 기록 365일, 어댑터 사본은 활성·직전·최근 3개 외 정리, 승인·활성 이력은 불변). 무기한 설정은 거부. `/readyz`의 `retention`에 현황. docs/adr/0009.
+- 설정 검증(E3): `GATE_POLL_SECONDS`·`PORT`는 양수 검사로 시작 거부.
+- 안 고친 것: 이미지 해시 잠금·SBOM(F2/B9, 헤드의 이미지 정책), 외래키·마이그레이션(C9/C10), 토큰 만료·읽기 토큰 역할 구분(B12), 속도 제한(B10), 시작 때 DB 재시도(E7), 승인 본문 `ext` 제거(B4).
+
 ## 활성 포인터 불변식 (확인한 것)
 
 - 활성화는 묶음 해시를 임시 위치에 풀어 검증한 **뒤에** 포인터를 바꾼다. 변조(INTEGRITY_ERROR)·없는 릴리스·저장소 오류(UNAVAILABLE) 어느 경우에도 이전 활성 포인터가 유지된다. 포인터 이력과 영수증은 한 트랜잭션이라 중간 실패 시 둘 다 반영되지 않는다(메모리 구현도 같게 고쳤다). 동시 활성화 뒤에도 포인터 버전은 빈 번호·중복 없이 이어진다. PostgreSQL 무응답 중 activate는 상한 안에 UNAVAILABLE이고 복구 뒤 같은 요청이 통과한다. 시험: `tests/test_upstream_faults.py`, `tests/test_pg_timeouts.py`.
@@ -70,7 +83,7 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 - 자동 검사는 기술 호환(`CONTRACT_COMPAT`, `QUESTION_MODEL_COMPAT`), 평가 보고서 존재·형식(`ACCEPTANCE_EVAL`, 형식 검사일 뿐), 임상 승인 기록(`CLINICAL_SAFETY`, D30)이다. 어긋나면 FAIL로 반려한다. 모두 통과하면 제출이 `AWAITING_APPROVAL`이 된다. **합격 임계치는 없다.**
 - `GET /v1/submissions?status=&limit=&cursor=`(읽기 토큰): `SubmissionView` 목록, 최신부터, 기본 limit 100 최대 500, `next_cursor`(접수 순번이라 새 제출이 생겨도 밀리지 않음). `GET /v1/submissions/{id}`: 한 건, 없으면 404. `status`는 `PENDING_CHECK`(자동 검사 전), `AWAITING_APPROVAL`, `REJECTED_AUTO`(자동 검사 반려), `REJECTED_HUMAN`(사람이 반려), `PASSED`(승인되어 릴리스 발급)이고 `decision_id`·`approval_id`·`release_id`는 있을 때만 채운다(D68).
 - `GET /v1/submissions/{id}/review-report`(읽기 토큰): `ReviewReport`. 자동 검사 전이면 409(`details.reason=NOT_READY`).
-- `POST /v1/approvals`(쓰기 역할 `release-approver`만): 본문은 `GateApproval`에서 `approval_id`·`decided_at`을 뺀 것(`report_hash`는 선택). 새 기록은 201, 같은 결정의 반복은 200, 다른 결정은 409, 보낸 `report_hash`가 현재 보고서와 다르면 409(`details.reason=STALE_REPORT`), 이미 다른 결정이 있으면 409(`ALREADY_DECIDED`). `GET .../review-report`의 응답 헤더 `X-Openit-Report-Hash`가 대조에 쓰는 해시다. 요청 헤더 `X-Openit-User`(게이트웨이가 붙임)가 있으면 그 값이 `approver_id`다(D69). 이 호출에는 I1·I3 연결이 필요하다.
+- `POST /v1/approvals`(쓰기 역할 `release-approver`만, **`X-Openit-User` 필수**: 없으면 401, 본문 `approver_id`는 선택이며 있으면 헤더와 같아야 한다(다르면 400). D88 U7, `docs/change-requests/CR-0008`): 본문은 `GateApproval`에서 `approval_id`·`decided_at`을 뺀 것(`report_hash`는 선택). 새 기록은 201, 같은 결정의 반복은 200, 다른 결정은 409, 보낸 `report_hash`가 현재 보고서와 다르면 409(`details.reason=STALE_REPORT`), 이미 다른 결정이 있으면 409(`ALREADY_DECIDED`). `GET .../review-report`의 응답 헤더 `X-Openit-Report-Hash`가 대조에 쓰는 해시다. 요청 헤더 `X-Openit-User`(게이트웨이가 붙임)가 있으면 그 값이 `approver_id`다(D69). 이 호출에는 I1·I3 연결이 필요하다.
 - 결정이 APPROVE면 `HUMAN_APPROVAL` PASS가 든 `GateDecision`(PASS, `approval_id`)과 릴리스를 만들고, REJECT면 `HUMAN_APPROVAL` FAIL인 REJECT 판정을 남긴다. 승인 없이 PASS가 되는 경로는 없다.
 - 정책 파일(선택)은 `gate_policy_version`과 `CONTRACT_COMPAT.require_lineage_runtime_match`뿐이다(`docs/runbook.md`).
 

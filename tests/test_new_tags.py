@@ -1,11 +1,11 @@
-"""turn-engine 0.4.0, model-runtime 0.7.2 기준에서의 CONTRACT_COMPAT(학습 때 버전 일치 검사)."""
+"""turn-engine 0.4.0, model-runtime 0.7.3 기준에서의 CONTRACT_COMPAT(학습 때 버전 일치 검사)."""
 from __future__ import annotations
 
 import pytest
 
 from release_gate.config import GateConfig
 
-TE, MR = "0.4.0", "0.7.2"
+TE, MR = "0.4.0", "0.7.3"
 
 
 @pytest.fixture
@@ -31,10 +31,11 @@ def test_matching_new_versions_pass_compat(world_new):
     ({"engine": "0.3.1", "runtime": MR}, "turn-engine"),          # 직전 버전 0.3.1도 반려(기준 0.4.0은 v1 폐기 함수 제거)
     ({"engine": "0.3.0", "runtime": MR}, "turn-engine"),          # 0.3.0은 boundary v2.0.0 고정이라 기준과 다르므로 반려
     ({"engine": TE, "runtime": "0.4.0"}, "model-runtime"),
-    ({"engine": TE, "runtime": "0.7.1"}, "model-runtime"),        # 직전 버전 0.7.1도 반려(D80 정확히 일치, 기준 0.7.2)
-    ({"engine": TE, "runtime": "0.7.0"}, "model-runtime"),        # 직전 버전 0.7.0도 반려(D80 정확히 일치, 기준 0.7.2)
-    ({"engine": TE, "runtime": "0.6.5"}, "model-runtime"),        # 직전 버전 0.6.5도 반려(D80 정확히 일치, 기준 0.7.2)
-    ({"engine": TE, "runtime": "0.6.0"}, "model-runtime"),        # 0.6.0은 기준(0.7.2)과 다르므로 반려
+    ({"engine": TE, "runtime": "0.7.2"}, "model-runtime"),        # 직전 버전 0.7.2도 반려(D80 정확히 일치, 기준 0.7.3)
+    ({"engine": TE, "runtime": "0.7.1"}, "model-runtime"),        # 직전 버전 0.7.1도 반려(D80 정확히 일치, 기준 0.7.3)
+    ({"engine": TE, "runtime": "0.7.0"}, "model-runtime"),        # 직전 버전 0.7.0도 반려(D80 정확히 일치, 기준 0.7.3)
+    ({"engine": TE, "runtime": "0.6.5"}, "model-runtime"),        # 직전 버전 0.6.5도 반려(D80 정확히 일치, 기준 0.7.3)
+    ({"engine": TE, "runtime": "0.6.0"}, "model-runtime"),        # 0.6.0은 기준(0.7.3)과 다르므로 반려
     ({"engine": TE, "runtime": "0.6.4"}, "model-runtime"),        # 0.6.4도 반려
     ({"engine": TE, "runtime": "0.6.3"}, "model-runtime"),        # 0.6.3도 반려
     ({"engine": TE, "runtime": "0.6.2"}, "model-runtime"),

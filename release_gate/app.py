@@ -35,6 +35,7 @@ _STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, 
            "INTEGRITY_ERROR": 422, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
 
 
+# 근거는 docs/adr/0008-timeouts.md. 아래 두 값은 근거 기록 없음(보수적 설계 판단, 측정 안 함): 감사 A9 "스레드·소켓 timeout 부재" 지적에 대한 첫 값이다.
 DEFAULT_REQUEST_TIMEOUT = 30.0     # 소켓 읽기·쓰기 단위(초). 느린 연결이 스레드를 영구히 붙잡지 않게 한다
 DEFAULT_MAX_CONNECTIONS = 64       # 동시에 처리하는 연결 수 상한. 넘으면 503(재시도 가능)을 바로 돌려준다
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")

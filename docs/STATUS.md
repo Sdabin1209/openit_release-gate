@@ -1,4 +1,6 @@
-# STATUS (2026-10-27, turn-engine v0.4.0, boundary-contracts v2.0.2, model-runtime v0.7.2)
+# STATUS (2026-10-27, turn-engine v0.4.0, boundary-contracts v2.0.2, model-runtime v0.7.3)
+- 2026-10-28 전수 점검 지적 수정(SIGTERM, 락 밖 복사, 제자리 검증, N+1, 보존 prune, 승인 X-Openit-User 필수, 요청 한도, 시도 기록, ADR 10편). pytest PostgreSQL 없이 346 통과 216 건너뜀, 포함 526 통과 36 건너뜀, 0 실패. scripts/smoke.sh 통과(SMOKE OK, 라벨 model-runtime 0.7.3). 못 한 것은 boundary.md "감사 지적 처리"의 안 고친 것. push 안 함.
+- 2026-10-28 model-runtime 기본 태그를 v0.7.3으로 올렸다(build_image.sh, runbook, test_new_tags.py 기준). 확인: 이미지 라벨 model-runtime 0.7.3, venv에 model-runtime v0.7.3 설치(이웃 로컬 폴더의 태그 소스).
 - 2026-10-28 이웃·파일 장애(C1·C2·C3·C5·C7·C8): 구현, 시험(tests/test_upstream_faults.py), boundary.md 장애 절 갱신. pytest PostgreSQL 없이 320 통과 195 건너뜀, 포함 485 통과 30 건너뜀, 0 실패. scripts/smoke.sh 통과. 못 한 것: 실제 이웃과의 장애 주입, 느린 조금씩 응답의 전체 시간 상한, 디스크 경보. push 안 함.
 - 2026-10-28 DB 대기 상한(P0-3/C4): 구현, 시험, 문서 완료. pytest PostgreSQL 없이 270 통과 150 건너뜀, 포함 403 통과 17 건너뜀. scripts/smoke.sh 통과(SMOKE OK, sqlite 모드, 라벨 정상). 못 한 것: 실제 compose/gateway 경로, deploy E2E 5p 재측정(헤드). push 안 함.
 

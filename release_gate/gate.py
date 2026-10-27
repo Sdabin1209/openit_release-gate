@@ -134,7 +134,7 @@ class GateServiceImpl:
         _check_role(requested_by_role, self.config.activate_roles, "활성화")
         self.store.get_release(release_id)            # NOT_FOUND
         verify_in_tempdir(self.store, release_id)      # PASS 아님: FAILED_PRECONDITION, 해시 불일치: INTEGRITY_ERROR
-        for _ in range(5):
+        for _ in range(5):      # 5회: 근거 기록 없음(설계 판단, 측정 안 함). docs/adr/0004
             cur = self.store.get_pointer()
             if cur and cur["release_id"] == release_id:
                 return cur                              # 이미 활성: 멱등

@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from .store import Store
 from .util import ts
 
+# 90일·365일은 D88 U4(잠정 기본값, 병원 규정 확정은 OPEN_GAPS). 3은 활성+직전(롤백 대상)에 여유를 둔 설계 판단으로 근거 기록 없음(docs/adr/0009)
 DEFAULT_KEEP_RELEASES = 3
 DEFAULT_REJECTED_DAYS = 90
 DEFAULT_ATTEMPTS_DAYS = 365

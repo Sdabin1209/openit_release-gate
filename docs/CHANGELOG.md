@@ -1,5 +1,9 @@
 # 변경 이력
 
+## (미배포) model-runtime v0.7.3 따라가기
+
+- `MODEL_RUNTIME_TAG` 기본값 v0.7.2 -> v0.7.3(`scripts/build_image.sh`, runbook). 기준 0.7.3에서 0.7.2 패키지는 반려된다(D80 완전 일치, `tests/test_new_tags.py`). 게이트 코드는 변경 없음.
+
 ## (미배포) 이웃·파일 장애 처리 (FAULT_MATRIX C1·C2·C3·C5·C7·C8)
 
 - I1·I3 인증 실패(PERMISSION_DENIED)를 내용 문제로 취급해 반려 판정을 남기던 것을 고쳤다(오류로 올리고 접수는 RECEIVED 유지).

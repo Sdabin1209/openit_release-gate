@@ -89,7 +89,7 @@ PASS일 때만 만든다. `commit_decision` 한 번에: 판정 기록, 릴리스
 
 - `decisions(seq, decision_id UNIQUE, submission_id, qs, la, lb, record)`. 조합 세 참조의 키 컬럼으로 `find_decisions`를 조회한다. 목록은 최신부터, 커서는 마지막으로 돌려준 `seq`다(새 항목은 앞에 붙고 과거 항목의 순서는 바뀌지 않는다).
 - 쓰기 전에 항상 boundary-contracts 스키마로 검증하고(`SchemaSet`), `assert_decision_rule`이 PASS/REJECT 규칙(PASS이면 모든 검사 PASS이고 release_id 있음, REJECT이면 사유가 있고 release_id 없음)을 한 번 더 확인한다.
-- 같은 `decision_id`에 같은 내용이면 기존 것을, 다른 내용이면 CONFLICT. `approver`는 `{role: "gate-service"}`(제안). 사람이 승인하는 단계는 브리프에 없다.
+- 같은 `decision_id`에 같은 내용이면 기존 것을, 다른 내용이면 CONFLICT. 자동 반려 판정의 `approver`는 `{role: "gate-service"}`다. PASS 판정은 사람의 APPROVE 뒤에만 생기며 `approver`는 승인자(`release-approver`, `X-Openit-User`)다(D53, 2절).
 
 ## 9. 후보 수집기 (run-once 잡)
 

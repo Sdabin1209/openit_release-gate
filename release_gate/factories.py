@@ -22,6 +22,7 @@ def _client(cls_name: str, prefix: str, base_url, token, timeout):
     tok = token or read_secret(f"{prefix}_TOKEN")
     if not url or not tok:
         raise SystemExit(f"{prefix}_URL과 {prefix}_TOKEN이 필요하다")
+    # 읽기 timeout 기본 10초: FAULT_POLICY 4(읽기 timeout 필수)와 승인 요청이 gateway 15초 안에 끝나야 한다는 설계 판단. 측정 안 함(docs/adr/0008)
     return cls(base_url=url, token=tok, timeout=float(timeout or os.environ.get(f"{prefix}_TIMEOUT", "10")))
 
 

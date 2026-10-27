@@ -44,6 +44,7 @@ _SCHEMA = [
 # DB 대기 상한(초). 설정으로 바꾼다(GATE_DB_CONNECT_TIMEOUT_SECONDS 등, main.py). 근거는 docs/boundary.md "DB 대기 상한":
 # 정상일 때 문장 하나는 수 ms이고 쓰기 하나는 몇 문장이라 3초면 느린 디스크·잠깐의 잠금 대기는 견딘다.
 # /readyz의 2초는 로드 밸런서 검사 제한 시간(보통 수 초) 안이고, libpq의 connect_timeout은 2초 미만이 의미가 없다.
+# 근거: docs/adr/0008-timeouts.md (survey-service boundary.md 5절과 같은 판단, 이 영역에서 부하 측정은 안 함)
 DEFAULT_CONNECT_TIMEOUT = 3.0
 DEFAULT_STATEMENT_TIMEOUT = 3.0
 DEFAULT_PROBE_TIMEOUT = 2.0

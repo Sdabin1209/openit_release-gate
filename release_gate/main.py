@@ -265,6 +265,7 @@ def serve() -> None:
         engine = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry())
         tasks.append(engine.process_pending)
         judging = "enabled"
+    # 60초: 최초 구현의 기본값, 근거 기록 없음, 측정 안 함(docs/adr/0006)
     loop = Loop(_seconds("GATE_POLL_SECONDS", 60.0), tasks)
     retention = _retention_policy()           # 잘못된 값이면 시작을 거부한다
     port = _opt_int("PORT") or 8080
@@ -284,6 +285,7 @@ def serve() -> None:
                          max_connections=_opt_int("GATE_MAX_CONNECTIONS") or DEFAULT_MAX_CONNECTIONS)
     log.info("gate-service 시작: policy=%s judging=%s turn-engine=%s model-runtime=%s", policy.version, judging,
              config.turn_engine_version, config.model_runtime_version)
+    # 종료 유예 20초: 근거 기록 없음(설계 판단, 측정 안 함). deploy의 stop_grace_period가 이보다 길어야 한다(docs/adr/0008)
     grace = _seconds("GATE_SHUTDOWN_GRACE_SECONDS", 20.0)
     run_until_signal(srv, loop, reg.store, grace)
 
