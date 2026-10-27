@@ -1,5 +1,6 @@
-# STATUS (2026-10-27, turn-engine v0.4.0, boundary-contracts v2.0.2, model-runtime v0.7.1)
+# STATUS (2026-10-27, turn-engine v0.4.0, boundary-contracts v2.0.2, model-runtime v0.7.2)
 
+- model-runtime 기본 태그를 v0.7.2로 올렸다(가짜 A 정정 출력 추가, 하위 호환. turn-engine v0.4.0, boundary v2.0.2 그대로). 코드 변경 없음, 0.7.1 반려 시험 추가, 잠금 파일은 model-runtime이 없어 불변. 확인: venv에 model-runtime 0.7.2 설치(이웃 로컬 폴더에서, 태그 소스 아님), pytest 263 통과 145 건너뜀 0 실패, scripts/smoke.sh 통과(라벨 model-runtime 0.7.2, readyz 0.4.0/0.7.2). push 안 함.
 - model-runtime 기본 태그를 v0.7.1로 올렸다(turn-engine v0.4.0, boundary v2.0.2 그대로). 코드 변경 없음, 0.7.0 반려 시험 추가. 확인: venv 재설치(model-runtime v0.7.1 태그 소스), pytest 234 통과 7 건너뜀 0 실패, scripts/smoke.sh(라벨 model-runtime 0.7.1, turn-engine 0.4.0, contracts.boundary 2.0.2, readyz 0.4.0/0.7.1). push 안 함.
 - turn-engine v0.4.0(v1 폐기 함수 제거, boundary v2.0.2 고정), model-runtime v0.7.0(비밀 파일화, prompt-3 제거, RUNTIME_VERSION 0.7)으로 기본 태그를 올렸다. 코드 변경 없음, 0.3.1/0.6.5 반려 시험 추가. 확인: venv 재설치(v0.4.0/v0.7.0 태그 소스), pytest 232 통과 7 건너뜀 0 실패, scripts/smoke.sh(라벨 turn-engine 0.4.0, model-runtime 0.7.0, contracts.boundary 2.0.2, readyz 0.4.0/0.7.0). push 안 함.
 - turn-engine 기본 태그를 v0.3.1로 올렸다(v0.3.0은 boundary v2.0.0 고정이라 v2.0.1과 충돌). 0.3.0 반려 시험 추가. 확인: pytest, scripts/smoke.sh(라벨 turn-engine 0.3.1). push 안 함.

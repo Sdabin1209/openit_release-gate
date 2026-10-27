@@ -1,5 +1,9 @@
 # 변경 이력
 
+## (미배포) model-runtime v0.7.2 따라가기 (D80)
+
+- `MODEL_RUNTIME_TAG` 기본값 v0.7.1 -> v0.7.2(`scripts/build_image.sh`, runbook). v0.7.2는 가짜 A의 정정(CORRECT) 출력을 더한 하위 호환 변경이다(계약 boundary v2.0.2, turn-engine v0.4.0 그대로). 기준 0.7.2에서 model-runtime 0.7.1 패키지는 반려된다(`tests/test_new_tags.py`에 0.7.1 케이스 추가). 잠금 파일에는 model-runtime이 없어 바뀌지 않는다. 게이트 코드는 변경 없음.
+
 ## (미배포) rollback 본문의 requested_by_role 생략 허용
 
 - `POST /v1/rollback` 본문에 `requested_by_role`이 없어도 된다(admin-console 형태). 서버가 토큰 역할로 채우고(있던 값은 덮어쓴다) `RollbackRequest` 스키마 검증을 한다. 이전에는 필드가 없으면 400이었다. 계약 스키마는 그대로이고 SDK 클라이언트(ops-feedback)는 계속 이 필드를 보낸다. 멱등 해시는 채운 뒤의 본문 기준이다.

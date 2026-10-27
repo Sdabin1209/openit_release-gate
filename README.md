@@ -70,7 +70,7 @@ python -m release_gate judge   --config judge.json     # 한 번 돌고 끝, 멱
 
 ## 4. 현재 상태
 
-확인된 것(`docs/STATUS.md` 2026-10-27 항목 인용, 이번에 다시 돌리지는 않음): turn-engine v0.4.0, model-runtime v0.7.1, boundary-contracts v2.0.2 기준으로 pytest 234 통과, 7 건너뜀, 0 실패, `scripts/smoke.sh` 통과(라벨과 `/readyz` 버전 일치). 이번 세션의 수집 개수 241은 234+7과 맞는다. 패키지 버전은 0.7.0(pyproject). 변경은 push·태그 전이다(STATUS: 헤드 몫).
+확인된 것(`docs/STATUS.md` 2026-10-27 항목 인용, 이번에 다시 돌리지는 않음): turn-engine v0.4.0, model-runtime v0.7.2, boundary-contracts v2.0.2 기준으로 pytest 263 통과, 145 건너뜀, 0 실패, `scripts/smoke.sh` 통과(라벨과 `/readyz` 버전 일치). 패키지 버전은 0.7.0(pyproject). 변경은 push·태그 전이다(STATUS: 헤드 몫).
 
 확인하지 못한 것(STATUS):
 - 실제 question-authoring·model-registry·승인자 화면과의 연동(deploy E2E 몫). 시험은 대역과 같은 방식의 HTTP 서버로 했다.
