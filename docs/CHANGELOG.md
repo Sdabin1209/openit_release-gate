@@ -1,5 +1,9 @@
 # 변경 이력
 
+## (미배포) model-runtime v0.7.1 따라가기 (D80)
+
+- `MODEL_RUNTIME_TAG` 기본값 v0.7.0 -> v0.7.1(`scripts/build_image.sh`, runbook). 기준 0.7.1에서 model-runtime 0.7.0 패키지는 반려된다(`tests/test_new_tags.py`에 0.7.0 케이스 추가, 기준 버전 0.7.1). 게이트 코드는 변경 없음.
+
 ## (미배포) turn-engine v0.4.0, model-runtime v0.7.0 따라가기 (D80)
 
 - `TURN_ENGINE_TAG` 기본값 v0.3.1 -> v0.4.0, `MODEL_RUNTIME_TAG` 기본값 v0.6.5 -> v0.7.0(`scripts/build_image.sh`, runbook). 기준 0.4.0/0.7.0에서 turn-engine 0.3.1 이하, model-runtime 0.6.5 이하 패키지는 반려된다(`tests/test_new_tags.py`에 0.3.1, 0.6.5 케이스 추가).

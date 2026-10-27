@@ -1,5 +1,6 @@
-# STATUS (2026-10-27, turn-engine v0.4.0, boundary-contracts v2.0.2, model-runtime v0.7.0)
+# STATUS (2026-10-27, turn-engine v0.4.0, boundary-contracts v2.0.2, model-runtime v0.7.1)
 
+- model-runtime 기본 태그를 v0.7.1로 올렸다(turn-engine v0.4.0, boundary v2.0.2 그대로). 코드 변경 없음, 0.7.0 반려 시험 추가. 확인: venv 재설치(model-runtime v0.7.1 태그 소스), pytest 234 통과 7 건너뜀 0 실패, scripts/smoke.sh(라벨 model-runtime 0.7.1, turn-engine 0.4.0, contracts.boundary 2.0.2, readyz 0.4.0/0.7.1). push 안 함.
 - turn-engine v0.4.0(v1 폐기 함수 제거, boundary v2.0.2 고정), model-runtime v0.7.0(비밀 파일화, prompt-3 제거, RUNTIME_VERSION 0.7)으로 기본 태그를 올렸다. 코드 변경 없음, 0.3.1/0.6.5 반려 시험 추가. 확인: venv 재설치(v0.4.0/v0.7.0 태그 소스), pytest 232 통과 7 건너뜀 0 실패, scripts/smoke.sh(라벨 turn-engine 0.4.0, model-runtime 0.7.0, contracts.boundary 2.0.2, readyz 0.4.0/0.7.0). push 안 함.
 - turn-engine 기본 태그를 v0.3.1로 올렸다(v0.3.0은 boundary v2.0.0 고정이라 v2.0.1과 충돌). 0.3.0 반려 시험 추가. 확인: pytest, scripts/smoke.sh(라벨 turn-engine 0.3.1). push 안 함.
 - boundary-contracts v2.0.1(ActionExtraction 순서만 바뀐 PATCH), model-runtime v0.6.5(relax-3)로 올렸다. relax_policy_version은 게이트가 다루지 않는 불투명 값이라 코드 변경 없음, 0.6.4 반려 시험 추가. 확인: pytest 217 통과 7 건너뜀 0 실패, scripts/smoke.sh(라벨 contracts.boundary 2.0.1, model-runtime 0.6.5, readyz 0.6.5). push 안 함.
@@ -12,7 +13,7 @@
 # (이전) STATUS 2026-10-15, D53 사람 승인 반영 후
 
 - I4 읽기 면(목록, 번들 tar, 판정 조회), 역할별 읽기 토큰, run-once collect·judge, 라벨 통일, 설치 버전 읽기 완료. 확인: pytest, scripts/smoke.sh.
-- v1.2.0 클라이언트로 I1·I3 소비 경로와 I4·I5 서버 적합성을 시험했다(참조 서버와 같은 방식의 서버를 tests/에 둠). 이미지는 당시 turn-engine v0.2.0, model-runtime v0.4.0 wheel을 담았다(과거 기록. 현재 기본 태그는 v0.4.0/v0.7.0, 맨 위 항목과 `scripts/build_image.sh` 참조).
+- v1.2.0 클라이언트로 I1·I3 소비 경로와 I4·I5 서버 적합성을 시험했다(참조 서버와 같은 방식의 서버를 tests/에 둠). 이미지는 당시 turn-engine v0.2.0, model-runtime v0.4.0 wheel을 담았다(과거 기록. 현재 기본 태그는 v0.4.0/v0.7.1, 맨 위 항목과 `scripts/build_image.sh` 참조).
 - 확인하지 못한 것: 실제 question-authoring·model-registry 서비스와의 연동, `boundary-contracts/conformance/` 모음 자체의 실행(이 리포지토리에서는 읽기 전용 참고만 했다).
 
 
