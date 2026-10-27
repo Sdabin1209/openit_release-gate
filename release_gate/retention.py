@@ -68,11 +68,11 @@ def protected_ids(store: Store, keep: int) -> set:
 
 
 def plan_bundles(store: Store, keep: int) -> list[str]:
-    """어댑터 사본을 정리할 릴리스 ID(이미 정리된 것은 제외). 파일 저장소가 아니면 비어 있다."""
+    """어댑터 사본을 정리할 릴리스 ID(이미 정리를 마친 것은 제외, 삭제가 중간에 멈춘 PRUNING은 포함). 파일 저장소가 아니면 비어 있다."""
     if not hasattr(store, "prune_unprotected"):
         return []
     prot = protected_ids(store, keep)
-    return [r["release_id"] for r in _all_releases(store) if r["release_id"] not in prot and not store.is_pruned(r["release_id"])]
+    return [r["release_id"] for r in _all_releases(store) if r["release_id"] not in prot and store.prune_pending(r["release_id"])]
 
 
 def plan_submissions(store: Store, cutoff: str) -> list[str]:

@@ -491,3 +491,66 @@ def test_loop_is_joined_before_store_close(world):
         def close(self): order.append("closed")
     gate_main.run_until_signal(_Srv(), loop, _Store(), 2.0)
     assert order.index("task-done") < order.index("closed")        # 진행 중인 주기 작업이 끝난 뒤에 저장소를 닫는다
+
+
+# --- 3차 M3: 삭제 중간 실패·중단 뒤에도 다음 prune이 남은 파일을 정리한다 -------------------------------------------
+
+def _setup_prune_target(world):
+    store = _file_store(world)
+    rels = _releases(world, 3)
+    world.reg.service.activate(rels[2], requested_by_role="operator", requested_by="u1")
+    return store, rels[0]
+
+
+def _switch_attempt(store, rid):
+    cur = store.get_pointer()
+    new = {**cur, "pointer_version": cur["pointer_version"] + 1, "release_id": rid}
+    with pytest.raises(BoundaryError) as e:
+        store.switch_pointer(cur["pointer_version"], new)
+    assert e.value.code == "FAILED_PRECONDITION" and store.get_pointer() == cur
+
+
+def test_prune_failing_midway_leaves_pruning_and_next_prune_finishes(world, monkeypatch):
+    store, rid = _setup_prune_target(world)
+    base = store.root / "releases" / rid
+    real = shutil.rmtree
+
+    def half_then_fail(path, *a, **kw):
+        kids = sorted(p for p in path.iterdir())
+        real(kids[0])                                   # 일부만 지우고 예외
+        raise PermissionError("simulated")
+
+    monkeypatch.setattr(type(store), "_remove_tree", staticmethod(half_then_fail))
+    with pytest.raises(BoundaryError) as e:
+        store.prune_unprotected(rid, 0)
+    assert e.value.code == "UNAVAILABLE"
+    assert (base / "PRUNING").exists() and not (base / "PRUNED").exists() and (base / "adapters").exists()
+    assert store.is_pruned(rid) and store.prune_pending(rid)
+    _switch_attempt(store, rid)                         # PRUNING도 전환 거부
+    monkeypatch.undo()
+    out = retention.prune(store, RetentionPolicy(keep_releases=0), now=datetime.now(timezone.utc), apply=True)
+    assert rid in out["bundle_release_ids"]
+    assert (base / "PRUNED").exists() and not (base / "PRUNING").exists() and not (base / "adapters").exists()
+    _switch_attempt(store, rid)                         # PRUNED도 거부
+    assert store.prune_unprotected(rid, 0) == 0         # 끝난 뒤 재호출은 멱등
+
+
+def test_prune_interrupted_after_marker_is_resumed(world):
+    """PRUNING 표시만 쓰고 프로세스가 죽은 상태(삭제 전)를 흉내 낸다."""
+    store, rid = _setup_prune_target(world)
+    base = store.root / "releases" / rid
+    (base / "PRUNING").write_text("x", encoding="utf-8")
+    assert (base / "adapters").exists()
+    _switch_attempt(store, rid)
+    assert store.prune_unprotected(rid, 0) is not None
+    assert not (base / "adapters").exists() and (base / "PRUNED").exists() and not (base / "PRUNING").exists()
+
+
+def test_legacy_pruned_marker_with_leftover_adapters_is_cleaned(world):
+    """이전 방식이 PRUNED만 쓰고 죽은 상태: 어댑터가 남아 있으면 다시 지운다."""
+    store, rid = _setup_prune_target(world)
+    base = store.root / "releases" / rid
+    (base / "PRUNED").write_text("adapters pruned\n", encoding="utf-8")
+    assert retention.plan_bundles(store, 0).count(rid) == 1
+    assert store.prune_unprotected(rid, 0) is not None
+    assert not (base / "adapters").exists()

@@ -47,7 +47,7 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 
 ## 감사 지적 처리 (전수 점검 2026-10-28)
 
-- 우아한 종료(A4): SIGTERM·SIGINT에 `/readyz`를 `shutting_down`(503)으로 바꾸고 새 연결을 거부, 처리 중 요청을 `GATE_SHUTDOWN_GRACE_SECONDS`(기본 20)까지 기다린 뒤 주기 작업을 멈추고 저장소를 닫는다. 확인한 것: 실제 `serve` 프로세스가 SIGTERM에 종료 코드 0으로 끝남, 처리 중 요청이 완료됨(`tests/test_audit_fixes.py`). 확인하지 못한 것: 컨테이너에서 PID 1로 받는 경우와 deploy의 `stop_grace_period`.
+- 우아한 종료(A4): SIGTERM·SIGINT에 `/readyz`를 `shutting_down`(503)으로 바꾸고 새 연결을 거부, 처리 중 요청을 `GATE_SHUTDOWN_GRACE_SECONDS`(기본 20)까지 기다린 뒤 주기 작업을 멈추고 저장소를 닫는다. 확인한 것: 실제 `serve` 프로세스가 SIGTERM에 종료 코드 0으로 끝남, 처리 중 요청이 완료됨(`tests/test_audit_fixes.py`). **최악 종료 시간(코드 `main.py` `run_until_signal`, `app.py` `graceful_stop`을 읽고 계산; 실측 아님)**: 요청 대기 최대 grace(20초) + 주기 작업 `loop.join` 최대 10초 = 정상 경로 최악 약 30.5초(shutdown 폴링 0.5초 포함). `graceful_stop` 자체가 멈추는 비정상 경로에서는 `stopped.wait(grace+5)`가 25초까지 늘어 하드 상한은 25 + 10 = 35초다. 따라서 deploy의 `stop_grace_period`는 **35초 이상(여유를 두어 40초 권장)**이어야 하고, 현재 25초(compose.yaml)면 주기 작업이 길 때 SIGKILL이 먼저 온다(주기 작업이 트랜잭션이면 롤백되나 확인하지 못했다). 확인하지 못한 것: 컨테이너에서 PID 1로 받는 경우, 실제 종료 시간 측정.
 - 락 보유(A7): 번들 복사는 저장소 락·트랜잭션 밖에서 한다(락 안은 rename뿐). 복사 1초 동안 `get_pointer`·`list_releases`가 0.4초 넘게 막히지 않음을 시험(지연 주입). 실제 큰 어댑터로는 **측정 안 함**.
 - 큰 어댑터(G3): 활성화·롤백 검증·번들 GET은 복사 없이 제자리에서 해시를 계산한다(해시 계산 비용 O(크기)는 남는다. 캐시는 안전성을 약화하므로 두지 않음). 승인 때 I3에서 받은 어댑터는 같은 파일 시스템에서 복사 없이 옮긴다. 번들 GET은 검증 후 tar 임시 파일 한 벌을 만든다.
 - 목록(G2): `GET /v1/submissions`는 접수·상태·최신 판정을 JOIN 한 쿼리를 묶음 단위로 읽는다(접수 15건에서 쿼리 2개 이하 시험). 상태·판정 인덱스를 추가했다.
@@ -55,7 +55,7 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 - 행위자 기록(C6): 접근 로그에 `role=<토큰 역할> user=<X-Openit-User>`가 붙는다(거부된 요청 포함, 토큰이 틀리면 `role=-`). 유효한 쓰기 토큰의 거부·실패한 쓰기 시도는 `attempts` 테이블에 행위자와 함께 남는다(보존 365일). 한계: 이미 활성인 릴리스의 재활성화(멱등 성공)와 번들·판정 열람은 기록하지 않는다. attempts를 읽는 HTTP 경로는 없다(SQL로 조회).
 - 접수 상한(A6): `GATE_MAX_PENDING_SUBMISSIONS`(기본 없음=제한 없음)을 주면 결정 전 접수가 그 수에 이르렀을 때 새 조합을 412(`SUBMISSION_LIMIT`)로 거부한다.
 - 보존(C3, A6; D88 U4): `python -m release_gate prune`(기본 반려·미승인 접수 90일, 시도 기록 365일, 어댑터 사본은 활성·직전·최근 3개 외 정리, 승인·활성 이력은 불변). 무기한 설정은 거부. `/readyz`의 `retention`에 현황. docs/adr/0009.
-- 정리와 활성화의 경쟁(재점검 M1): 정리는 대상을 고른 뒤 **삭제 직전에 포인터 락 안에서 보호 대상을 다시 확인**하고 PRUNED 표시를 하며(표시 뒤 파일 삭제), `switch_pointer`가 같은 락 안에서 PRUNED 릴리스로의 전환을 거부한다. 보호: 활성, 직전 활성, 최근 N개, **승인됐지만 활성화 전인 더 새 릴리스**(활성이 한 번도 없으면 전부). `GATE_RETAIN_KEEP_RELEASES=0`이어도 앞의 셋은 보호한다. 시험: 계획→활성화→apply 순서, 스레드 교차(`tests/test_audit_fixes.py`). 임시 디렉터리 정리는 트리 안 최신 mtime 기준(진행 중인 큰 복사를 지우지 않음), 깊게 중첩된 JSON은 400, 종료 때 Loop를 join한 뒤 저장소를 닫는다.
+- 정리와 활성화의 경쟁(재점검 M1): 정리는 대상을 고른 뒤 **삭제 직전에 포인터 락 안에서 보호 대상을 다시 확인**하고 PRUNED 표시를 하며(PRUNING 표시 -> 락 밖 파일 삭제 -> PRUNED. 삭제가 실패하거나 프로세스가 죽으면 PRUNING이 남고 다음 prune이 이어서 지운다. PRUNED인데 어댑터가 남은 것도 다시 지운다. PRUNING·PRUNED 모두 `switch_pointer`가 거부), `switch_pointer`가 같은 락 안에서 PRUNED 릴리스로의 전환을 거부한다. 보호: 활성, 직전 활성, 최근 N개, **승인됐지만 활성화 전인 더 새 릴리스**(활성이 한 번도 없으면 전부). `GATE_RETAIN_KEEP_RELEASES=0`이어도 앞의 셋은 보호한다. 시험: 계획→활성화→apply 순서, 스레드 교차(`tests/test_audit_fixes.py`). 임시 디렉터리 정리는 트리 안 최신 mtime 기준(진행 중인 큰 복사를 지우지 않음), 깊게 중첩된 JSON은 400, 종료 때 Loop를 join한 뒤 저장소를 닫는다.
 - 설정 검증(E3): `GATE_POLL_SECONDS`·`PORT`는 양수 검사로 시작 거부.
 - 안 고친 것: 이미지 해시 잠금·SBOM(F2/B9, 헤드의 이미지 정책), 외래키·마이그레이션(C9/C10), 토큰 만료·읽기 토큰 역할 구분(B12), 속도 제한(B10), 시작 때 DB 재시도(E7), 승인 본문 `ext` 제거(B4).
 

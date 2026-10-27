@@ -434,21 +434,39 @@ class ReleaseFiles:
 
     def prune_unprotected(self, release_id: str, keep: int) -> Optional[int]:
         """보호 대상이 아니면 어댑터 사본을 정리하고 지운 바이트 수를, 보호 대상이면 None을 돌려준다.
-        **보호 대상 확인과 PRUNED 표시를 포인터 전환과 같은 락·트랜잭션 안에서 한다**: 대상을 고른 뒤 운영자가 그 릴리스를 활성화해도
-        여기서 다시 확인하므로 활성 릴리스가 정리되지 않고, 표시 뒤에는 `switch_pointer`가 PRUNED 릴리스로의 전환을 거부한다.
-        표시를 먼저 하고 파일 삭제는 락 밖에서 한다(큰 삭제가 읽기를 막지 않게)."""
+        **보호 대상 확인과 PRUNING 표시를 포인터 전환과 같은 락·트랜잭션 안에서 한다**: 대상을 고른 뒤 운영자가 그 릴리스를 활성화해도
+        여기서 다시 확인하므로 활성 릴리스가 정리되지 않고, 표시 뒤에는 `switch_pointer`가 그 릴리스로의 전환을 거부한다.
+        상태 전이는 PRUNING(락 안) -> 파일 삭제(락 밖: 큰 삭제가 읽기를 막지 않게) -> PRUNED. 왜 이 순서인가: 표시를 먼저 PRUNED로 쓰면
+        삭제 중 프로세스가 죽거나 일부 삭제가 실패할 때 파일이 영구히 남고 다음 prune이 건너뛴다(재점검 3차 M3).
+        PRUNING은 삭제가 끝나지 않았다는 뜻이라 다음 prune이 이어서 지운다(멱등). 삭제가 실패하면 PRUNING을 남기고 UNAVAILABLE을 올린다."""
         from .retention import protected_ids
         base = self.root / "releases" / release_id
         with self._pointer_guard():
             if release_id in protected_ids(self, keep):
                 return None
-            if self.is_pruned(release_id):
+            if not self.prune_pending(release_id):
                 return 0
-            (base / "PRUNED").write_text("adapters pruned\n", encoding="utf-8")
+            (base / "PRUNING").write_text("adapter deletion in progress\n", encoding="utf-8")
         ad = base / "adapters"
         size = sum(f.stat().st_size for f in ad.rglob("*") if f.is_file()) if ad.is_dir() else 0
-        shutil.rmtree(ad, ignore_errors=True)
+        try:
+            if ad.is_dir():
+                self._remove_tree(ad)
+        except OSError as e:     # 일부만 지워졌을 수 있다: PRUNING을 남겨 다음 prune이 이어서 지우게 한다
+            raise BoundaryError("UNAVAILABLE", f"어댑터 사본을 다 지우지 못했다(다음 정리에서 이어서 지운다): {release_id}: {type(e).__name__}") from None
+        (base / "PRUNED").write_text("adapters pruned\n", encoding="utf-8")
+        (base / "PRUNING").unlink(missing_ok=True)
         return size
+
+    @staticmethod
+    def _remove_tree(path: Path) -> None:
+        """실패를 숨기지 않는 디렉터리 삭제(시험이 갈아 끼우는 지점)."""
+        shutil.rmtree(path)
+
+    def prune_pending(self, release_id: str) -> bool:
+        """정리가 더 필요한가: 아직 정리하지 않았거나(PRUNED 없음), 정리 표시가 있어도 어댑터가 남았거나 삭제 중(PRUNING)이다."""
+        base = self.root / "releases" / release_id
+        return not (base / "PRUNED").exists() or (base / "PRUNING").exists() or (base / "adapters").exists()
 
     def _refuse_pruned_target(self, new_pointer: dict) -> None:
         rid = new_pointer.get("release_id")
@@ -456,7 +474,8 @@ class ReleaseFiles:
             raise BoundaryError("FAILED_PRECONDITION", f"어댑터 사본이 정리된 릴리스로는 전환할 수 없다: {rid}", {"reason": "PRUNED"})
 
     def is_pruned(self, release_id: str) -> bool:
-        return (self.root / "releases" / release_id / "PRUNED").exists()
+        base = self.root / "releases" / release_id
+        return (base / "PRUNED").exists() or (base / "PRUNING").exists()
 
     def get_release_reports(self, release_id):
         try:
@@ -469,7 +488,7 @@ class ReleaseFiles:
         dest가 있으면 그곳에 복사한다."""
         self.get_release(release_id)
         base = self.root / "releases" / release_id
-        if (base / "PRUNED").exists():
+        if self.is_pruned(release_id):
             raise BoundaryError("FAILED_PRECONDITION", f"어댑터 사본이 정리된 릴리스다: {release_id}", {"reason": "PRUNED"})
         try:
             bank = json.loads((base / "question_bank.json").read_text(encoding="utf-8"))
