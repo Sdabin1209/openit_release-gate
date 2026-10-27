@@ -227,7 +227,8 @@ class _Handler(BaseHTTPRequestHandler):
                     user = f"service:{role}"
                 if path == "/v1/activate":
                     return 200, r.service.activate(str(b.get("release_id", "")), requested_by_role=role, requested_by=user)
-                return 200, r.service.request_rollback(b, requested_by_role=role, requested_by=user)
+                # 계약 스키마는 requested_by_role을 필수로 두지만 HTTP 면에서는 자기 신고 값을 받지 않는다: 토큰 역할로 채우고(있던 값은 덮어쓴다) 검증한다
+                return 200, r.service.request_rollback(dict(b, requested_by_role=role), requested_by_role=role, requested_by=user)
             role = self._write_role(b.get("requested_by_role"))
             if path == "/v1/submissions":
                 return 202, r.service.submit_candidate(b.get("subject"), requested_by_role=role)

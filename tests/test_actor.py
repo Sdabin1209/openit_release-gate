@@ -41,6 +41,13 @@ def active(base):
         return json.loads(r.read())["item"]
 
 
+def test_activate_body_with_release_id_only(world, server):
+    rid = world.make_release()
+    assert post(server, "/v1/activate", {"release_id": rid}, "wo")[0] == 401
+    st, p = post(server, "/v1/activate", {"release_id": rid}, "wo", "alice")
+    assert st == 200 and p["ext"]["release-gate"] == {"requested_by": "alice", "requested_by_role": "operator"}
+
+
 def test_activate_without_header_is_401_for_human_role(world, server):
     rid = world.make_release()
     st, body = post(server, "/v1/activate", {"release_id": rid}, "wo")
@@ -89,6 +96,39 @@ def test_rollback_actor_in_receipt_and_pointer(world, server):
     world.schemas.validate("RollbackReceipt", rc)
     st, again = post(server, "/v1/rollback", req, "wo", "bob")          # 멱등: 같은 영수증
     assert st == 200 and again == rc
+
+
+def admin_rollback_body(rid, frm, to):
+    """admin-console이 보내는 형태: requested_by_role 없음."""
+    body = rollback_req(rid, frm, to)
+    del body["requested_by_role"]
+    return body
+
+
+def test_rollback_body_without_role_is_accepted(world, server):
+    r1 = world.make_release()
+    r2 = world.make_release(world.subject(qs=world.q.add("qs-main", 2)))
+    assert post(server, "/v1/activate", {"release_id": r2}, "wo", "alice")[0] == 200       # 본문은 release_id만
+    body = admin_rollback_body("rb-e", r2, r1)
+    assert "requested_by_role" not in body
+    assert post(server, "/v1/rollback", body, "wo")[0] == 401                            # 헤더 없으면 401
+    st, rc = post(server, "/v1/rollback", body, "wo", "bob")
+    assert st == 200 and rc["status"] == "APPLIED", rc
+    world.schemas.validate("RollbackReceipt", rc)
+    assert rc["ext"]["release-gate"] == {"requested_by": "bob", "requested_by_role": "operator"}
+    assert post(server, "/v1/rollback", body, "wo", "bob") == (200, rc)                   # 재전송은 같은 영수증(멱등)
+
+
+def test_rollback_token_role_overrides_body_role(world, server):
+    r1 = world.make_release()
+    r2 = world.make_release(world.subject(qs=world.q.add("qs-main", 2)))
+    post(server, "/v1/activate", {"release_id": r2}, "wo", "alice")
+    body = dict(admin_rollback_body("rb-f", r2, r1), requested_by_role="question-authoring")
+    st, rc = post(server, "/v1/rollback", body, "wo", "bob")
+    assert st == 200 and rc["ext"]["release-gate"]["requested_by_role"] == "operator"
+    # 반대로 권한 없는 토큰은 본문에서 operator를 적어도 403
+    body = dict(admin_rollback_body("rb-g", r1, r2), requested_by_role="operator")
+    assert post(server, "/v1/rollback", body, "wq", "mallory")[0] == 403
 
 
 def test_rejected_rollback_records_actor(world, server):

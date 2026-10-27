@@ -1,5 +1,9 @@
 # 변경 이력
 
+## (미배포) rollback 본문의 requested_by_role 생략 허용
+
+- `POST /v1/rollback` 본문에 `requested_by_role`이 없어도 된다(admin-console 형태). 서버가 토큰 역할로 채우고(있던 값은 덮어쓴다) `RollbackRequest` 스키마 검증을 한다. 이전에는 필드가 없으면 400이었다. 계약 스키마는 그대로이고 SDK 클라이언트(ops-feedback)는 계속 이 필드를 보낸다. 멱등 해시는 채운 뒤의 본문 기준이다.
+
 ## (미배포) PostgreSQL 저장소
 
 - 운영 저장소로 PostgreSQL(`postgres_store.py`, psycopg[binary] 3.3.6 고정)을 더했다. `GATE_DATABASE_URL`(비밀, `_FILE` 우선)이 있으면 서버와 잡이 PostgreSQL을, 없으면 `GATE_DATA_DIR`의 SQLite를 쓴다. 번들 파일은 파일 시스템 그대로. 표준 이유: 서비스별 데이터베이스·계정을 가진 서버가 백업·접근 제어·동시 접속의 표준 경로다.
