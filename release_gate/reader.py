@@ -12,6 +12,21 @@ from boundary_contracts.sdk import ReleaseBundle
 from .store import ROLES, Store
 
 def verify_release(store: Store, release_id: str, dest: Optional[Path]) -> ReleaseBundle:
+    """검증하는 동안 같은 릴리스가 prune에 걸려 어댑터가 사라졌으면, 손상(INTEGRITY_ERROR)이 아니라 정리됨(FAILED_PRECONDITION, PRUNED)이다.
+    왜: 읽기는 락 없이 하고 prune의 파일 삭제는 포인터 락 밖에서 하므로(store.prune_unprotected) 둘이 겹칠 수 있다. 겹침에서 진 읽기가 변조
+    경보(INTEGRITY_ERROR)를 올리면 정상 경쟁이 거짓 경보가 된다. 실패 뒤에 PRUNING/PRUNED 표시를 다시 확인해 구분한다(진짜 손상은 표시가 없다)."""
+    try:
+        return _verify_release(store, release_id, dest)
+    except (BoundaryError, OSError) as e:
+        if isinstance(e, BoundaryError) and e.code != "INTEGRITY_ERROR":
+            raise
+        is_pruned = getattr(store, "is_pruned", None)
+        if is_pruned is not None and is_pruned(release_id):
+            raise BoundaryError("FAILED_PRECONDITION", f"어댑터 사본이 정리된 릴리스다: {release_id}", {"reason": "PRUNED"}) from e
+        raise
+
+
+def _verify_release(store: Store, release_id: str, dest: Optional[Path]) -> ReleaseBundle:
     """릴리스 묶음의 모든 해시를 검증한다. 통과하지 않은 릴리스는 FAILED_PRECONDITION.
     dest가 있으면 거기에 풀어 돌려준다(load_bundle). dest가 None이면 파일 저장소는 복사 없이 릴리스 디렉터리를 그대로 읽어 검증한다
     (읽기 전용으로 쓸 것. 활성화·롤백 검증·번들 전송에서 수 GB 어댑터를 통째로 복사하지 않는다. 검증 강도는 같다: 같은 해시 계산)."""

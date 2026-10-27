@@ -420,10 +420,14 @@ def test_concurrent_prune_and_activate_never_leave_pointer_on_pruned_release(wor
             try:
                 world.reg.service.activate(rels[i % 5], requested_by_role="operator", requested_by="u1")
             except BoundaryError as e:
+                # 검증 중 prune이 어댑터를 지우면 FAILED_PRECONDITION(PRUNED)이어야 한다. INTEGRITY_ERROR는 거짓 변조 경보다(reader.verify_release)
                 if e.code != "FAILED_PRECONDITION":
                     bad.append(e.code)
+            # 포인터를 읽고 정리 여부를 보는 두 읽기는 원자적이지 않다. 그 사이 다른 활성화 스레드가 포인터를 옮기고 prune이 옛 릴리스를
+            # 정리하면(옛 릴리스는 더 이상 활성·직전이 아니다) 정상인데도 "포인터가 정리된 릴리스"로 보인다(PostgreSQL 40회 중 1회 관측).
+            # 그래서 정리됨을 본 뒤 포인터를 다시 읽어, 같은 포인터(같은 pointer_version)가 정리된 릴리스를 가리킬 때만 결함으로 센다.
             ptr = store.get_pointer()
-            if store.is_pruned(ptr["release_id"]):
+            if store.is_pruned(ptr["release_id"]) and store.get_pointer()["pointer_version"] == ptr["pointer_version"]:
                 bad.append("POINTER_ON_PRUNED")
             i += 1
 
