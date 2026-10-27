@@ -1,11 +1,11 @@
-"""turn-engine 0.3.0, model-runtime 0.6.3 기준에서의 CONTRACT_COMPAT(학습 때 버전 일치 검사)."""
+"""turn-engine 0.3.0, model-runtime 0.6.4 기준에서의 CONTRACT_COMPAT(학습 때 버전 일치 검사)."""
 from __future__ import annotations
 
 import pytest
 
 from release_gate.config import GateConfig
 
-TE, MR = "0.3.0", "0.6.3"
+TE, MR = "0.3.0", "0.6.4"
 
 
 @pytest.fixture
@@ -29,8 +29,9 @@ def test_matching_new_versions_pass_compat(world_new):
 @pytest.mark.parametrize("kw,needle", [
     ({"engine": "0.2.0", "runtime": MR}, "turn-engine"),
     ({"engine": TE, "runtime": "0.4.0"}, "model-runtime"),
-    ({"engine": TE, "runtime": "0.6.0"}, "model-runtime"),        # 0.6.0은 기준(0.6.3)과 다르므로 반려
-    ({"engine": TE, "runtime": "0.6.2"}, "model-runtime"),        # 직전 버전 0.6.2도 반려
+    ({"engine": TE, "runtime": "0.6.0"}, "model-runtime"),        # 0.6.0은 기준(0.6.4)과 다르므로 반려
+    ({"engine": TE, "runtime": "0.6.3"}, "model-runtime"),        # 직전 버전 0.6.3도 반려
+    ({"engine": TE, "runtime": "0.6.2"}, "model-runtime"),
     ({"engine": TE, "runtime": "0.6.1"}, "model-runtime"),
 ])
 def test_old_versions_rejected_against_new_baseline(world_new, kw, needle):

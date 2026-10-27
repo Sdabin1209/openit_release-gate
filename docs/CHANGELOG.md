@@ -1,5 +1,10 @@
 # 변경 이력
 
+## (미배포) model-runtime v0.6.4 따라가기 (D80)
+
+- `MODEL_RUNTIME_TAG` 기본값 v0.6.3 -> v0.6.4(`scripts/build_image.sh`, runbook). 기준 0.6.4에서 0.6.3 이하 패키지는 반려된다(`tests/test_new_tags.py`).
+- v0.6.4는 serving_config의 `relax_policy_version`이 relax-2이고 supported_features에 pattern, minItems가 추가됐다. 게이트에는 `relax_policy_version`, `supported_features`를 비교하거나 고정하는 코드·픽스처·문서가 없고 serving_config는 불투명 값(해시 일치만 검사)이라 코드 변경은 없다.
+
 ## (미배포) model-runtime v0.6.3 따라가기
 
 - `MODEL_RUNTIME_TAG` 기본값 v0.6.2 -> v0.6.3(`scripts/build_image.sh`, runbook). 코드 변경 없음. 기준 0.6.3에서 0.6.2 이하 패키지는 반려된다(`tests/test_new_tags.py`).
