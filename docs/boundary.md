@@ -17,7 +17,7 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 
 ## 생산하는 계약
 
-`GateDecision`(`reject_codes`, `SKIPPED` 포함), `ReleaseManifest`(`adapters[role].system_prompt` 포함, D75), `GateSubmission`, `ActivePointer`, `RollbackReceipt`. 전부 쓰기 전에 boundary-contracts v2.0.0 스키마로 검증한다. `ext`는 쓰지 않는다.
+`GateDecision`(`reject_codes`, `SKIPPED` 포함), `ReleaseManifest`(`adapters[role].system_prompt` 포함, D75), `GateSubmission`, `ActivePointer`, `RollbackReceipt`. 전부 쓰기 전에 boundary-contracts v2.0.1 스키마로 검증한다. `ext`는 쓰지 않는다.
 
 ## 소비하는 것과 지원 버전
 

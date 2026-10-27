@@ -1,5 +1,11 @@
 # 변경 이력
 
+## (미배포) boundary-contracts v2.0.1, model-runtime v0.6.5 따라가기 (D80)
+
+- `BOUNDARY_CONTRACTS_TAG` 기본값 v2.0.0 -> v2.0.1(`requirements.txt`, `scripts/stage_context.sh`, runbook, `docs/boundary.md`). v2.0.1은 ActionExtraction properties 순서만 사전순으로 바꾼 PATCH다.
+- `MODEL_RUNTIME_TAG` 기본값 v0.6.4 -> v0.6.5(`scripts/build_image.sh`, runbook). 기준 0.6.5에서 0.6.4 이하 패키지는 반려된다(`tests/test_new_tags.py`에 0.6.4 케이스 추가).
+- v0.6.5는 제약 디코딩 relax-3이고 serving_config의 `relax_policy_version`이 relax-3이 된다. 게이트에는 이 값을 비교하거나 고정하는 코드·픽스처·문서가 없고 serving_config는 불투명 값(해시 일치만 검사)임을 grep으로 확인해 코드 변경은 없다.
+
 ## (미배포) model-runtime v0.6.4 따라가기 (D80)
 
 - `MODEL_RUNTIME_TAG` 기본값 v0.6.3 -> v0.6.4(`scripts/build_image.sh`, runbook). 기준 0.6.4에서 0.6.3 이하 패키지는 반려된다(`tests/test_new_tags.py`).

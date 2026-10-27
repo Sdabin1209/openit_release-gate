@@ -14,7 +14,7 @@ PY="${PYTHON:-$here/.venv/bin/python}"
 # 이미 GATE_LIB_WHEELS_DIR이 주어지면(deploy가 준비한 wheel) 그것을 쓴다.
 if [ -z "${GATE_LIB_WHEELS_DIR:-}" ]; then
   libs="$here/.build/libwheels"; rm -rf "$libs" "$here/.build/lib-src"; mkdir -p "$libs"
-  for spec in "turn-engine:${TURN_ENGINE_TAG:-v0.3.0}" "model-runtime:${MODEL_RUNTIME_TAG:-v0.6.4}"; do
+  for spec in "turn-engine:${TURN_ENGINE_TAG:-v0.3.0}" "model-runtime:${MODEL_RUNTIME_TAG:-v0.6.5}"; do
     repo="${spec%%:*}"; rtag="${spec##*:}"; src="$here/.build/lib-src/$repo"; mkdir -p "$src"
     git -C "$here/../$repo" archive "$rtag" | tar -x -C "$src"
     "$PY" -m pip wheel -q --no-deps -w "$libs" "$src" >&2
