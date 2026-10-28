@@ -23,7 +23,7 @@ def test_release_copies_system_prompt_from_package(world, tmp_path):
     rid = world.make_release(world.subject(a=a, b=b))
     man = world.reg.reader.get_release(rid)
     world.schemas.validate("ReleaseManifest", man)
-    assert man["pipeline_schema_version"] == "2.0"
+    assert man["pipeline_schema_version"] == PIPELINE_SCHEMA_VERSION   # 왜: 계약이 정한 값(정본)과 비교한다. 리터럴은 계약 MINOR가 오를 때 낡는다
     for role, pkg in (("LORA_A", a), ("LORA_B", b)):
         assert man["adapters"][role]["system_prompt"] == pkg["system_prompt"]
     assert man["adapters"]["LORA_A"]["system_prompt"]["path"] == "prompts/a.txt"
