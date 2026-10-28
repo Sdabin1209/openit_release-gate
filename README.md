@@ -28,7 +28,7 @@ HTTP 경로(boundary.md 기준): 쓰기는 `POST /v1/submissions`, `/v1/approval
 | `release_gate/review.py`, `views.py` | 승인 요청 보고서(후보 대 활성 릴리스 지표 비교), 제출 상태 보기 |
 | `release_gate/store.py`, `postgres_store.py` | 릴리스 레지스트리 저장소: PostgreSQL+파일(운영, `GATE_DATABASE_URL`), SQLite+파일(개발·시험 기본), 메모리(가짜) |
 | `release_gate/reader.py`, `registry.py` | I4 읽기 구현(읽기 전용 연결 가능), 저장소+I4+I5 묶음 도우미 |
-| `release_gate/app.py`, `main.py` | HTTP 면, 진입점 `serve` / `collect` / `judge` |
+| `release_gate/app.py`, `main.py` | HTTP 면(WSGI 앱 + waitress), 진입점 `serve` / `collect` / `judge` |
 | `release_gate/factories.py`, `schemas.py` | I1·I3 HTTP 클라이언트 팩토리, 쓰기 전 스키마 검증 |
 | `tests/` | 적합성(memory·sqlite·postgres), HTTP, 비밀, 수집·정책, 계약 v2 시험. `fakes.py`가 이웃 대역 |
 | `scripts/` | `build_image.sh`, `stage_context.sh`(이미지 컨텍스트), `smoke.sh`(스모크) |
@@ -122,3 +122,4 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | [0010](docs/adr/0010-rollback.md) | 롤백 설계 |
 | [0011](docs/adr/0011-turn-engine-reference-string.md) | turn-engine은 설치하지 않고 기준 문자열만 설정으로 |
 | [0012](docs/adr/0012-job-output-self-check.md) | 잡 출력 자기 검사, /readyz는 시험에서만, 종료 코드 |
+| [0013](docs/adr/0013-wsgi-waitress.md) | HTTP 면은 WSGI 앱 + waitress |

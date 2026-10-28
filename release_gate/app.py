@@ -1,4 +1,4 @@
-"""gate-service의 HTTP 면(HTTP.md의 I4·I5). 표준 라이브러리만 쓴다.
+"""gate-service의 HTTP 면(HTTP.md의 I4·I5). WSGI(PEP 3333) 앱이고 waitress가 서빙한다(ADR-0013).
 
 읽기(읽기 토큰): GET /v1/active-pointer {"item"}, /v1/releases, /v1/releases/<id>, /v1/releases/<id>/bundle (tar),
   /v1/decisions?question_set_id=&question_set_version=&lora_a_id=&lora_a_version=&lora_b_id=&lora_b_version=&submission_id=,
@@ -10,16 +10,18 @@
 from __future__ import annotations
 
 import hmac
+import http
 import json
 import logging
 import re
-import shutil
 import tempfile
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Optional
 from urllib.parse import parse_qs, urlsplit
+
+import waitress
+from waitress import wasyncore
 
 from boundary_contracts import canonical
 from boundary_contracts.errors import BoundaryError
@@ -36,9 +38,11 @@ _STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, 
            "INTEGRITY_ERROR": 422, "FAILED_PRECONDITION": 412, "PERMISSION_DENIED": 403, "UNAVAILABLE": 503}
 
 
-# 근거는 docs/adr/0008-timeouts.md. 아래 두 값은 근거 기록 없음(보수적 설계 판단, 측정 안 함): 감사 A9 "스레드·소켓 timeout 부재" 지적에 대한 첫 값이다.
-DEFAULT_REQUEST_TIMEOUT = 30.0     # 소켓 읽기·쓰기 단위(초). 느린 연결이 스레드를 영구히 붙잡지 않게 한다
-DEFAULT_MAX_CONNECTIONS = 64       # 동시에 처리하는 연결 수 상한. 넘으면 503(재시도 가능)을 바로 돌려준다
+# 값의 근거는 docs/adr/0013-wsgi-waitress.md(0008의 값을 waitress 설정으로 옮겼다). 아래 값은 근거 기록 없음(보수적 설계 판단, 측정 안 함)이다.
+DEFAULT_REQUEST_TIMEOUT = 30       # waitress channel_timeout(초, 정수): 아무 활동 없는 연결을 닫는다. 느린 연결이 자원을 영구히 붙잡지 않게 한다
+DEFAULT_MAX_CONNECTIONS = 64       # waitress connection_limit: 넘으면 새 연결을 받지 않고(백로그에 둔다) 기존 연결이 끝나길 기다린다
+DEFAULT_THREADS = 8                # waitress threads: 앱을 동시에 실행하는 스레드 수. waitress 기본 4의 2배, 측정 안 함
+MAX_BODY_BYTES = 1 << 20           # waitress max_request_body_size: 요청 본문 상한 1MiB(초과는 waitress가 413). 이전 값과 같다
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
 
 
@@ -54,71 +58,28 @@ class Unauthenticated(BoundaryError):
 _CHALLENGE = {"WWW-Authenticate": "Bearer"}      # RFC 9110 11.6.1: 401은 도전(challenge)을 싣는다. 값은 RFC 6750 3절의 스킴 이름
 
 
-class GateHTTPServer(ThreadingHTTPServer):
-    daemon_threads = True
+class _Headers:
+    """WSGI environ의 HTTP_* 를 헤더 이름(대소문자 무시)으로 읽는다."""
 
-    def __init__(self, addr, registry: Registry, *, read_tokens: dict, write_tokens: dict,
-                 status: Callable[[], dict], engine=None, request_timeout: float = DEFAULT_REQUEST_TIMEOUT,
-                 max_connections: int = DEFAULT_MAX_CONNECTIONS):
-        handler = type("GateHandler", (_Handler,), {"timeout": request_timeout})
-        super().__init__(addr, handler)
+    def __init__(self, environ: dict):
+        self._e = environ
+
+    def get(self, name: str, default=None):
+        key = name.upper().replace("-", "_")
+        return self._e.get("CONTENT_" + key[8:] if key.startswith("CONTENT_") else "HTTP_" + key, default)
+
+
+class GateApp:
+    """WSGI 앱(PEP 3333). 요청마다 _Req가 처리한다. 서빙은 GateHTTPServer(waitress)가 맡는다."""
+
+    def __init__(self, registry: Registry, *, read_tokens: dict, write_tokens: dict, status: Callable[[], dict], engine=None):
         self.shutting_down = False
-        self._slots = threading.BoundedSemaphore(max_connections)
-        self._inflight = 0
-        self._inflight_cv = threading.Condition()
         self.engine = engine  # 승인 결정(decide)에 필요하다. I1·I3가 연결되지 않으면 None
         self.registry, self.read_tokens, self.write_tokens, self.status = registry, dict(read_tokens), dict(write_tokens), status
         self._last_status: dict = {}
 
-    # --- 연결 수 상한과 우아한 종료
-    def process_request(self, request, client_address):
-        if not self._slots.acquire(blocking=False):
-            try:
-                body = json.dumps(BoundaryError("UNAVAILABLE", "동시 연결이 상한에 이르렀다").to_record(PIPELINE_SCHEMA_VERSION)).encode()
-                request.sendall(b"HTTP/1.0 503 Service Unavailable\r\nContent-Type: application/json\r\nRetry-After: 1\r\n"
-                                b"Content-Length: %d\r\n\r\n" % len(body) + body)
-            except OSError:
-                pass
-            self.shutdown_request(request)
-            return
-        with self._inflight_cv:
-            self._inflight += 1
-        try:
-            super().process_request(request, client_address)
-        except BaseException:
-            self._done()
-            raise
-
-    def process_request_thread(self, request, client_address):
-        try:
-            super().process_request_thread(request, client_address)
-        finally:
-            self._done()
-
-    def _done(self) -> None:
-        self._slots.release()
-        with self._inflight_cv:
-            self._inflight -= 1
-            self._inflight_cv.notify_all()
-
-    def inflight(self) -> int:
-        with self._inflight_cv:
-            return self._inflight
-
-    def graceful_stop(self, grace: float) -> int:
-        """우아한 종료: /readyz를 shutting_down(503)으로 바꾸고, 새 연결을 받지 않고(수신 소켓을 닫는다), 처리 중인 요청이 끝나길
-        최대 grace초 기다린다. 아직 처리 중인 요청 수를 돌려준다(0이면 모두 끝났다). serve_forever를 돌리는 스레드가 아닌 곳에서 부른다."""
-        self.shutting_down = True
-        self.shutdown()
-        self.server_close()
-        deadline = time.monotonic() + grace
-        with self._inflight_cv:
-            while self._inflight > 0:
-                left = deadline - time.monotonic()
-                if left <= 0:
-                    break
-                self._inflight_cv.wait(left)
-            return self._inflight
+    def __call__(self, environ, start_response):
+        return _Req(self, environ).respond(start_response)
 
     def readyz_status(self) -> dict:
         """/readyz의 보조 수치(승인 대기 건수 등). 주 연결로 읽으므로 주 연결이 막혀 있으면 기다리지 않고 마지막 값을 낸다(`db_stats_stale`).
@@ -143,29 +104,113 @@ class GateHTTPServer(ThreadingHTTPServer):
         return v
 
 
-class _Handler(BaseHTTPRequestHandler):
-    server: GateHTTPServer
+class GateHTTPServer(GateApp):
+    """GateApp을 waitress로 서빙한다. 연결 수 상한·느린 연결 차단·본문 상한·스레드 풀은 waitress 설정이 맡는다(ADR-0013)."""
 
-    def log_message(self, fmt, *args):  # 표준 출력으로 낸다
+    def __init__(self, addr, registry: Registry, *, read_tokens: dict, write_tokens: dict,
+                 status: Callable[[], dict], engine=None, request_timeout: int = DEFAULT_REQUEST_TIMEOUT,
+                 max_connections: int = DEFAULT_MAX_CONNECTIONS, threads: int = DEFAULT_THREADS):
+        super().__init__(registry, read_tokens=read_tokens, write_tokens=write_tokens, status=status, engine=engine)
+        timeout = max(1, int(request_timeout))
+        self._srv = waitress.create_server(
+            self, host=addr[0], port=addr[1], threads=threads, connection_limit=max_connections + 2,    # 왜 +2: waitress는 수신 소켓과 trigger 채널도 센다(server.py readable)
+            channel_timeout=timeout, cleanup_interval=min(30, timeout),    # 왜: 기본 정리 주기 30초면 짧은 timeout이 그만큼 늦게 적용된다
+            max_request_body_size=MAX_BODY_BYTES, ident="gate-service", expose_tracebacks=False)
+        self.server_address = (self._srv.effective_host, self._srv.effective_port)
+
+    def serve_forever(self) -> None:
+        try:
+            self._srv.run()
+        except OSError:
+            if not self.shutting_down:      # 종료 중 수신 소켓을 닫으면서 생기는 select 오류만 삼킨다
+                raise
+
+    def _tasks(self) -> int:
+        d = self._srv.task_dispatcher
+        return d.active_count + len(d.queue)
+
+    def graceful_stop(self, grace: float) -> int:
+        """우아한 종료: /readyz를 shutting_down(503)으로 바꾸고, 새 연결을 받지 않고(수신 소켓을 닫는다), 처리 중인 요청이 끝나길
+        최대 grace초 기다린 뒤 수신 루프를 끝낸다. 아직 처리 중인 요청 수를 돌려준다(0이면 모두 끝났다). 수신 루프를 돌리는 스레드가 아닌 곳에서 부른다."""
+        self.shutting_down = True
+        wasyncore.dispatcher.close(self._srv)         # 수신 소켓만 닫는다(trigger는 응답을 보내려면 필요하다)
+        self._srv.trigger.pull_trigger()
+        deadline = time.monotonic() + grace
+        while time.monotonic() < deadline and (self._tasks() or self._flushing()):
+            time.sleep(0.05)
+        left = self._tasks()
+        self._stop_loop()
+        return left
+
+    def _flushing(self) -> bool:
+        """응답을 아직 다 보내지 못한 연결이 있는가(작업은 끝났지만 큰 응답이 버퍼에 남은 경우)."""
+        return any(getattr(ch, "total_outbufs_len", 0) or getattr(ch, "requests", None) for ch in list(self._srv._map.values())
+                   if hasattr(ch, "total_outbufs_len"))
+
+    def _stop_loop(self) -> None:
+        self._srv.task_dispatcher.shutdown(cancel_pending=True, timeout=0)
+        wasyncore.close_all(self._srv._map)
+        self._srv.trigger.close() if self._srv.trigger.connected else None
+
+    def shutdown(self) -> None:
+        """수신 루프를 끝낸다(시험·종료용). 처리 중인 요청을 기다리지 않는다."""
+        self.shutting_down = True
+        self._stop_loop()
+
+
+class _Closing:
+    """wsgi.file_wrapper가 없는 서버를 위한 파일 반복자(닫을 때 파일도 닫는다)."""
+
+    def __init__(self, f):
+        self._f = f
+
+    def __iter__(self):
+        while chunk := self._f.read(65536):
+            yield chunk
+
+    def close(self):
+        self._f.close()
+
+
+class _Req:
+    """요청 하나의 처리. 응답은 respond가 WSGI 형태로 돌려준다."""
+
+    def __init__(self, app: GateApp, environ: dict):
+        self.server = app
+        self._environ = environ
+        self.headers = _Headers(environ)
+        self.method = environ.get("REQUEST_METHOD", "GET")
+        qs = environ.get("QUERY_STRING", "")
+        self.path = environ.get("PATH_INFO", "") + ("?" + qs if qs else "")
+        self._resp: Optional[tuple] = None
+        self._bundle = None
+
+    def respond(self, start_response):
+        if self.method == "GET":
+            self.do_GET()
+        elif self.method == "POST":
+            self.do_POST()
+        else:
+            self._send(405, BoundaryError("INVALID_RECORD", f"지원하지 않는 메서드: {_CTRL.sub('?', self.method)[:16]}").to_record(PIPELINE_SCHEMA_VERSION),
+                       {"Allow": "GET, POST"})
+        code, headers, body = self._resp
+        self._log(code)
+        start_response(f"{code} {http.HTTPStatus(code).phrase}", headers)
+        return body
+
+    def _log(self, code: int) -> None:
         # 제어 문자는 치환한다(요청 줄에 넣은 개행·이스케이프로 로그를 위조하지 못하게). 행위자(토큰 역할, X-Openit-User)를 붙인다:
         # 거부·실패한 요청도 이 줄에 남는다(토큰이 틀리면 role=-). 본문·토큰 값은 싣지 않는다.
-        try:
-            user = self.headers.get("X-Openit-User")
-            role = self._role_of(self.server.read_tokens) or self._role_of(self.server.write_tokens)
-        except AttributeError:        # 요청 줄을 읽기 전의 오류(헤더가 아직 없음)
-            user = role = None
-        log.info("%s %s role=%s user=%s", self.address_string(), _CTRL.sub("?", fmt % args)[:300], _CTRL.sub("?", role or "-")[:64],
-                 _CTRL.sub("?", user or "-")[:64])
+        user = self.headers.get("X-Openit-User")
+        role = self._role_of(self.server.read_tokens) or self._role_of(self.server.write_tokens)
+        line = f'"{self.method} {self.path} HTTP/1.1" {code}'
+        log.info("%s %s role=%s user=%s", self._environ.get("REMOTE_ADDR", "-"), _CTRL.sub("?", line)[:300],
+                 _CTRL.sub("?", role or "-")[:64], _CTRL.sub("?", user or "-")[:64])
 
     def _send(self, code: int, body, headers: Optional[dict] = None) -> None:
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(data)))
-        for k, v in (headers or {}).items():
-            self.send_header(k, v)
-        self.end_headers()
-        self.wfile.write(data)
+        self._resp = (code, [("Content-Type", "application/json; charset=utf-8"), ("Content-Length", str(len(data))),
+                             *(headers or {}).items()], [data])
 
     def _role_of(self, tokens: dict):
         got = self.headers.get("Authorization", "")
@@ -200,21 +245,15 @@ class _Handler(BaseHTTPRequestHandler):
         return role
 
     def _body(self) -> dict:
+        # 크기 상한(1MiB)은 waitress max_request_body_size가 요청을 받는 단계에서 413으로 막는다. 여기서는 형식만 본다
         try:
-            n = int(self.headers.get("Content-Length", "0"))
-            if n < 0:
-                raise ValueError("Content-Length가 음수다")
-            if n > 1 << 20:
-                raise ValueError("본문이 너무 크다")
-            v = json.loads(self.rfile.read(n) or b"{}")
+            v = json.loads(self._environ["wsgi.input"].read(int(self._environ.get("CONTENT_LENGTH") or 0)) or b"{}")
             if not isinstance(v, dict):
                 raise ValueError("JSON 객체가 아니다")
             self._parsed = v
             return v
         except RecursionError as e:   # 깊게 중첩된 JSON: 500이 아니라 잘못된 본문(400)
             raise BoundaryError("INVALID_RECORD", "본문의 JSON이 너무 깊게 중첩되어 있다") from e
-        except OSError as e:          # 소켓 시간 초과·끊김: 본문을 제때 받지 못했다
-            raise BoundaryError("INVALID_RECORD", f"본문을 받지 못했다: {type(e).__name__}") from e
         except ValueError as e:
             raise BoundaryError("INVALID_RECORD", f"본문을 읽을 수 없다: {e}") from e
 
@@ -286,16 +325,17 @@ class _Handler(BaseHTTPRequestHandler):
         return {"id": i} if v is None else {"id": i, "version": v}
 
     def _send_bundle(self, release_id: str) -> None:
-        # 임시 파일에 만들어 검증이 끝난 뒤에만 보낸다(검증 실패가 200 중간에 끊기지 않게).
-        with tempfile.TemporaryFile() as f:
+        # 임시 파일에 만들어 검증이 끝난 뒤에만 보낸다(검증 실패가 200 중간에 끊기지 않게). 파일은 WSGI 응답이 닫힐 때 같이 닫힌다.
+        f = tempfile.TemporaryFile()
+        try:
             write_bundle_tar(self.server.registry.store, release_id, f)
             size = f.tell()
             f.seek(0)
-            self.send_response(200)
-            self.send_header("Content-Type", "application/x-tar")
-            self.send_header("Content-Length", str(size))
-            self.end_headers()
-            shutil.copyfileobj(f, self.wfile)
+        except BaseException:
+            f.close()
+            raise
+        wrapper = self._environ.get("wsgi.file_wrapper")
+        self._resp = (200, [("Content-Type", "application/x-tar"), ("Content-Length", str(size))], wrapper(f, 65536) if wrapper else _Closing(f))
 
     def do_GET(self):
         url = urlsplit(self.path)

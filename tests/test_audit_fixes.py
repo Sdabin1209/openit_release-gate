@@ -255,17 +255,7 @@ def test_slow_client_is_cut_by_request_timeout(world):
         srv.shutdown()
 
 
-def test_connection_cap_returns_503(world):
-    srv, port = _serve(world, request_timeout=3, max_connections=2)
-    held = [socket.create_connection(("127.0.0.1", port)) for _ in range(2)]      # 요청을 보내지 않고 붙잡는다
-    try:
-        time.sleep(0.3)
-        r = _raw(port, b"GET /healthz HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
-        assert b" 503 " in r.split(b"\r\n")[0] and b"Retry-After" in r
-    finally:
-        for h in held:
-            h.close()
-        srv.shutdown()
+# (이전 시험 test_connection_cap_returns_503는 waitress 전환으로 대체됐다: 상한 초과는 503이 아니라 대기. tests/test_u4a_waitress.py 참고)
 
 
 def test_access_log_neutralizes_control_characters_and_names_actor(world, caplog):

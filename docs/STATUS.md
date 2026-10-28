@@ -1,3 +1,6 @@
+# STATUS (단위 4a-A, 2026-10-29): HTTP 면을 WSGI 앱 + waitress로
+- 직접 만든 스레드 서버·연결 세마포어·본문 상한 코드를 지우고 waitress 설정으로 옮겼다(ADR-0013). 바뀌는 동작: 연결 상한 초과는 503이 아니라 대기, 본문 초과는 413(계약 본문 아님).
+
 # STATUS (단위 3, 2026-10-29): 계약 v2.2.1, model-runtime v0.9.0, 문진 스키마 패키지 survey-schema-v1.1.0
 - 설정·정책·잡 결과·ext를 계약 스키마(GateJobConfig, GatePolicy, GateJobResult, GateExt)로 검사한다. 리포 안의 gate_policy 스키마 사본은 지웠다. 설정 오류와 예기치 못한 예외도 stdout에 `status: failed` JSON 한 줄(설정 오류는 INVALID_RECORD와 종료 코드 1, 예기치 못한 예외는 UNAVAILABLE과 75, ADR-0012). `/readyz` 본문은 시험이 GateReadyz로 확인한다.
 - turn-engine 패키지를 설치하지 않는다. 기준 문자열은 설정 GATE_TURN_ENGINE_VERSION(기본 0.4.3, D109). 이미지 라벨 io.openit.turn-engine은 n/a. Dockerfile ARG 기본값은 n/a.

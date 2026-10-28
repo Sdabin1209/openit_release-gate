@@ -57,22 +57,7 @@ def test_401_activate_without_user_header(world):
         srv.shutdown()
 
 
-def test_503_connection_cap(world):
-    srv, port = _serve(world, request_timeout=3, max_connections=1)
-    held = socket.create_connection(("127.0.0.1", port))
-    try:
-        time.sleep(0.3)
-        s = socket.create_connection(("127.0.0.1", port), timeout=5)
-        s.sendall(b"GET /healthz HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
-        data = b""
-        while chunk := s.recv(4096):
-            data += chunk
-        head, _, payload = data.partition(b"\r\n\r\n")
-        assert b" 503 " in head.split(b"\r\n")[0]
-        _check(json.loads(payload))
-    finally:
-        held.close()
-        srv.shutdown()
+# (이전 시험 test_503_connection_cap는 waitress 전환으로 대체됐다: 상한 초과는 503이 아니라 대기. tests/test_u4a_waitress.py 참고)
 
 
 def test_500_unexpected_exception(world, monkeypatch):
