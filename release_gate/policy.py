@@ -3,7 +3,7 @@
 D53: 출고는 사람이 정한다. 정책에는 통과 임계치가 없다. 자동 검사(계약·문항-모델 호환, 임상 승인 기록 확인, 평가 보고서
 존재·형식)가 모두 통과해야 승인 요청(AWAITING_APPROVAL)이 되고, PASS는 승인자의 APPROVE 뒤에만 나온다.
 정책 파일(JSON, 선택): {"gate_policy_version": "...", "checks": {"CONTRACT_COMPAT": {"require_lineage_runtime_match": true}}}
-파일이 없으면 기본 정책(버전 DEFAULT_VERSION)이다. 형식이 틀린 파일은 PolicyError로 시작을 거부한다.
+경로를 설정하지 않으면 기본 정책(버전 DEFAULT_VERSION)이다. 경로를 설정했는데 파일이 없거나 읽지 못하면 PolicyError로 시작을 거부한다. 형식이 틀린 파일은 PolicyError로 시작을 거부한다.
 """
 from __future__ import annotations
 
@@ -53,9 +53,14 @@ class GatePolicy:
 
     @classmethod
     def from_file(cls, path: str | Path | None) -> "GatePolicy":
-        if not path or not Path(path).exists():
-            return cls.default()
-        text = Path(path).read_text(encoding="utf-8").strip()
+        if not path:
+            return cls.default()      # 정책 파일을 설정하지 않았다: 기본 정책(설정하지 않은 것과 설정이 틀린 것은 다르다)
+        # 왜: 설정한 경로가 틀렸을 때 조용히 기본 정책으로 시작하면 운영자가 낸 정책이 적용되지 않은 채 판정이 난다.
+        # 안전 관문은 fail-closed(결정표 head/docs/audit/standards-decisions-2026-10-29.md 2절)
+        try:
+            text = Path(path).read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError) as e:
+            raise PolicyError(f"gate_policy를 읽지 못했다({path}): {type(e).__name__}") from None
         if not text:
             return cls.default()
         try:

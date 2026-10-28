@@ -71,7 +71,6 @@ def test_collector_to_release_end_to_end(world):
 
 def test_policy_defaults_and_file(tmp_path):
     assert GatePolicy.from_file(None).version == "human-approval-1"
-    assert GatePolicy.from_file(tmp_path / "none.json").version == "human-approval-1"
     (tmp_path / "empty.json").write_text("  ")
     assert GatePolicy.from_file(tmp_path / "empty.json") == GatePolicy.default()
     f = tmp_path / "p.json"
