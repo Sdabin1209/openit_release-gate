@@ -98,7 +98,7 @@ def test_oversized_body_is_refused_with_4xx(world):
     try:
         body = b'{"x": "' + b"a" * (1 << 20) + b'"}'
         line = _status_line(port, b"POST /v1/submissions HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer wt\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(body) + body)
-        assert line.split(b" ")[1].startswith(b"4"), line
+        assert line.split(b" ")[1] == b"413", line      # waitress가 앱 전에 낸다(ADR-0013). 계약 클라이언트는 413을 INVALID_RECORD로 읽는다(CONVENTIONS 9절, v2.2.2)
     finally:
         srv.shutdown()
 
