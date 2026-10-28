@@ -4,11 +4,11 @@
 
 ```
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ../boundary-contracts -e '.[test]'      # 운영·CI는 requirements.txt(v2.0.2 태그 고정)
+pip install -e ../boundary-contracts -e '.[test]'      # 운영·CI는 requirements.txt(태그 고정)
 python -m pytest -q                                      # 단위, 적합성(메모리·SQLite, TEST_DATABASE_URL이 있으면 PostgreSQL도), HTTP
 TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)" python -m pytest -q   # PostgreSQL 포함. 없으면 그 시험은 SKIP이고 PASS로 세지 않는다
 scripts/dev-postgres.sh down                             # 시험용 postgres:16 정리 (../deploy/scripts/dev-postgres.sh 가 있으면 그것을 쓴다)
-scripts/smoke.sh                                         # v2.0.2 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(표준 `docker`, 데몬에 못 닿으면 중단)
+scripts/smoke.sh                                         # 고정된 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(표준 `docker`, 데몬에 못 닿으면 중단)
 ```
 
 ## 환경 변수 (gate-service)
@@ -27,7 +27,7 @@ scripts/smoke.sh                                         # v2.0.2 태그의 whee
 | `GATE_REQUEST_TIMEOUT_SECONDS`, `GATE_MAX_CONNECTIONS`, `GATE_SHUTDOWN_GRACE_SECONDS`, `GATE_MAX_PENDING_SUBMISSIONS` | 요청 소켓 timeout(30), 동시 연결 상한(64), 종료 유예(20), 결정 전 접수 상한(기본 없음). 근거는 docs/adr/0008 |
 | `GATE_RETAIN_KEEP_RELEASES`, `GATE_RETAIN_REJECTED_DAYS`, `GATE_RETAIN_ATTEMPTS_DAYS` | 보존(기본 3, 90, 365). 무기한 값은 거부. `python -m release_gate prune [--dry-run]`를 스케줄러가 주기로 부른다(서버는 스스로 지우지 않음). docs/adr/0009 |
 | `GATE_I1_TIMEOUT`, `GATE_I3_TIMEOUT` | I1·I3 HTTP 읽기 timeout(초, 소켓 읽기 단위). 기본 10(이전 30). 장애 동작은 boundary.md 장애 영향 |
-| `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`(설정 파일의 `i1_factory`, `i3_factory`가 우선). 둘 다 있어야 판정이 켜진다. HTTP 클라이언트는 `release_gate.factories:http_question_reader`, `release_gate.factories:http_model_registry`(`boundary_contracts.clients`, v1.2.0에서 확인). 이 둘은 `GATE_I1_URL`, `GATE_I3_URL`(선택 `*_TIMEOUT`)과 비밀 `GATE_I1_TOKEN`, `GATE_I3_TOKEN`(`*_FILE` 우선)을 읽는다 |
+| `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`(설정 파일의 `i1_factory`, `i3_factory`가 우선). 둘 다 있어야 판정이 켜진다. HTTP 클라이언트는 `release_gate.factories:http_question_reader`, `release_gate.factories:http_model_registry`(`boundary_contracts.clients`, 설치된 boundary-contracts에서 확인). 이 둘은 `GATE_I1_URL`, `GATE_I3_URL`(선택 `*_TIMEOUT`)과 비밀 `GATE_I1_TOKEN`, `GATE_I3_TOKEN`(`*_FILE` 우선)을 읽는다 |
 | `GATE_POLL_SECONDS`, `PORT` | 주기(기본 60), 포트(기본 8080) |
 
 
@@ -81,7 +81,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 
 ## 이미지
 
-`scripts/build_image.sh [태그]`가 빌드한다. 컨텍스트에는 boundary-contracts 태그(기본 `v2.0.2`, `BOUNDARY_CONTRACTS_TAG`)의 wheel이 들어가고, turn-engine(기본 `v0.4.0`, `TURN_ENGINE_TAG`)과 model-runtime(기본 `v0.7.3`, `MODEL_RUNTIME_TAG`)은 이웃 리포지토리를 `git archive <태그>`로 꺼내 wheel을 만들어 함께 설치한다(리포지토리는 수정하지 않는다). `GATE_LIB_WHEELS_DIR`를 주면 그 안의 wheel을 대신 쓴다. 라벨은 `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`이고 값은 컨텍스트의 wheel 이름에서 읽는다. wheel이 없으면(직접 `docker build`할 때 등) `unset`이며, 그러면 학습 때 버전 일치 검사가 모든 후보를 반려한다.
+`scripts/build_image.sh [태그]`가 빌드한다. 컨텍스트에는 boundary-contracts 태그(`BOUNDARY_CONTRACTS_TAG`, 없으면 `requirements.txt`의 pin)의 wheel이 들어가고, turn-engine(`TURN_ENGINE_TAG`)과 model-runtime(`MODEL_RUNTIME_TAG`)은 기본값이 없고 deploy가 환경 변수로 넘기며(값은 `deploy/scripts/lib.sh`), 없으면 실패한다. 이웃 리포지토리를 이웃 리포지토리를 `git archive <태그>`로 꺼내 wheel을 만들어 함께 설치한다(리포지토리는 수정하지 않는다). `GATE_LIB_WHEELS_DIR`를 주면 그 안의 wheel을 대신 쓴다. 라벨은 `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`이고 값은 컨텍스트의 wheel 이름에서 읽는다. wheel이 없으면(직접 `docker build`할 때 등) `unset`이며, 그러면 학습 때 버전 일치 검사가 모든 후보를 반려한다.
 
 ## 상태 확인
 

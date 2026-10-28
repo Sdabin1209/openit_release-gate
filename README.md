@@ -48,7 +48,7 @@ model-lab(I3) ──────────┴─> 수집기/제출(I5) ─> �
 
 ## 3. 실행 방법
 
-전제: Python 3.10 이상(pyproject), 같은 워크스페이스의 `../boundary-contracts` 폴더(개발용 설치). 스모크에는 Docker 데몬이 필요하고 CI·운영 설치에는 GitHub SSH 접근이 필요하다(requirements.txt가 `git+ssh` 태그 v2.0.2를 가리킴). 비밀(토큰)은 환경 변수가 아니라 `NAME_FILE`(파일 경로)로 받는 것이 표준이다(D84): `GATE_READ_TOKENS_FILE`, `GATE_WRITE_TOKENS_FILE`, `GATE_I1_TOKEN_FILE`, `GATE_I3_TOKEN_FILE`. 값은 이미지·리포지토리·로그에 넣지 않는다.
+전제: Python 3.10 이상(pyproject), 같은 워크스페이스의 `../boundary-contracts` 폴더(개발용 설치). 스모크에는 Docker 데몬이 필요하고 CI·운영 설치에는 GitHub SSH 접근이 필요하다(requirements.txt가 `git+ssh` 태그를 고정함). 비밀(토큰)은 환경 변수가 아니라 `NAME_FILE`(파일 경로)로 받는 것이 표준이다(D84): `GATE_READ_TOKENS_FILE`, `GATE_WRITE_TOKENS_FILE`, `GATE_I1_TOKEN_FILE`, `GATE_I3_TOKEN_FILE`. 값은 이미지·리포지토리·로그에 넣지 않는다.
 
 ```sh
 # 1) 설치 (CLAUDE.md, docs/runbook.md)
@@ -72,7 +72,7 @@ python -m release_gate prune [--dry-run]                # 보존 정책대로 �
 
 ## 4. 현재 상태
 
-확인된 것(`docs/STATUS.md` 2026-10-27 항목 인용, 개수는 오래된 값이며 현재 실측은 위 3절 끝의 실행 결과): turn-engine v0.4.0, model-runtime v0.7.3 (아래 인용은 v0.7.2 시점 기록, 기준 태그는 v0.7.3으로 올렸다), boundary-contracts v2.0.2 기준으로 pytest 263 통과, 145 건너뜀, 0 실패, `scripts/smoke.sh` 통과(라벨과 `/readyz` 버전 일치). 패키지 버전은 0.7.0(pyproject). 변경은 push·태그 전이다(STATUS: 헤드 몫).
+확인된 것(`docs/STATUS.md` 2026-10-27 항목 인용, 개수는 오래된 값이며 현재 실측은 위 3절 끝의 실행 결과): 당시 기준(현행 버전은 `deploy/scripts/lib.sh`)으로 pytest 263 통과, 145 건너뜀, 0 실패, `scripts/smoke.sh` 통과(라벨과 `/readyz` 버전 일치). 패키지 버전은 0.7.0(pyproject). 변경은 push·태그 전이다(STATUS: 헤드 몫).
 
 DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문장 기본 3초, `/readyz` DB 확인 기본 2초(별도 연결), 수집·판정 잡은 DB 무응답 시 종료 코드 75. 이 PC의 로컬 PostgreSQL 컨테이너(`docker pause`)로 확인했고(`tests/test_pg_timeouts.py`), pytest는 PostgreSQL 없이 270 통과 150 건너뜀, PostgreSQL 포함 403 통과 17 건너뜀, 0 실패(이웃·파일 장애 시험을 더한 뒤의 값은 아래). 상세와 근거는 `docs/boundary.md` "DB 대기 상한". 이 PC 컨테이너 조합에서의 재측정은 deploy E2E 5p에서 헤드가 한다.
 
