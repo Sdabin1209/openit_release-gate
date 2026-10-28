@@ -1,3 +1,6 @@
+# STATUS (단위 4a-B): 시작 때 DDL을 yoyo-migrations로
+- `release_gate/migrations/<방언>/0001.initial.sql`과 `migrate.py`(ADR-0014). 이미 있는 DB는 그대로 받아들이고 이력만 남는다. 읽기 전용 연결은 마이그레이션하지 않는다.
+
 # STATUS (단위 4a-A, 2026-10-29): HTTP 면을 WSGI 앱 + waitress로
 - 직접 만든 스레드 서버·연결 세마포어·본문 상한 코드를 지우고 waitress 설정으로 옮겼다(ADR-0013). 바뀌는 동작: 연결 상한 초과는 503이 아니라 대기, 본문 초과는 413(계약 본문 아님).
 

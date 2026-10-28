@@ -18,6 +18,7 @@ from typing import Optional
 
 from boundary_contracts.errors import BoundaryError
 
+from .migrate import MIGRATION_ERRORS, migrate_postgres
 from .store import ReleaseFiles, ReleaseParts, Store, _page_args, _same, ref_key, ref_prefix
 
 try:  # 드라이버는 PostgreSQL을 쓸 때만 필요하다
@@ -28,19 +29,6 @@ except ImportError:  # pragma: no cover
     psycopg = None  # type: ignore[assignment]
     pgerr = None  # type: ignore[assignment]
 
-_SCHEMA = [
-    """CREATE TABLE IF NOT EXISTS submissions(seq BIGSERIAL PRIMARY KEY, submission_id TEXT UNIQUE NOT NULL,
-       subject_key TEXT UNIQUE NOT NULL, record TEXT NOT NULL, work TEXT NOT NULL, state TEXT NOT NULL)""",
-    """CREATE TABLE IF NOT EXISTS decisions(seq BIGSERIAL PRIMARY KEY, decision_id TEXT UNIQUE NOT NULL,
-       submission_id TEXT NOT NULL, qs TEXT NOT NULL, la TEXT NOT NULL, lb TEXT NOT NULL, record TEXT NOT NULL)""",
-    """CREATE TABLE IF NOT EXISTS releases(seq BIGSERIAL PRIMARY KEY, release_id TEXT UNIQUE NOT NULL, record TEXT NOT NULL)""",
-    """CREATE TABLE IF NOT EXISTS pointer_history(pointer_version BIGINT PRIMARY KEY, record TEXT NOT NULL)""",
-    """CREATE TABLE IF NOT EXISTS approvals(submission_id TEXT PRIMARY KEY, approval_id TEXT UNIQUE NOT NULL, record TEXT NOT NULL)""",
-    """CREATE TABLE IF NOT EXISTS receipts(request_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, record TEXT NOT NULL)""",
-    """CREATE TABLE IF NOT EXISTS attempts(seq BIGSERIAL PRIMARY KEY, at TEXT NOT NULL, record TEXT NOT NULL)""",
-    """CREATE INDEX IF NOT EXISTS idx_submissions_state ON submissions(state, seq)""",
-    """CREATE INDEX IF NOT EXISTS idx_decisions_submission ON decisions(submission_id, seq)""",
-]
 # DB 대기 상한(초). 설정으로 바꾼다(GATE_DB_CONNECT_TIMEOUT_SECONDS 등, main.py). 근거는 docs/boundary.md "DB 대기 상한":
 # 정상일 때 문장 하나는 수 ms이고 쓰기 하나는 몇 문장이라 3초면 느린 디스크·잠깐의 잠금 대기는 견딘다.
 # /readyz의 2초는 로드 밸런서 검사 제한 시간(보통 수 초) 안이고, libpq의 connect_timeout은 2초 미만이 의미가 없다.
@@ -48,7 +36,6 @@ _SCHEMA = [
 DEFAULT_CONNECT_TIMEOUT = 3.0
 DEFAULT_STATEMENT_TIMEOUT = 3.0
 DEFAULT_PROBE_TIMEOUT = 2.0
-_SCHEMA_LOCK = 7300001   # 시작 시 스키마 생성 직렬화
 _LOCK_SUBMIT, _LOCK_DECISION, _LOCK_POINTER = 7300002, 7300003, 7300004
 
 
@@ -132,13 +119,12 @@ class PostgresStore(ReleaseFiles, Store):
             raise BoundaryError("UNAVAILABLE", f"번들 디렉터리를 만들 수 없다: {type(e).__name__}") from None
         try:
             with self._lock:
-                c = self._conn()
-                with c.transaction():
-                    c.execute("SELECT pg_advisory_xact_lock(%s)", (_SCHEMA_LOCK,))
-                    for ddl in _SCHEMA:
-                        c.execute(ddl)
+                self._conn()      # 연결 가능한지 먼저 본다(연결 실패는 아래에서 UNAVAILABLE)
+                migrate_postgres(self._params(self.connect_timeout, self.statement_timeout))   # 스키마는 yoyo 마이그레이션이 만든다(ADR-0014)
         except psycopg.Error as e:
             raise BoundaryError("UNAVAILABLE", f"레지스트리를 열 수 없다: {_safe(e)}") from None
+        except MIGRATION_ERRORS as e:
+            raise BoundaryError("UNAVAILABLE", f"레지스트리 마이그레이션에 실패했다: {type(e).__name__}") from None
 
     def _params(self, connect_secs: float, stmt_secs: float) -> dict:
         p = psycopg.conninfo.conninfo_to_dict(self._url)      # URL의 options(예: search_path)는 지우지 않고 이어 붙인다

@@ -123,3 +123,4 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | [0011](docs/adr/0011-turn-engine-reference-string.md) | turn-engine은 설치하지 않고 기준 문자열만 설정으로 |
 | [0012](docs/adr/0012-job-output-self-check.md) | 잡 출력 자기 검사, /readyz는 시험에서만, 종료 코드 |
 | [0013](docs/adr/0013-wsgi-waitress.md) | HTTP 면은 WSGI 앱 + waitress |
+| [0014](docs/adr/0014-yoyo-migrations.md) | 스키마 버전 관리는 yoyo-migrations |

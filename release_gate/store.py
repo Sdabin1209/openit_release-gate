@@ -19,6 +19,8 @@ from typing import Callable, Mapping, Optional
 from boundary_contracts import canonical
 from boundary_contracts.errors import BoundaryError
 
+from .migrate import MIGRATION_ERRORS, migrate_sqlite
+
 ROLES = ("LORA_A", "LORA_B")
 
 
@@ -359,21 +361,6 @@ class MemoryStore(Store):
 
 # --------------------------------------------------------------------------- SQLite
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS submissions(seq INTEGER PRIMARY KEY AUTOINCREMENT, submission_id TEXT UNIQUE NOT NULL,
-  subject_key TEXT UNIQUE NOT NULL, record TEXT NOT NULL, work TEXT NOT NULL, state TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS decisions(seq INTEGER PRIMARY KEY AUTOINCREMENT, decision_id TEXT UNIQUE NOT NULL,
-  submission_id TEXT NOT NULL, qs TEXT NOT NULL, la TEXT NOT NULL, lb TEXT NOT NULL, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS releases(seq INTEGER PRIMARY KEY AUTOINCREMENT, release_id TEXT UNIQUE NOT NULL, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS pointer_history(pointer_version INTEGER PRIMARY KEY, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS approvals(submission_id TEXT PRIMARY KEY, approval_id TEXT UNIQUE NOT NULL, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS receipts(request_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS attempts(seq INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, record TEXT NOT NULL);
-CREATE INDEX IF NOT EXISTS idx_submissions_state ON submissions(state, seq);
-CREATE INDEX IF NOT EXISTS idx_decisions_submission ON decisions(submission_id, seq);
-"""
-
-
 class ReleaseFiles:
     """번들 파일(<root>/releases/<release_id>/)을 다루는 공통 부분. SQLite·PostgreSQL 구현이 같은 파일 규칙을 쓴다(파일은 DB 대상이 아니다)."""
     root: Path
@@ -524,10 +511,12 @@ class SqliteStore(ReleaseFiles, Store):
                 (self.root / "releases").mkdir(parents=True, exist_ok=True)
                 self._c = sqlite3.connect(db, check_same_thread=False, timeout=30, isolation_level=None)
                 self._c.execute("PRAGMA journal_mode=WAL")
-                self._c.executescript(_SCHEMA)
+                migrate_sqlite(db)   # 스키마는 yoyo 마이그레이션이 만든다(ADR-0014)
             self._c.isolation_level = None
         except sqlite3.Error as e:
             raise BoundaryError("UNAVAILABLE", f"레지스트리를 열 수 없다: {e}") from e
+        except MIGRATION_ERRORS as e:
+            raise BoundaryError("UNAVAILABLE", f"레지스트리 마이그레이션에 실패했다: {type(e).__name__}") from e
 
     def close(self) -> None:
         with self._lock:

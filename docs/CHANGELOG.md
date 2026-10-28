@@ -1,5 +1,10 @@
 # 변경 이력
 
+## (미배포) 단위 4a: waitress, yoyo-migrations
+
+- HTTP 면을 WSGI 앱 + waitress 3.0.2로(ADR-0013). 연결 상한 초과는 503이 아니라 대기, 본문 1MiB 초과는 413(계약 본문 아님).
+- 시작 때 DDL을 yoyo-migrations 9.0.0 마이그레이션으로(ADR-0014).
+
 ## (미배포) 단위 3: 계약 v2.2.1, model-runtime v0.9.0, 문진 스키마 v1.1.0, 계약 스키마로 검증
 
 - 핀: boundary-contracts v2.2.1, model-runtime v0.9.0, openit-survey-schema survey-schema-v1.1.0. turn-engine은 설치하지 않는다(ADR-0011, D109).

@@ -25,7 +25,7 @@
 
 ## 결과
 
-두 구현을 같은 시험으로 유지해야 한다(비용). PostgreSQL 시험은 `TEST_DATABASE_URL`이 있을 때만 돈다(없으면 SKIP). 시작 때 스키마를 `CREATE TABLE IF NOT EXISTS`로 만들어 런타임 계정에 DDL 권한이 필요하다(감사 C8, 미해결).
+두 구현을 같은 시험으로 유지해야 한다(비용). PostgreSQL 시험은 `TEST_DATABASE_URL`이 있을 때만 돈다(없으면 SKIP). 시작 때 스키마를 yoyo 마이그레이션(ADR-0014로 `CREATE TABLE IF NOT EXISTS` 직접 실행을 대체)으로 만들어 런타임 계정에 DDL 권한이 필요하다(감사 C8, 미해결).
 
 ## 되돌리는 조건
 
