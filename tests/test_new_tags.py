@@ -1,11 +1,29 @@
-"""turn-engine 0.4.1, model-runtime 0.7.5 기준에서의 CONTRACT_COMPAT(학습 때 버전 일치 검사)."""
+"""설치된 turn-engine·model-runtime 버전을 기준으로 한 CONTRACT_COMPAT(학습 때 버전 일치 검사).
+
+기준은 패키지 메타데이터에서 읽고, 반려되어야 할 옛 값은 기준에서 계산한다(버전이 올라도 이 시험을 고치지 않는다).
+"""
 from __future__ import annotations
 
 import pytest
 
 from release_gate.config import GateConfig
 
-TE, MR = "0.4.1", "0.7.5"
+import importlib.metadata as md
+
+
+def _old_versions(cur: str) -> list[str]:
+    """기준(cur)에서 계산한 반려 대상: 패치-1, 이전 minor(같은 패치와 .0), 0.0.0 계열."""
+    major, minor, patch = (int(x) for x in cur.split(".")[:3])
+    out = {f"{major}.{minor}.{patch + 1}", "0.0.1"}   # 기준보다 큰 값도 정확히 일치가 아니므로 반려(D80)
+    if patch > 0:
+        out.add(f"{major}.{minor}.{patch - 1}")
+    if minor > 0:
+        out.update({f"{major}.{minor - 1}.{patch}", f"{major}.{minor - 1}.0"})
+    out.discard(cur)
+    return sorted(out)
+
+
+TE, MR = md.version("turn-engine"), md.version("model-runtime")
 
 
 @pytest.fixture
@@ -26,24 +44,9 @@ def test_matching_new_versions_pass_compat(world_new):
     assert _decide(world_new, engine=TE, runtime=MR) == []        # 반려 없음 -> 승인 대기
 
 
-@pytest.mark.parametrize("kw,needle", [
-    ({"engine": "0.2.0", "runtime": MR}, "turn-engine"),
-    ({"engine": "0.3.1", "runtime": MR}, "turn-engine"),          # 직전 버전 0.3.1도 반려(기준 0.4.1은 v1 폐기 함수 제거)
-    ({"engine": "0.3.0", "runtime": MR}, "turn-engine"),          # 0.3.0은 boundary v2.0.0 고정이라 기준과 다르므로 반려
-    ({"engine": "0.4.0", "runtime": MR}, "turn-engine"),          # 직전 버전 0.4.0도 반려(D80 정확히 일치, 기준 0.4.1)
-    ({"engine": TE, "runtime": "0.4.0"}, "model-runtime"),
-    ({"engine": TE, "runtime": "0.7.4"}, "model-runtime"),        # 0.7.4는 계약 v2.0.2 pin이라 폐기됨(model-runtime CHANGELOG 0.7.5), 직전 버전이라 반려(기준 0.7.5)
-    ({"engine": TE, "runtime": "0.7.3"}, "model-runtime"),        # 직전 버전 0.7.3도 반려(D80 정확히 일치, 기준 0.7.5)
-    ({"engine": TE, "runtime": "0.7.2"}, "model-runtime"),        # 직전 버전 0.7.2도 반려(D80 정확히 일치, 기준 0.7.5)
-    ({"engine": TE, "runtime": "0.7.1"}, "model-runtime"),        # 직전 버전 0.7.1도 반려(D80 정확히 일치, 기준 0.7.5)
-    ({"engine": TE, "runtime": "0.7.0"}, "model-runtime"),        # 직전 버전 0.7.0도 반려(D80 정확히 일치, 기준 0.7.5)
-    ({"engine": TE, "runtime": "0.6.5"}, "model-runtime"),        # 직전 버전 0.6.5도 반려(D80 정확히 일치, 기준 0.7.5)
-    ({"engine": TE, "runtime": "0.6.0"}, "model-runtime"),        # 0.6.0은 기준(0.7.5)과 다르므로 반려
-    ({"engine": TE, "runtime": "0.6.4"}, "model-runtime"),        # 0.6.4도 반려
-    ({"engine": TE, "runtime": "0.6.3"}, "model-runtime"),        # 0.6.3도 반려
-    ({"engine": TE, "runtime": "0.6.2"}, "model-runtime"),
-    ({"engine": TE, "runtime": "0.6.1"}, "model-runtime"),
-])
+@pytest.mark.parametrize("kw,needle",
+    [({"engine": v, "runtime": MR}, "turn-engine") for v in _old_versions(TE)]
+    + [({"engine": TE, "runtime": v}, "model-runtime") for v in _old_versions(MR)])
 def test_old_versions_rejected_against_new_baseline(world_new, kw, needle):
     d = _decide(world_new, **kw)[0]
     assert d["result"] == "REJECT" and needle in " | ".join(d["reject_reasons"])
