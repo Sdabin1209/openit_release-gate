@@ -1,4 +1,4 @@
-"""boundary-contracts 2.0.0 (D74, D75) 이전: 시스템 프롬프트 복사, MAJOR 2, runtime_contract_version."""
+"""boundary-contracts v2 (D74, D75) 이전: 시스템 프롬프트 복사, MAJOR 2, runtime_contract_version."""
 from __future__ import annotations
 
 import pytest
