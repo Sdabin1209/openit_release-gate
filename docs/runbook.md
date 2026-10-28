@@ -60,7 +60,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 
 ## 후보 수집기: run-once 잡 (D39)
 
-`python -m release_gate collect --config collect.json` 은 한 번 실행하고 끝난다. 같은 조합은 게이트가 기존 접수를 돌려주므로 여러 번 실행해도 접수가 늘지 않는다(멱등). 언제 돌릴지는 deploy의 스케줄러가 정한다. 서비스는 수집을 스스로 돌리지 않는다. 표준 출력에 JSON 한 줄(`status`, `submitted`, `new`)을 내고, I1·I3가 일시적으로 안 되면 `deferred`를 내고 종료 코드 75(재시도 가능)로 끝난다. 설정 오류와 예기치 못한 예외도 같은 형태로 `{"job", "status": "failed", "code", "reason"}` 한 줄을 내고 종료 코드 1이다(설정 오류 code는 `INVALID_RECORD`, 예기치 못한 예외는 `UNAVAILABLE`이며 reason에는 예외 종류만 싣고 자세한 것은 로그에 둔다). 모든 출력은 내기 전에 계약 `GateJobResult`로 자기 검사하고, 설정 파일은 계약 `GateJobConfig`(모르는 키 거부)로 검사한다. `judge`는 대기 중인 접수의 판정을 한 걸음 진행하는 같은 형태의 잡이다(서비스의 루프와 같은 일).
+`python -m release_gate collect --config collect.json` 은 한 번 실행하고 끝난다. 같은 조합은 게이트가 기존 접수를 돌려주므로 여러 번 실행해도 접수가 늘지 않는다(멱등). 언제 돌릴지는 deploy의 스케줄러가 정한다. 서비스는 수집을 스스로 돌리지 않는다. 표준 출력에 JSON 한 줄(`status`, `submitted`, `new`)을 내고, I1·I3가 일시적으로 안 되면 `deferred`를 내고 종료 코드 75(재시도 가능)로 끝난다. 설정 오류와 예기치 못한 예외도 같은 형태로 `{"job", "status": "failed", "code", "reason"}` 한 줄을 내고, 설정 오류는 code `INVALID_RECORD`에 종료 코드 1(재시도로 풀리지 않는다), 예기치 못한 예외는 code `UNAVAILABLE`에 종료 코드 75(재시도 가능, D105, 스케줄러가 다시 시도한다)다( reason에는 예외 종류만 싣고 자세한 것은 로그에 둔다). 모든 출력은 내기 전에 계약 `GateJobResult`로 자기 검사하고, 설정 파일은 계약 `GateJobConfig`(모르는 키 거부)로 검사한다. `judge`는 대기 중인 접수의 판정을 한 걸음 진행하는 같은 형태의 잡이다(서비스의 루프와 같은 일).
 
 설정 파일(JSON, 모두 선택이며 비우면 환경 변수를 쓴다):
 

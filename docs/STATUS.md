@@ -1,5 +1,5 @@
 # STATUS (단위 3, 2026-10-29): 계약 v2.2.1, model-runtime v0.9.0, 문진 스키마 패키지 survey-schema-v1.1.0
-- 설정·정책·잡 결과·ext를 계약 스키마(GateJobConfig, GatePolicy, GateJobResult, GateExt)로 검사한다. 리포 안의 gate_policy 스키마 사본은 지웠다. 설정 오류와 예기치 못한 예외도 stdout에 `status: failed` JSON 한 줄(종료 코드 1). `/readyz` 본문은 시험이 GateReadyz로 확인한다.
+- 설정·정책·잡 결과·ext를 계약 스키마(GateJobConfig, GatePolicy, GateJobResult, GateExt)로 검사한다. 리포 안의 gate_policy 스키마 사본은 지웠다. 설정 오류와 예기치 못한 예외도 stdout에 `status: failed` JSON 한 줄(설정 오류는 INVALID_RECORD와 종료 코드 1, 예기치 못한 예외는 UNAVAILABLE과 75, ADR-0012). `/readyz` 본문은 시험이 GateReadyz로 확인한다.
 - turn-engine 패키지를 설치하지 않는다. 기준 문자열은 설정 GATE_TURN_ENGINE_VERSION(기본 0.4.3, D109). 이미지 라벨 io.openit.turn-engine은 n/a. Dockerfile ARG 기본값은 n/a.
 - 이 줄 아래는 이전 단위의 기록이고, 거기 적힌 버전 값은 그 시점의 값이다.
 

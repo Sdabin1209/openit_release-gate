@@ -279,9 +279,9 @@ def emit(out: dict) -> None:
     print(json.dumps(out, ensure_ascii=False))
 
 
-def _failed(job: str, code: str, reason: str) -> int:
+def _failed(job: str, code: str, reason: str, exit_code: int = 1) -> int:
     emit({"job": job, "status": "failed", "code": code, "reason": reason})
-    return 1
+    return exit_code
 
 
 def serve() -> None:
@@ -429,5 +429,6 @@ def main(argv: list[str] | None = None) -> int:
         return _failed(a.cmd, "INVALID_RECORD", str(e.code if isinstance(e, SystemExit) else e))
     except Exception as e:      # noqa: BLE001 - 예기치 못한 예외도 JSON 한 줄(같은 결정)
         log.exception("%s 잡이 예기치 못한 예외로 끝났다", a.cmd)
-        # 예외 문구에는 접속 정보 같은 비밀이 섞일 수 있어 종류만 싣는다. 자세한 것은 로그(위). code는 5xx와 같은 UNAVAILABLE(CR-0010 대기), 종료 코드는 1
-        return _failed(a.cmd, "UNAVAILABLE", f"예기치 못한 예외: {type(e).__name__} (자세한 내용은 로그)")
+        # 예외 문구에는 접속 정보 같은 비밀이 섞일 수 있어 종류만 싣는다. 자세한 것은 로그(위).
+        # 왜 UNAVAILABLE과 75: 예상 밖 오류는 재시도 가능으로 본다(D105, GateJobResult 종료 코드 표: UNAVAILABLE = 75). 스케줄러가 다시 시도한다
+        return _failed(a.cmd, "UNAVAILABLE", f"예기치 못한 예외: {type(e).__name__} (자세한 내용은 로그)", EX_TEMPFAIL)

@@ -90,7 +90,7 @@ def test_invalid_config_file_prints_failed_json(capsys):
     assert gate_main.main(["judge", "--config", str(bad)]) == 1
     r = _last_json(capsys.readouterr().out)
     V("GateJobResult").validate(r)
-    assert r["status"] == "failed" and r["job"] == "judge" and "wacth" in r["reason"]
+    assert r["status"] == "failed" and r["job"] == "judge" and r["code"] == "INVALID_RECORD" and "wacth" in r["reason"]
 
 
 def test_unexpected_exception_prints_failed_json_without_message(job_env, capsys, monkeypatch, tmp_path):
@@ -99,11 +99,12 @@ def test_unexpected_exception_prints_failed_json_without_message(job_env, capsys
     monkeypatch.setattr(gate_main, "_neighbors", boom)
     f = tmp_path / "c.json"
     f.write_text(json.dumps({"data_dir": job_env["data_dir"]}))
-    assert gate_main.main(["collect", "--config", str(f)]) == 1
+    # 계약 GateJobResult 표: UNAVAILABLE는 75(재시도 가능). D105: 예상 밖 오류는 UNAVAILABLE, 재시도 가능
+    assert gate_main.main(["collect", "--config", str(f)]) == 75
     out = capsys.readouterr().out
     r = _last_json(out)
     V("GateJobResult").validate(r)
-    assert r["status"] == "failed" and "RuntimeError" in r["reason"]
+    assert r["status"] == "failed" and r["code"] == "UNAVAILABLE" and "RuntimeError" in r["reason"]
     assert "hunter2" not in json.dumps(r)        # 예외 문구에 비밀이 있을 수 있어 JSON에는 종류만 싣는다
 
 
