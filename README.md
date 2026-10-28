@@ -68,15 +68,15 @@ python -m release_gate prune [--dry-run]                # 보존 정책대로 �
 
 환경 변수와 설정 파일 형식은 `docs/runbook.md`에 있다.
 
-이 세션에서 실제로 돌린 것: `python -m pytest --collect-only -q`(239개 수집, 당시 값), `python -m release_gate --help`. 돌리지 않은 것: `pip install`, `pytest` 실행, `scripts/smoke.sh`(이미지 빌드), `serve`/`collect`/`judge` 실행, 실제 이웃 연동.
+이 세션에서 실제로 돌린 것: `python -m pytest -q -rs`(2026-10-28, PostgreSQL 없음, 이 PC 한 환경: 359 통과, 236 건너뜀, 0 실패, 99.87초), `python -m release_gate --help`. 건너뜀 236건의 사유: `TEST_DATABASE_URL` 없음으로 PostgreSQL 시험 193건, 저장소 종류 조건(SQLite 전용·PostgreSQL 전용·파일 저장소 전용 등) 43건. PostgreSQL을 띄운 실행은 하지 않았다. 돌리지 않은 것: `pip install`, `scripts/smoke.sh`(이미지 빌드), `serve`/`collect`/`judge` 실행, 실제 이웃 연동.
 
 ## 4. 현재 상태
 
-확인된 것(`docs/STATUS.md` 2026-10-27 항목 인용, 이번에 다시 돌리지는 않음): turn-engine v0.4.0, model-runtime v0.7.3 (아래 인용은 v0.7.2 시점 기록, 기준 태그는 v0.7.3으로 올렸다), boundary-contracts v2.0.2 기준으로 pytest 263 통과, 145 건너뜀, 0 실패, `scripts/smoke.sh` 통과(라벨과 `/readyz` 버전 일치). 패키지 버전은 0.7.0(pyproject). 변경은 push·태그 전이다(STATUS: 헤드 몫).
+확인된 것(`docs/STATUS.md` 2026-10-27 항목 인용, 개수는 오래된 값이며 현재 실측은 위 3절 끝의 실행 결과): turn-engine v0.4.0, model-runtime v0.7.3 (아래 인용은 v0.7.2 시점 기록, 기준 태그는 v0.7.3으로 올렸다), boundary-contracts v2.0.2 기준으로 pytest 263 통과, 145 건너뜀, 0 실패, `scripts/smoke.sh` 통과(라벨과 `/readyz` 버전 일치). 패키지 버전은 0.7.0(pyproject). 변경은 push·태그 전이다(STATUS: 헤드 몫).
 
 DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문장 기본 3초, `/readyz` DB 확인 기본 2초(별도 연결), 수집·판정 잡은 DB 무응답 시 종료 코드 75. 이 PC의 로컬 PostgreSQL 컨테이너(`docker pause`)로 확인했고(`tests/test_pg_timeouts.py`), pytest는 PostgreSQL 없이 270 통과 150 건너뜀, PostgreSQL 포함 403 통과 17 건너뜀, 0 실패(이웃·파일 장애 시험을 더한 뒤의 값은 아래). 상세와 근거는 `docs/boundary.md` "DB 대기 상한". 이 PC 컨테이너 조합에서의 재측정은 deploy E2E 5p에서 헤드가 한다.
 
-이웃(I1·I3)·번들 파일 장애(FAULT_MATRIX C1·C2·C3·C5·C7·C8): 가짜 상류 서버(멈춤·느림·5xx·깨진 본문·401/403)와 파일 쓰기 실패 시험을 더했다(`tests/test_upstream_faults.py`). 현재 pytest는 PostgreSQL 없이 356 통과 230 건너뜀, PostgreSQL 포함 544 통과 42 건너뜀, 0 실패(전수 점검 수정 시험 포함). 동작과 한계는 `docs/boundary.md` 장애 영향.
+이웃(I1·I3)·번들 파일 장애(FAULT_MATRIX C1·C2·C3·C5·C7·C8): 가짜 상류 서버(멈춤·느림·5xx·깨진 본문·401/403)와 파일 쓰기 실패 시험을 더했다(`tests/test_upstream_faults.py`). 이 시험을 더한 시점의 값은 PostgreSQL 없이 356 통과 230 건너뜀, PostgreSQL 포함 544 통과 42 건너뜀, 0 실패였다(오래된 값, 현재 실측은 위 3절 끝의 실행 결과). 동작과 한계는 `docs/boundary.md` 장애 영향.
 
 확인하지 못한 것(STATUS):
 - 실제 question-authoring·model-registry·승인자 화면과의 연동(deploy E2E 몫). 시험은 대역과 같은 방식의 HTTP 서버로 했다.
