@@ -83,7 +83,9 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 - 큰 어댑터(수 GB)의 복사 시간·디스크 사용과 오래된 릴리스 정리 정책(미정).
 - 읽기 토큰의 역할별 접근 제한은 아직 없다(역할 이름만 기록).
 
-## 5. 이 영역의 열린 항목 (head/docs/OPEN_GAPS.md, 읽기 전용으로 확인)
+## 5. 시험 상태와 이 영역의 열린 항목 (head/docs/OPEN_GAPS.md, 읽기 전용으로 확인)
+
+- 시험 개수의 정본은 이 항목 하나다. 실측 한 가지 조건: 워크스페이스 밖의 새 `git clone`(이웃 폴더 없음)에 `bash scripts/setup-env.sh` 후 `python -m pytest -q -rs`, PostgreSQL 없음(`TEST_DATABASE_URL` 없음), Linux(WSL2) Python 3.12 한 환경, 2026-10-28: **353 통과, 233 건너뜀, 0 실패**(92.80초). 건너뜀은 PostgreSQL 시험과 저장소 종류 조건 시험이다. PostgreSQL을 띄운 실행, `scripts/smoke.sh`, `serve`/`collect`/`judge` 실행, 실제 이웃 연동은 하지 않았다.
 
 - 이 영역 소유의 열린 항목은 없다. G08(기본 태그 올림)은 닫힘(시험 209 통과, release-gate 7139123).
 - 간접으로 닿는 열린 항목(소유는 다른 영역): G11(문진 스키마 정수 버전 1 안의 비호환 변경, 같은 잠금으로 함께 배포 필요, 다른 영역 의존), U07(실제 LLM 데모 부분, GPU 의존), U10(평가가 가짜 모델로만 돌았음, GPU 의존), D-A(운영 도메인·토큰 발급·회전 등, 사용자 결정), U12(두 번째 독립 머신 확인, 미실시).
