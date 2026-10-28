@@ -53,7 +53,7 @@ model-lab(I3) ──────────┴─> 수집기/제출(I5) ─> �
 ```sh
 # 1) 설치 (멱등, 핀: requirements.txt, requirements.lock, requirements-libs.txt)
 bash scripts/setup-env.sh && . .venv/bin/activate
-# 2) 시험
+# 2) 시험 (문진 스키마는 이웃 `../survey-service/schema`가 없으면 GATE_SURVEY_SCHEMA_DIR=<스키마 폴더>로 준다)
 python -m pytest -q
 # 3) 이미지 빌드 + 스모크(/healthz, /readyz, 토큰 거부, 비root, 라벨). 호스트 포트는 Docker가 배정
 scripts/smoke.sh   # TURN_ENGINE_TAG, MODEL_RUNTIME_TAG(또는 GATE_LIB_WHEELS_DIR) 필수, 값은 deploy/scripts/lib.sh 기준 표에서 정해진다. 없으면 사용법을 보이고 실패
