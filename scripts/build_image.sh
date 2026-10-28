@@ -25,12 +25,12 @@ if [ -z "${GATE_LIB_WHEELS_DIR:-}" ]; then
   export GATE_LIB_WHEELS_DIR="$libs"
 fi
 ctx="$(PYTHON="$PY" "$here/scripts/stage_context.sh" 2>/dev/null)"
-ver() { ls "$ctx/wheels" | sed -n "s/^$1-\([^-]*\)-.*/\1/p" | head -1; }
-bc="$(ver boundary_contracts)"; te="$(ver turn_engine)"; mr="$(ver model_runtime)"
+# 라벨 버전 값은 계약 ImageLabels 표기(vX.Y.Z, 없으면 n/a)로 만든다. 규칙과 이유는 image_label_args.sh
+eval "$("$here/scripts/image_label_args.sh" "$ctx/wheels" | sed 's/^\([A-Z_]*\)=\(.*\)$/\1="\2"/')"
 commit="$(git -C "$here" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 "$DOCKER" build -q -t "$tag" -f "$here/Dockerfile" \
-  --build-arg COMMIT="$commit" --build-arg BOUNDARY_VERSION="${bc:-unknown}" \
+  --build-arg COMMIT="$commit" --build-arg BOUNDARY_VERSION="$BOUNDARY_VERSION" \
   --build-arg SURVEY_SCHEMA_VERSION="$(cat "$ctx/survey-schema/CONTRACT_VERSION")" \
-  --build-arg TURN_ENGINE_VERSION="${te:-unset}" --build-arg MODEL_RUNTIME_VERSION="${mr:-unset}" \
+  --build-arg TURN_ENGINE_VERSION="$TURN_ENGINE_VERSION" --build-arg MODEL_RUNTIME_VERSION="$MODEL_RUNTIME_VERSION" \
   "$ctx" >/dev/null
 echo "$tag"

@@ -5,8 +5,8 @@ FROM python:3.12-slim
 ARG COMMIT=unknown
 ARG BOUNDARY_VERSION=unknown
 ARG SURVEY_SCHEMA_VERSION=unknown
-ARG TURN_ENGINE_VERSION=unset
-ARG MODEL_RUNTIME_VERSION=unset
+ARG TURN_ENGINE_VERSION=n/a
+ARG MODEL_RUNTIME_VERSION=n/a
 LABEL io.openit.service="release-gate" \
       io.openit.revision="${COMMIT}" \
       io.openit.contracts.boundary="${BOUNDARY_VERSION}" \
