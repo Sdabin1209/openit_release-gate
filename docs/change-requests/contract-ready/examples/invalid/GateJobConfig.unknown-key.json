@@ -1,0 +1,8 @@
+{
+  "data_dir": "/data",
+  "wacth": {
+    "question_sets": [
+      "qs-main"
+    ]
+  }
+}

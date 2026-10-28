@@ -1,0 +1,20 @@
+{
+  "status": "ready",
+  "database": "sqlite",
+  "gate_policy_version": "human-approval-1",
+  "judging": "disabled (I1/I3 미연결: 자동 검사와 승인 결정 불가)",
+  "awaiting_approval": 0,
+  "turn_engine_version": "0.4.2",
+  "model_runtime_version": "0.7.7",
+  "retention": {
+    "releases": 0,
+    "pruned_releases": 0,
+    "submissions": 0,
+    "policy": {
+      "keep_releases": 3,
+      "rejected_days": 90,
+      "attempts_days": 365,
+      "runs": "python -m release_gate prune (스케줄러가 부른다)"
+    }
+  }
+}

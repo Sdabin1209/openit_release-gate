@@ -1,0 +1,56 @@
+{
+  "contract_ready_version": "wo6",
+  "items": [
+    {
+      "name": "GateJobConfig",
+      "source_draft": "docs/change-requests/schemas/gate-job-config.schema.json",
+      "producer": "deploy",
+      "consumers": [
+        "release-gate"
+      ],
+      "unknown_keys": "reject",
+      "note": "예시는 docs/runbook.md 후보 수집기 절의 설정 예. 공통 Id는 _common.schema.json#/$defs/Id로 대체. deploy가 실제로 이 파일을 만드는지는 이웃 쪽 미확인."
+    },
+    {
+      "name": "GateJobResult",
+      "source_draft": "docs/change-requests/schemas/gate-job-result.schema.json",
+      "producer": "release-gate",
+      "consumers": [
+        "deploy"
+      ],
+      "unknown_keys": "ignore",
+      "note": "읽는 쪽(스케줄러)은 모르는 키를 무시하고 쓰는 쪽은 닫힌 형식으로 낸다. prune-dry-run 예시는 이 PC에서 python -m release_gate prune --dry-run을 실제로 돌린 출력. 나머지(collect, judge, failed)는 main.py 출력 형태를 옮긴 것이고 실행하지 않았다. failed-config-error는 헤드 결정(2026-10-29, 설정 오류와 예기치 못한 예외도 stdout JSON)에 따른 형태로 아직 구현 전이며 code 대응(설정 오류, 예기치 못한 예외)은 구현 단계에서 정한다. deploy 스케줄러가 이 줄을 실제로 읽는지는 이웃 쪽 미확인."
+    },
+    {
+      "name": "GatePolicy",
+      "source_draft": "docs/change-requests/schemas/gate-policy.schema.json",
+      "producer": "deploy",
+      "consumers": [
+        "release-gate"
+      ],
+      "unknown_keys": "reject",
+      "note": "통과 임계치 필드가 없다(D53). 설정한 경로의 파일이 없거나 읽지 못하면 기동 거부(wo3 변경, 이 브랜치 wo6는 main 기준). 정책 파일을 deploy가 배치하는지는 이웃 쪽 미확인."
+    },
+    {
+      "name": "GateReadyz",
+      "source_draft": "docs/change-requests/schemas/gate-readyz.schema.json",
+      "producer": "release-gate",
+      "consumers": [
+        "deploy"
+      ],
+      "unknown_keys": "ignore",
+      "note": "ready-judging-disabled 예시는 이 PC에서 serve를 실제로 띄워 받은 /readyz 본문 그대로(judging은 문자열, database는 sqlite). ready-judging-enabled는 그 본문에 judging_loop과 enabled를 덧붙여 코드(main.py make_status)의 키를 옮긴 것이고 값은 자리표시. 초안 대비 수정 2건: judging을 boolean에서 문자열로, database 열거를 postgres에서 postgresql로(실제 출력과 코드 store.kind 기준). deploy가 어떤 키를 읽는지는 이웃 쪽 미확인."
+    },
+    {
+      "name": "GateExt",
+      "source_draft": "docs/change-requests/schemas/gate-ext.schema.json",
+      "producer": "release-gate",
+      "consumers": [
+        "admin-console",
+        "ops-feedback"
+      ],
+      "unknown_keys": "ignore",
+      "note": "ActivePointer.ext와 RollbackReceipt.ext의 release-gate 키 값. 쓰는 쪽은 닫힘, 읽는 쪽은 ext 규칙에 따라 표시에만 쓴다. requested_by_role은 닫힌 열거가 아닌 문자열 패턴(헤드 결정). 예시는 tests/test_actor.py가 확인하는 값. 소비자 쪽 사용은 미확인."
+    }
+  ]
+}
