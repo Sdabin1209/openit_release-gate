@@ -24,6 +24,7 @@ from urllib.parse import parse_qs, urlsplit
 from boundary_contracts import canonical
 from boundary_contracts.errors import BoundaryError
 
+from . import PIPELINE_SCHEMA_VERSION
 from .reader import write_bundle_tar
 from .registry import Registry
 from .util import ts, utc_now
@@ -61,7 +62,7 @@ class GateHTTPServer(ThreadingHTTPServer):
     def process_request(self, request, client_address):
         if not self._slots.acquire(blocking=False):
             try:
-                body = json.dumps({"code": "UNAVAILABLE", "message": "동시 연결이 상한에 이르렀다", "retryable": True}).encode()
+                body = json.dumps(BoundaryError("UNAVAILABLE", "동시 연결이 상한에 이르렀다").to_record(PIPELINE_SCHEMA_VERSION)).encode()
                 request.sendall(b"HTTP/1.0 503 Service Unavailable\r\nContent-Type: application/json\r\nRetry-After: 1\r\n"
                                 b"Content-Length: %d\r\n\r\n" % len(body) + body)
             except OSError:
@@ -211,7 +212,9 @@ class _Handler(BaseHTTPRequestHandler):
                 log.error("무결성 오류: %s", e.message)
         except Exception:  # 서비스는 죽지 않는다. 원인은 로그에 남긴다.
             log.exception("처리 중 예외")
-            code, body = 500, {"code": "INTERNAL", "message": "내부 오류"}
+            # 왜: BoundaryError 코드 열거에 내부 오류가 없다(CONVENTIONS 3절). 클라이언트는 5xx를 UNAVAILABLE로 읽으므로(HTTP.md 12행) 같은 코드로 맞춘다.
+            # 상태는 서버 결함이므로 500을 유지한다. 503으로 올릴지는 헤드 결정 대기(CR-0010)
+            code, body = 500, BoundaryError("UNAVAILABLE", "내부 오류").to_record(PIPELINE_SCHEMA_VERSION)
         self._last = (code, body if isinstance(body, dict) else {})
         if after is not None:
             after()           # 응답을 보내기 전에 기록한다(보낸 응답은 되돌릴 수 없고, 기록이 응답을 늦추지는 않는다)
@@ -337,7 +340,7 @@ class _Handler(BaseHTTPRequestHandler):
                 user = self.headers.get("X-Openit-User")
                 if user is None:
                     # D88 U7: 승인자는 게이트웨이가 인증한 개인이어야 한다(활성화와 같다). 본문의 자기 신고 approver_id로는 기록하지 않는다
-                    return 401, {"code": "PERMISSION_DENIED", "message": "X-Openit-User 헤더가 없다(게이트웨이가 붙인 승인자 식별이 필요하다)"}
+                    return 401, BoundaryError("PERMISSION_DENIED", "X-Openit-User 헤더가 없다(게이트웨이가 붙인 승인자 식별이 필요하다)").to_record(PIPELINE_SCHEMA_VERSION)
                 if not _ID.match(user):
                     raise BoundaryError("INVALID_RECORD", "X-Openit-User가 ID 형식이 아니다")
                 if "approver_id" in b and b["approver_id"] != user:
@@ -358,7 +361,7 @@ class _Handler(BaseHTTPRequestHandler):
                     raise BoundaryError("INVALID_RECORD", "X-Openit-User가 ID 형식이 아니다")
                 if user is None:
                     if role not in r.service.config.service_roles:
-                        return 401, {"code": "PERMISSION_DENIED", "message": "X-Openit-User 헤더가 없다(게이트웨이가 붙인 행위자 식별이 필요하다)"}
+                        return 401, BoundaryError("PERMISSION_DENIED", "X-Openit-User 헤더가 없다(게이트웨이가 붙인 행위자 식별이 필요하다)").to_record(PIPELINE_SCHEMA_VERSION)
                     user = f"service:{role}"
                 if path == "/v1/activate":
                     return 200, r.service.activate(str(b.get("release_id", "")), requested_by_role=role, requested_by=user)
