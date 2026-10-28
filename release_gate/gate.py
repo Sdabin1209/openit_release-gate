@@ -11,7 +11,7 @@ from boundary_contracts.errors import BoundaryError
 from boundary_contracts.sdk import ModelRegistry, QuestionReader
 
 from . import PIPELINE_SCHEMA_VERSION
-from .checks import CheckContext, CheckRegistry, SubjectLoader
+from .checks import CheckContext, CheckOutcome, CheckRegistry, SubjectLoader
 from .config import GateConfig
 from .policy import GatePolicy
 from .reader import verify_in_tempdir
@@ -219,6 +219,10 @@ class GateEngine:
         self.store, self.schemas, self.survey, self.config = store, schemas, survey, config
         self.policy, self.models, self.clock = policy, models, clock
         self.checks = checks or CheckRegistry()
+        # 왜: 안전 관문이므로 필수 검사가 없는 구성은 시작 때 거부한다(fail-closed). INTERFACES I5 "필수 검사는 gate_policy_version이 정한다", D53, RG-16
+        missing = [k for k in policy.required_checks if not self.checks.get(k)]
+        if missing:
+            raise ValueError("필수 자동 검사가 등록되지 않았다: " + ", ".join(missing))
         self.loader = SubjectLoader(questions, models, schemas)
         self.last_error: Optional[dict] = None   # 직전 process_pending의 문제(/readyz가 보여 준다). 없으면 None
 
@@ -261,7 +265,9 @@ class GateEngine:
 
     def _run_checks(self, data):
         ctx = CheckContext(data, self.policy, self.config, self.schemas, self.survey)
-        results = [(k, self.checks.get(k).run(ctx)) for k in self.policy.required_checks if self.checks.get(k)]
+        # 왜: 생성 뒤에 검사가 빠져도 건너뛰지 않고 FAIL로 기록해 승인 요청으로 가지 못하게 한다(fail-closed, RG-16)
+        results = [(k, c.run(ctx) if (c := self.checks.get(k)) else CheckOutcome("FAIL", "필수 검사가 등록되지 않았다"))
+                   for k in self.policy.required_checks]
         return [o.to_record(k) for k, o in results], [f"{k}: {o.detail or '실패'}" for k, o in results if o.result == "FAIL"]
 
     def _auto_stage(self, sid: str) -> Optional[dict]:
