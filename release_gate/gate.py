@@ -19,7 +19,7 @@ from .review import build_review_report
 from .views import list_submission_views, submission_view
 from .schemas import SchemaSet, SurveySchema
 from .store import ReleaseParts, Store
-from .util import Clock, subject_of, ts, utc_now
+from .util import Clock, reject_symlinks, subject_of, ts, utc_now
 
 
 def assert_decision_rule(d: dict) -> None:
@@ -371,6 +371,7 @@ class GateEngine:
             for role, key in (("LORA_A", "lora_a"), ("LORA_B", "lora_b")):
                 m, ref = data.manifests[role], subject[key]
                 p = self.models.open_adapter(ref["id"], ref["version"], dest=Path(tmp) / role)  # 실패는 그대로 올린다
+                reject_symlinks(p)
                 if canonical.directory_hash(p) != m["adapter_hash"]:
                     raise BoundaryError("INTEGRITY_ERROR", f"{role} 어댑터 내용이 adapter_hash와 다르다")
                 adapters[role] = Path(p)

@@ -10,6 +10,7 @@ from boundary_contracts.errors import BoundaryError
 from boundary_contracts.sdk import ReleaseBundle
 
 from .store import ROLES, Store
+from .util import reject_symlinks
 
 def verify_release(store: Store, release_id: str, dest: Optional[Path]) -> ReleaseBundle:
     """검증하는 동안 같은 릴리스가 prune에 걸려 어댑터가 사라졌으면, 손상(INTEGRITY_ERROR)이 아니라 정리됨(FAILED_PRECONDITION, PRUNED)이다.
@@ -50,6 +51,7 @@ def _verify_release(store: Store, release_id: str, dest: Optional[Path]) -> Rele
     for role in ROLES:
         if role not in adapters or role not in expected:
             raise BoundaryError("INTEGRITY_ERROR", f"묶음에 {role} 어댑터가 없다: {release_id}")
+        reject_symlinks(adapters[role])
         if canonical.directory_hash(adapters[role]) != expected[role]["adapter_hash"]:
             raise BoundaryError("INTEGRITY_ERROR", f"묶음의 {role} 어댑터 해시가 다르다: {release_id}")
         sp = expected[role].get("system_prompt") or {}
