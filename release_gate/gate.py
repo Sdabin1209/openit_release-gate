@@ -347,6 +347,13 @@ class GateEngine:
                       "approver": {"role": approval["approver_role"], "id": approval["approver_id"]},
                       "approval_id": approval["approval_id"]})
             return self._commit(sid, d, approval)
+        # 왜: 이웃 라이브러리 버전을 읽지 못했는데 'unset' 같은 값으로 매니페스트를 만들면 서비스가 이 값으로 적재를 거부하는
+        # 계약 필드(INTERFACES I4)에 거짓 값이 들어간다. 만들지 않고 거부한다(결정표 2절, fail-closed). 아무것도 기록되지 않는다
+        for name in ("turn_engine_version", "model_runtime_version"):
+            v = getattr(self.config, name)
+            if not isinstance(v, str) or not v.strip() or v.strip() == "unset":
+                raise BoundaryError("FAILED_PRECONDITION", f"게이트 설정의 {name}을(를) 읽지 못해 릴리스 매니페스트를 만들 수 없다",
+                                    {"reason": "RUNTIME_VERSION_UNKNOWN"})
         # APPROVE: 승인 직전에 자동 검사를 다시 한다(그 사이 임상 승인이 철회되었을 수 있다, D30)
         data = self.loader.load(subject)
         fresh, reasons = self._run_checks(data)

@@ -52,17 +52,17 @@ def _csv(name: str) -> list[str]:
     return [x.strip() for x in (read_secret(name) or "").split(",") if x.strip()]
 
 
-def installed_version(*dist_names: str) -> str:
-    """설치된 배포 패키지의 실제 버전. 없으면 'unset'."""
+def installed_version(*dist_names: str) -> "str | None":
+    """설치된 배포 패키지의 실제 버전. 읽지 못하면 None(가짜 문자열을 만들지 않는다: 매니페스트 필드가 거짓이 된다)."""
     for n in dist_names:
         try:
             return importlib.metadata.version(n)
         except importlib.metadata.PackageNotFoundError:
             continue
-    return "unset"
+    return None
 
 
-def lib_versions() -> tuple[str, str]:
+def lib_versions() -> "tuple[str | None, str | None]":
     """(turn-engine, model-runtime). 환경 변수로 덮어쓸 수 있고 기본은 설치된 패키지에서 읽는다."""
     return (os.environ.get("GATE_TURN_ENGINE_VERSION") or installed_version("turn-engine", "turn_engine"),
             os.environ.get("GATE_MODEL_RUNTIME_VERSION") or installed_version("model-runtime", "model_runtime"))
@@ -262,6 +262,9 @@ def serve() -> None:
     questions, models = _neighbors(cfg)
     tasks, judging, engine = [], "disabled (I1/I3 미연결: 자동 검사와 승인 결정 불가)", None
     if questions is not None and models is not None:
+        if not (config.turn_engine_version and config.model_runtime_version):
+            # 왜: 승인(릴리스 매니페스트 생성)이 되는 서비스는 이웃 버전을 모른 채 뜨지 않는다(결정표 2절). 환경 변수로 덮어쓸 수 있다
+            raise SystemExit("turn-engine 또는 model-runtime 버전을 읽지 못했다(설치되지 않음). GATE_TURN_ENGINE_VERSION, GATE_MODEL_RUNTIME_VERSION을 주거나 설치한다")
         engine = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry())
         tasks.append(engine.process_pending)
         judging = "enabled"

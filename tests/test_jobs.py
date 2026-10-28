@@ -87,6 +87,6 @@ def test_lib_versions_read_installed_packages(monkeypatch):
     monkeypatch.setattr(md, "version", lambda n: {"turn-engine": "0.2.0", "model-runtime": "0.4.0"}.get(n) or real(n))
     assert gate_main.lib_versions() == ("0.2.0", "0.4.0")
     monkeypatch.setattr(md, "version", lambda n: (_ for _ in ()).throw(md.PackageNotFoundError(n)))
-    assert gate_main.lib_versions() == ("unset", "unset")
+    assert gate_main.lib_versions() == (None, None)
     monkeypatch.setenv("GATE_TURN_ENGINE_VERSION", "9.9.9")
     assert gate_main.lib_versions()[0] == "9.9.9"
