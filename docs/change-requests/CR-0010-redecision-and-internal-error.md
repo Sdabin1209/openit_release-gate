@@ -5,7 +5,7 @@
 ## 질문 1. 정책 버전이 바뀐 뒤의 재판정 (RG-12)
 
 - 계약 문장: INTERFACES I5 "정책 버전이 바뀐 뒤의 재판정은 같은 `submission_id`에 새 `GateDecision`을 더하고 가장 최근 것이 현재 판정이다." (CR-0003도 같은 취지)
-- 현재 동작(코드를 읽어 도출, 실행으로 재현하지 않음): `submission_id`는 조합의 해시(gate.py:85)이고 `put_submission`은 같은 조합이면 기존 접수를 돌려준다. `advance`는 `RECEIVED`만 진행한다(gate.py:257-260). 그래서 `DECIDED`가 된 접수는 정책이 바뀌어도 다시 판정되지 않는다. 두 번째 판정은 생기지 않는다(`RECHECK_FAILED`는 판정을 더하지 않고 409로 끝난다).
+- 현재 동작(코드를 읽어 도출, 실행으로 재현하지 않음): `submission_id`는 조합의 해시(gate.py:85)이고 `put_submission`은 같은 조합이면 기존 접수를 돌려준다. `advance`는 `RECEIVED`만 진행한다(gate.py:257-260). 그래서 `DECIDED`가 된 접수는 정책이 바뀌어도 다시 판정되지 않는다. 두 번째 판정은 생기지 않는다(`RECHECK_FAILED`는 판정을 더하지 않고 412 FAILED_PRECONDITION으로 끝난다).
 - 모호한 점(이 문장만으로 정해지지 않는다):
   1. **무엇이 재판정을 일으키는가.** 정책 버전 변경을 게이트가 스스로 알아채 자동 재판정하는가, 누군가 요청하는가(I5에 재판정 메서드나 경로가 없다 - HTTP.md I5 표 확인).
   2. **어느 접수가 대상인가.** 반려된 것만인가, PASS 난 것도인가(PASS 릴리스는 불변이어야 하고 `release_id`가 있다). CR-0003은 "정책 때문에 반려된 접수(`POLICY_INCOMPLETE`)"만 말하지만, D53 이후 코드는 `POLICY_INCOMPLETE`를 내지 않는다(grep 결과 release_gate/ 안에 없음). 이 코드가 아직 계약에 남아 있는 의미가 무엇인가.
