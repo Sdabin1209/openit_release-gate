@@ -2,19 +2,23 @@
 (model-runtime/docs/CHANGELOG.md 0.8.0 호환 깨짐 3). 게이트는 설치된 버전을 매니페스트에 쓰므로 0.8.x를 받아들이고 0.7.x 하드코딩이 없어야 한다."""
 from __future__ import annotations
 
+from importlib import metadata as md
+
 from release_gate import GateConfig
+
+TE = md.version("turn-engine")  # 기준값은 설치된 turn-engine(D109: 2.x 동안 고정 표지)
 
 
 def _world_with(world, rt):
-    cfg = GateConfig(supported_runtime_contract_version=world.survey.contract_version, turn_engine_version="0.4.2", model_runtime_version=rt)
+    cfg = GateConfig(supported_runtime_contract_version=world.survey.contract_version, turn_engine_version=TE, model_runtime_version=rt)
     world.config = cfg
     return cfg
 
 
 def _run(world, cfg, lineage_rt):
     from release_gate import GateEngine, GatePolicy
-    a = world.m.add("lora-a", "1", "LORA_A", engine="0.4.2", runtime=lineage_rt)
-    b = world.m.add("lora-b", "1", "LORA_B", engine="0.4.2", runtime=lineage_rt)
+    a = world.m.add("lora-a", "1", "LORA_A", engine=TE, runtime=lineage_rt)
+    b = world.m.add("lora-b", "1", "LORA_B", engine=TE, runtime=lineage_rt)
     sub = world.reg.service.submit_candidate(world.subject(a=a, b=b), requested_by_role="operator")
     eng = GateEngine(world.reg.store, world.schemas, world.survey, cfg, GatePolicy.default(), world.q, world.m, clock=world.clock)
     eng.process_pending()

@@ -17,7 +17,6 @@ def _linked_adapter(world):
     m = world.m.add("lora-a", "1", "LORA_A")
     d = world.m.dirs[("lora-a", "1")]
     # 계약 2.2.0부터 canonical.directory_hash가 링크를 스스로 거부하므로(CHANGELOG 2.2.0, CONVENTIONS 8절) 해시는 링크를 넣기 전에 만든다.
-    # 어느 계약 버전이든 링크가 든 어댑터는 릴리스가 되면 안 된다는 기대는 같다
     m["adapter_hash"] = canonical.directory_hash(d)
     m["content_hash"] = canonical.content_hash(m)
     world.m.reports[m["eval_report_ref"]] = json.dumps(make_eval_report(m)).encode()
@@ -47,12 +46,17 @@ def test_adapter_with_symlink_cannot_become_a_release(world):
         world.reg.store.latest_decision(sub["submission_id"])["result"] != "PASS"
 
 
-def test_reject_symlinks_helper_sees_dir_and_file_links(tmp_path):
-    from release_gate.util import reject_symlinks
+def test_contract_directory_hash_alone_rejects_links(tmp_path):
+    """게이트에 따로 링크 검사가 없어도 계약 함수만으로 거부된다(CONVENTIONS 8절). 파일 링크와 디렉터리 링크 모두."""
     (tmp_path / "real").mkdir()
     (tmp_path / "real" / "f").write_bytes(b"x")
-    reject_symlinks(tmp_path)                                  # 링크 없음: 통과
+    canonical.directory_hash(tmp_path)                         # 링크 없음: 통과
+    os.symlink(tmp_path / "real" / "f", tmp_path / "flink")
+    with pytest.raises(BoundaryError) as e:
+        canonical.directory_hash(tmp_path)
+    assert e.value.code == "INTEGRITY_ERROR"
+    os.unlink(tmp_path / "flink")
     os.symlink(tmp_path / "real", tmp_path / "dlink")
     with pytest.raises(BoundaryError) as e:
-        reject_symlinks(tmp_path)
+        canonical.directory_hash(tmp_path)
     assert e.value.code == "INTEGRITY_ERROR"
