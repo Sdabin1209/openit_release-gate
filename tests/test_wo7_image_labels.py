@@ -27,13 +27,13 @@ def parse(out):
     return dict(line.split("=", 1) for line in out.strip().splitlines())
 
 
-WHEELS = ["boundary_contracts-2.1.1-py3-none-any.whl", "turn_engine-0.4.2-py3-none-any.whl", "model_runtime-0.7.7-py3-none-any.whl"]
+WHEELS = ["boundary_contracts-2.1.1-py3-none-any.whl", "turn_engine-0.4.2-py3-none-any.whl", "model_runtime-0.8.0-py3-none-any.whl"]
 
 
 def test_versions_have_v_prefix(tmp_path):
     r = run(tmp_path, WHEELS)
     assert r.returncode == 0, r.stderr
-    assert parse(r.stdout) == {"BOUNDARY_VERSION": "v2.1.1", "TURN_ENGINE_VERSION": "v0.4.2", "MODEL_RUNTIME_VERSION": "v0.7.7"}
+    assert parse(r.stdout) == {"BOUNDARY_VERSION": "v2.1.1", "TURN_ENGINE_VERSION": "v0.4.2", "MODEL_RUNTIME_VERSION": "v0.8.0"}
 
 
 def test_missing_optional_libs_are_na_not_unset(tmp_path):

@@ -80,7 +80,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 
 ## 이미지
 
-`scripts/build_image.sh [태그]`가 빌드한다. 컨텍스트에는 boundary-contracts 태그(`BOUNDARY_CONTRACTS_TAG`, 없으면 `requirements.txt`의 pin)의 wheel이 들어가고, turn-engine(`TURN_ENGINE_TAG`)과 model-runtime(`MODEL_RUNTIME_TAG`)은 기본값이 없고 deploy가 환경 변수로 넘기며(값은 `deploy/scripts/lib.sh`), 없으면 실패한다. 이웃 리포지토리를 이웃 리포지토리를 `git archive <태그>`로 꺼내 wheel을 만들어 함께 설치한다(리포지토리는 수정하지 않는다). `GATE_LIB_WHEELS_DIR`를 주면 그 안의 wheel을 대신 쓴다. 라벨은 `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`이고 값은 컨텍스트의 wheel 이름에서 읽는다. wheel이 없으면(직접 `docker build`할 때 등) `unset`이며, 그러면 학습 때 버전 일치 검사가 모든 후보를 반려한다.
+`scripts/build_image.sh [태그]`가 빌드한다. 컨텍스트에는 boundary-contracts 태그(`BOUNDARY_CONTRACTS_TAG`, 없으면 `requirements.txt`의 pin)의 wheel이 들어가고, turn-engine(`TURN_ENGINE_TAG`)과 model-runtime(`MODEL_RUNTIME_TAG`)은 기본값이 없고 deploy가 환경 변수로 넘기며(값은 `deploy/scripts/lib.sh`), 없으면 실패한다. 이웃 리포지토리를 이웃 리포지토리를 `git archive <태그>`로 꺼내 wheel을 만들어 함께 설치한다(리포지토리는 수정하지 않는다). `GATE_LIB_WHEELS_DIR`를 주면 그 안의 wheel을 대신 쓴다. 라벨은 `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`이고 값은 컨텍스트의 wheel 이름에서 읽는다. 값은 계약 ImageLabels 표기(`vX.Y.Z`)이고 turn-engine·model-runtime wheel이 없으면 `n/a`다. boundary-contracts wheel이 없으면 빌드가 멈춘다. 직접 `docker build`할 때 이 두 빌드 인자가 비어 있으면 서비스가 설치된 패키지에서 버전을 못 읽어 승인(매니페스트 생성)을 거부한다.
 
 ## 상태 확인
 
