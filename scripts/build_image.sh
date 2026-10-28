@@ -13,8 +13,11 @@ PY="${PYTHON:-$here/.venv/bin/python}"
 # turn-engine·model-runtime는 태그 시점 소스(git archive)로 wheel을 만들어 이미지에 넣는다. 이웃 리포지토리는 읽기만 한다.
 # 이미 GATE_LIB_WHEELS_DIR이 주어지면(deploy가 준비한 wheel) 그것을 쓴다.
 if [ -z "${GATE_LIB_WHEELS_DIR:-}" ]; then
+  # 왜: 태그 기본값을 여기 적으면 deploy/scripts/lib.sh 표와 어긋난다. 표는 deploy가 갖고 있으니 deploy가 환경 변수로 넘기고, 없으면 실패한다.
+  : "${TURN_ENGINE_TAG:?TURN_ENGINE_TAG가 필요하다(deploy/scripts/lib.sh 기준, deploy가 넘긴다) 또는 GATE_LIB_WHEELS_DIR를 준다}"
+  : "${MODEL_RUNTIME_TAG:?MODEL_RUNTIME_TAG가 필요하다(deploy/scripts/lib.sh 기준, deploy가 넘긴다) 또는 GATE_LIB_WHEELS_DIR를 준다}"
   libs="$here/.build/libwheels"; rm -rf "$libs" "$here/.build/lib-src"; mkdir -p "$libs"
-  for spec in "turn-engine:${TURN_ENGINE_TAG:-v0.4.1}" "model-runtime:${MODEL_RUNTIME_TAG:-v0.7.5}"; do
+  for spec in "turn-engine:$TURN_ENGINE_TAG" "model-runtime:$MODEL_RUNTIME_TAG"; do
     repo="${spec%%:*}"; rtag="${spec##*:}"; src="$here/.build/lib-src/$repo"; mkdir -p "$src"
     git -C "$here/../$repo" archive "$rtag" | tar -x -C "$src"
     "$PY" -m pip wheel -q --no-deps -w "$libs" "$src" >&2
