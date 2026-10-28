@@ -226,7 +226,7 @@ def test_negative_content_length_and_non_ascii_authorization(world):
         r = _raw(port, b"POST /v1/submissions HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer wt\r\nContent-Length: -1\r\nConnection: close\r\n\r\n")
         assert b" 400 " in r.split(b"\r\n")[0]
         r = _raw(port, "GET /v1/active-pointer HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer éé\r\nConnection: close\r\n\r\n".encode("latin-1"))
-        assert b" 403 " in r.split(b"\r\n")[0]                    # 500이 아니다
+        assert b" 401 " in r.split(b"\r\n")[0]                    # 500이 아니다. 알 수 없는 토큰이므로 401
         r = _raw(port, b"GET /v1/active-pointer HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer rt\r\nConnection: close\r\n\r\n")
         assert b" 200 " in r.split(b"\r\n")[0]
     finally:

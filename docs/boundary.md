@@ -51,7 +51,7 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 - 락 보유(A7): 번들 복사는 저장소 락·트랜잭션 밖에서 한다(락 안은 rename뿐). 복사 1초 동안 `get_pointer`·`list_releases`가 0.4초 넘게 막히지 않음을 시험(지연 주입). 실제 큰 어댑터로는 **측정 안 함**.
 - 큰 어댑터(G3): 활성화·롤백 검증·번들 GET은 복사 없이 제자리에서 해시를 계산한다(해시 계산 비용 O(크기)는 남는다. 캐시는 안전성을 약화하므로 두지 않음). 승인 때 I3에서 받은 어댑터는 같은 파일 시스템에서 복사 없이 옮긴다. 번들 GET은 검증 후 tar 임시 파일 한 벌을 만든다.
 - 목록(G2): `GET /v1/submissions`는 접수·상태·최신 판정을 JOIN 한 쿼리를 묶음 단위로 읽는다(접수 15건에서 쿼리 2개 이하 시험). 상태·판정 인덱스를 추가했다.
-- 요청 한도(A9, B4, B5, B11): 소켓 timeout(`GATE_REQUEST_TIMEOUT_SECONDS`, 30), 동시 연결 상한(`GATE_MAX_CONNECTIONS`, 64, 넘으면 503), 음수 `Content-Length` 400, 비ASCII `Authorization` 403(이전 500), 접근 로그의 제어 문자 치환.
+- 요청 한도(A9, B4, B5, B11): 소켓 timeout(`GATE_REQUEST_TIMEOUT_SECONDS`, 30), 동시 연결 상한(`GATE_MAX_CONNECTIONS`, 64, 넘으면 503), 음수 `Content-Length` 400, 비ASCII `Authorization` 401(이전 500), 접근 로그의 제어 문자 치환.
 - 행위자 기록(C6): 접근 로그에 `role=<토큰 역할> user=<X-Openit-User>`가 붙는다(거부된 요청 포함, 토큰이 틀리면 `role=-`). 유효한 쓰기 토큰의 거부·실패한 쓰기 시도는 `attempts` 테이블에 행위자와 함께 남는다(보존 365일). 한계: 이미 활성인 릴리스의 재활성화(멱등 성공)와 번들·판정 열람은 기록하지 않는다. attempts를 읽는 HTTP 경로는 없다(SQL로 조회).
 - 접수 상한(A6): `GATE_MAX_PENDING_SUBMISSIONS`(기본 없음=제한 없음)을 주면 결정 전 접수가 그 수에 이르렀을 때 새 조합을 412(`SUBMISSION_LIMIT`)로 거부한다.
 - 보존(C3, A6; D88 U4): `python -m release_gate prune`(기본 반려·미승인 접수 90일, 시도 기록 365일, 어댑터 사본은 활성·직전·최근 3개 외 정리, 승인·활성 이력은 불변). 무기한 설정은 거부. `/readyz`의 `retention`에 현황. docs/adr/0009.

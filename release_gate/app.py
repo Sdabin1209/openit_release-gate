@@ -3,7 +3,7 @@
 읽기(읽기 토큰): GET /v1/active-pointer {"item"}, /v1/releases, /v1/releases/<id>, /v1/releases/<id>/bundle (tar),
   /v1/decisions?question_set_id=&question_set_version=&lora_a_id=&lora_a_version=&lora_b_id=&lora_b_version=&submission_id=,
   /v1/decisions/<id>, /v1/submissions (SubmissionView 목록, status 필터, D68), /v1/submissions/<id>, /v1/submissions/<id>/review-report (D53, 승인 요청 보고서). 목록은 {"items", "next_cursor"}이고 쿼리 cursor, limit(기본 100, 최대 500).
-쓰기(쓰기 토큰): POST /v1/submissions, /v1/activate, /v1/rollback, /v1/approvals(역할 release-approver, D53). 읽기 토큰으로는 403.
+쓰기(쓰기 토큰): POST /v1/submissions, /v1/activate, /v1/rollback, /v1/approvals(역할 release-approver, D53). 읽기 토큰으로는 403. 토큰이 없거나 틀리면 401 + WWW-Authenticate: Bearer(CONVENTIONS "401과 403").
 상태: GET /healthz, /readyz (인증 없음).
 토큰은 역할에 묶여 있다(CONVENTIONS 9절): 쓰기 요청 본문의 역할이 토큰의 역할과 다르면 PERMISSION_DENIED.
 """
@@ -40,6 +40,18 @@ _STATUS = {"NOT_FOUND": 404, "INVALID_RECORD": 400, "UNSUPPORTED_VERSION": 422, 
 DEFAULT_REQUEST_TIMEOUT = 30.0     # 소켓 읽기·쓰기 단위(초). 느린 연결이 스레드를 영구히 붙잡지 않게 한다
 DEFAULT_MAX_CONNECTIONS = 64       # 동시에 처리하는 연결 수 상한. 넘으면 503(재시도 가능)을 바로 돌려준다
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+class Unauthenticated(BoundaryError):
+    """토큰이 없거나 틀리다(또는 사람 행위자 헤더가 없다): 401 + WWW-Authenticate. 본문 code는 PERMISSION_DENIED다.
+    왜: 영역 사이 서비스 API도 토큰이 없거나 틀리면 401, 토큰은 맞지만 권한이 없을 때만 403이다
+    (boundary-contracts CONVENTIONS.md '401과 403', RFC 9110 15.5.2·11.6.1, RFC 6750 3절; D106)."""
+
+    def __init__(self, message: str):
+        super().__init__("PERMISSION_DENIED", message)
+
+
+_CHALLENGE = {"WWW-Authenticate": "Bearer"}      # RFC 9110 11.6.1: 401은 도전(challenge)을 싣는다. 값은 RFC 6750 3절의 스킴 이름
 
 
 class GateHTTPServer(ThreadingHTTPServer):
@@ -167,14 +179,22 @@ class _Handler(BaseHTTPRequestHandler):
     def _read_role(self) -> str:
         role = self._role_of(self.server.read_tokens)
         if role is None:
-            raise BoundaryError("PERMISSION_DENIED", "읽기 토큰이 없거나 맞지 않는다")
+            if self._role_of(self.server.write_tokens) is not None:    # 맞는 토큰이지만 읽기 면의 권한이 없다
+                raise BoundaryError("PERMISSION_DENIED", "쓰기 토큰으로는 읽기 면을 쓸 수 없다")
+            raise Unauthenticated("읽기 토큰이 없거나 맞지 않는다")
         return role
+
+    def _no_write_role(self) -> BoundaryError:
+        """쓰기 토큰이 아닐 때: 읽기 토큰이면 맞는 토큰이지만 권한이 없다(403), 그 밖에는 토큰이 없거나 틀리다(401)."""
+        if self._role_of(self.server.read_tokens) is not None:
+            return BoundaryError("PERMISSION_DENIED", "읽기 토큰으로는 쓸 수 없다")
+        return Unauthenticated("쓰기 토큰이 없거나 맞지 않는다")
 
     def _write_role(self, claimed) -> str:
         """쓰기 토큰에 묶인 역할을 돌려준다. 읽기 토큰이거나 본문이 다른 역할을 주장하면 PERMISSION_DENIED."""
         role = self._role_of(self.server.write_tokens)
         if role is None:
-            raise BoundaryError("PERMISSION_DENIED", "쓰기 토큰이 없거나 맞지 않는다")
+            raise self._no_write_role()
         if claimed is not None and claimed != role:
             raise BoundaryError("PERMISSION_DENIED", "본문의 역할이 토큰의 역할과 다르다")
         return role
@@ -208,6 +228,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._send_bundle(body)
         except BoundaryError as e:
             code, body = _STATUS[e.code], e.to_record()
+            if isinstance(e, Unauthenticated):
+                code, headers = 401, dict(_CHALLENGE)
             if e.code == "INTEGRITY_ERROR":
                 log.error("무결성 오류: %s", e.message)
         except Exception:  # 서비스는 죽지 않는다. 원인은 로그에 남긴다.
@@ -333,14 +355,14 @@ class _Handler(BaseHTTPRequestHandler):
         def go():
             r, path = self.server.registry, self.path.split("?")[0]
             if self._role_of(self.server.write_tokens) is None:
-                raise BoundaryError("PERMISSION_DENIED", "쓰기 토큰이 없거나 맞지 않는다")  # 본문을 읽기 전에 거부
+                raise self._no_write_role()      # 본문을 읽기 전에 거부
             b = self._body()
             if path == "/v1/approvals":
                 role = self._write_role(b.get("approver_role"))
                 user = self.headers.get("X-Openit-User")
                 if user is None:
                     # D88 U7: 승인자는 게이트웨이가 인증한 개인이어야 한다(활성화와 같다). 본문의 자기 신고 approver_id로는 기록하지 않는다
-                    return 401, BoundaryError("PERMISSION_DENIED", "X-Openit-User 헤더가 없다(게이트웨이가 붙인 승인자 식별이 필요하다)").to_record(PIPELINE_SCHEMA_VERSION)
+                    raise Unauthenticated("X-Openit-User 헤더가 없다(게이트웨이가 붙인 승인자 식별이 필요하다)")
                 if not _ID.match(user):
                     raise BoundaryError("INVALID_RECORD", "X-Openit-User가 ID 형식이 아니다")
                 if "approver_id" in b and b["approver_id"] != user:
@@ -361,7 +383,7 @@ class _Handler(BaseHTTPRequestHandler):
                     raise BoundaryError("INVALID_RECORD", "X-Openit-User가 ID 형식이 아니다")
                 if user is None:
                     if role not in r.service.config.service_roles:
-                        return 401, BoundaryError("PERMISSION_DENIED", "X-Openit-User 헤더가 없다(게이트웨이가 붙인 행위자 식별이 필요하다)").to_record(PIPELINE_SCHEMA_VERSION)
+                        raise Unauthenticated("X-Openit-User 헤더가 없다(게이트웨이가 붙인 행위자 식별이 필요하다)")
                     user = f"service:{role}"
                 if path == "/v1/activate":
                     return 200, r.service.activate(str(b.get("release_id", "")), requested_by_role=role, requested_by=user)

@@ -65,7 +65,7 @@ def test_health_ready_no_auth(server):
 
 
 def test_auth_split_between_read_and_write(world, server):
-    assert call(server, "/v1/active-pointer")[0] == 403
+    assert call(server, "/v1/active-pointer")[0] == 401          # 토큰 없음: 401(CONVENTIONS 401과 403)
     assert call(server, "/v1/active-pointer", token="wt")[0] == 403
     st, body = call(server, "/v1/submissions", {"subject": world.subject(), "requested_by_role": "operator"}, "wo")
     assert st == 403 and body["code"] == "PERMISSION_DENIED"      # 토큰의 역할(ops-feedback)과 다른 역할 주장
@@ -158,7 +158,7 @@ def test_bundle_tar_over_http_with_hash_verification(world, server, tmp_path):
     assert (out / "adapters" / "LORA_A" / "cfg" / "x.json").read_bytes() == b"{}"
     assert raw(server, "/v1/releases/rel-none/bundle", "rt")[0] == 404
     assert raw(server, f"/v1/releases/{rid}/bundle", "wt")[0] == 403
-    assert raw(server, f"/v1/releases/{rid}/bundle", "bad")[0] == 403
+    assert raw(server, f"/v1/releases/{rid}/bundle", "bad")[0] == 401      # 틀린 토큰: 401
 
 
 def test_bundle_integrity_error_is_422(world, server):
@@ -289,7 +289,7 @@ def test_submission_views_over_http(world, server):
     # 404, 인증
     st, e = call(server, "/v1/submissions/sub-none", token="rt")
     assert st == 404 and e["code"] == "NOT_FOUND"
-    assert call(server, "/v1/submissions", token="wt")[0] == 403 and call(server, "/v1/submissions", token="bad")[0] == 403
+    assert call(server, "/v1/submissions", token="wt")[0] == 403 and call(server, "/v1/submissions", token="bad")[0] == 401
     assert call(server, f"/v1/submissions/{sid['ok']}", token="wt")[0] == 403
 
 
