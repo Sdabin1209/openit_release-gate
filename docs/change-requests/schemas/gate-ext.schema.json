@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gate-ext.schema.json",
+  "title": "GateExt",
+  "description": "ActivePointer.ext와 RollbackReceipt.ext의 \"release-gate\" 키 값. release-gate가 쓰고, 소비자(운영 화면, ops-feedback)는 표시에만 쓰며 판단에 쓰지 않는다(ext 규칙). requested_by는 X-Openit-User(사람) 또는 서비스 역할의 'service:<역할>' 또는 'role:<역할>'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requested_by", "requested_by_role"],
+  "properties": {
+    "requested_by": {"type": "string", "minLength": 1, "maxLength": 256},
+    "requested_by_role": {"enum": ["operator", "ops-feedback", "release-gate-collector", "question-authoring", "model-lab", "release-approver"], "description": "역할 이름의 닫힌 목록은 INTERFACES I5 허용 역할. 설정(GATE_ACTIVATE_ROLES 등)으로 늘 수 있어 닫을지는 헤드 결정."}
+  }
+}

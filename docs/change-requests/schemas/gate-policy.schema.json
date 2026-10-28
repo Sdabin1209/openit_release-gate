@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gate-policy.schema.json",
+  "title": "GatePolicy",
+  "description": "게이트 정책 파일(선택). deploy가 배치하고 release-gate가 읽는다(GATE_POLICY_FILE 또는 잡 설정의 policy_file). 통과 임계치는 없다: 출고는 사람이 정한다(D53). 필수 검사 네 가지는 정책이 줄일 수 없고 코드에 고정이다. 파일이 없으면 기본 정책(버전 human-approval-1).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "gate_policy_version": {"type": "string", "minLength": 1, "description": "GateDecision.gate_policy_version에 남는 값."},
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "CONTRACT_COMPAT": {
+          "type": "object", "additionalProperties": false,
+          "properties": {"require_lineage_runtime_match": {"type": "boolean", "description": "기본 true. 모델 학습 계보의 turn-engine·model-runtime 버전이 게이트가 아는 값과 같아야 한다(RG-01의 출처 문제는 별도)."}}
+        }
+      }
+    }
+  }
+}

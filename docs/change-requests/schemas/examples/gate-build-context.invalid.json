@@ -1,0 +1,1 @@
+{"inputs":{},"context_layout":{"wheels":["turn_engine-0.4.2-py3-none-any.whl"],"survey-schema":["CONTRACT_VERSION","schemas"],"release-gate":["pyproject.toml","requirements.lock","release_gate"]},"labels":{"io.openit.service":"release-gate"}}
