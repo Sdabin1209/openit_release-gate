@@ -12,8 +12,13 @@ from release_gate import (GateConfig, GateEngine, GatePolicy, SchemaSet, SurveyS
 from fakes import FakeModels, FakeQuestions
 
 ROOT = Path(__file__).resolve().parents[2]
-# 왜: 문진 스키마는 패키지로 배포되지 않아 이웃 폴더(읽기 전용)나 환경 변수로 위치를 받는다. 이웃 폴더가 없는 머신은 GATE_SURVEY_SCHEMA_DIR로 준다(main.py와 같은 이름).
-SURVEY = Path(os.environ.get("GATE_SURVEY_SCHEMA_DIR") or ROOT / "survey-service" / "schema")
+# 왜: 문진 스키마는 survey-service가 배포한 패키지(requirements.txt의 openit-survey-schema)에서 읽는다. 이웃 폴더 없이 시험이 돌게 하기 위해서다.
+# 패키지가 없을 때만 형제 배치의 ../survey-service/schema(읽기 전용)를 쓴다.
+try:
+    from survey_schema import contract_version_dir
+    SURVEY = contract_version_dir(1)
+except ImportError:
+    SURVEY = ROOT / "survey-service" / "schema"
 
 
 class Clock:
