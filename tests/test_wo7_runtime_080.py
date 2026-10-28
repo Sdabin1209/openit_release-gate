@@ -2,11 +2,9 @@
 (model-runtime/docs/CHANGELOG.md 0.8.0 호환 깨짐 3). 게이트는 설치된 버전을 매니페스트에 쓰므로 0.8.x를 받아들이고 0.7.x 하드코딩이 없어야 한다."""
 from __future__ import annotations
 
-from importlib import metadata as md
-
 from release_gate import GateConfig
 
-TE = md.version("turn-engine")  # 기준값은 설치된 turn-engine(D109: 2.x 동안 고정 표지)
+from release_gate.main import TURN_ENGINE_REFERENCE_VERSION as TE  # 기준값은 D109의 고정 표지(설치하지 않는다)
 
 
 def _world_with(world, rt):

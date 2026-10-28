@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 이미지 빌드 컨텍스트를 .build/ctx 에 만든다. ../boundary-contracts 와 ../survey-service/schema 는 읽기만 한다.
 # boundary-contracts 는 태그 시점 소스(git archive)로 wheel을 만들어 담는다.
-# GATE_LIB_WHEELS_DIR 가 있으면 그 안의 *.whl(turn-engine, model-runtime 등 배포된 wheel)을 함께 담는다.
+# GATE_LIB_WHEELS_DIR 가 있으면 그 안의 *.whl(model-runtime 등 배포된 wheel)을 함께 담는다.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 # 왜: 태그 기본값을 여기 따로 적으면 deploy/scripts/lib.sh 표와 어긋난다. 이 리포가 고정한 pin(requirements.txt)이 정본이므로 거기서 읽고,

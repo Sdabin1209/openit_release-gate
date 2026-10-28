@@ -7,7 +7,7 @@ bash scripts/setup-env.sh && . .venv/bin/activate      # 멱등. requirements.tx
 python -m pytest -q                                      # 단위, 적합성(메모리·SQLite, TEST_DATABASE_URL이 있으면 PostgreSQL도), HTTP
 TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)" python -m pytest -q   # PostgreSQL 포함. 없으면 그 시험은 SKIP이고 PASS로 세지 않는다
 scripts/dev-postgres.sh down                             # 시험용 postgres:16 정리 (../deploy/scripts/dev-postgres.sh 가 있으면 그것을 쓴다)
-scripts/smoke.sh                                         # TURN_ENGINE_TAG·MODEL_RUNTIME_TAG(또는 GATE_LIB_WHEELS_DIR) 필수, 값은 deploy/scripts/lib.sh 기준 표에서 정해진다. 고정된 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(표준 `docker`, 데몬에 못 닿으면 중단)
+scripts/smoke.sh                                         # MODEL_RUNTIME_TAG(또는 GATE_LIB_WHEELS_DIR) 필수, 값은 deploy/scripts/lib.sh 기준 표에서 정해진다. 고정된 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(표준 `docker`, 데몬에 못 닿으면 중단)
 ```
 
 ## 환경 변수 (gate-service)
@@ -20,7 +20,7 @@ scripts/smoke.sh                                         # TURN_ENGINE_TAG·MODE
 | `GATE_DATA_DIR` | 레지스트리 디렉터리(볼륨). 기본 `/data`. 번들 파일(`releases/`)은 DB 종류와 상관없이 여기에 둔다. SQLite 모드에서는 DB 파일도 여기에 있다 |
 | `GATE_SURVEY_SCHEMA_DIR` | 문진 스키마(이미지에 포함). 경계 계약 스키마는 boundary-contracts 패키지에 들어 있다 |
 | `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION` | 빌드 때 고정한 문진 스키마 정수 버전 |
-| `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` | 선택(덮어쓰기). 없으면 **설치된 turn-engine, model-runtime 패키지의 실제 버전**을 읽고, 읽지 못하면 값이 없는 것으로 보고, 승인(매니페스트 생성)은 FAILED_PRECONDITION(RUNTIME_VERSION_UNKNOWN)으로 거부하며 이웃(I1·I3)이 연결된 `serve`는 시작하지 않는다. 이 값이 릴리스 매니페스트에 기록되고 학습 때 버전과의 일치 검사(CONTRACT_COMPAT)에 쓰인다. `/readyz`에 보인다 |
+| `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` | 선택(덮어쓰기). turn-engine은 패키지를 설치하지 않고 설정 기준 문자열을 쓴다(기본 `0.4.3`, v 없음. D109: 2.x 동안 계보 필드의 고정 표지, 3.0.0에서 바뀐다). 없으면 model-runtime은 **설치된 패키지의 실제 버전**을 읽고, 읽지 못하면 값이 없는 것으로 보고, 승인(매니페스트 생성)은 FAILED_PRECONDITION(RUNTIME_VERSION_UNKNOWN)으로 거부하며 이웃(I1·I3)이 연결된 `serve`는 시작하지 않는다. 이 값이 릴리스 매니페스트에 기록되고 학습 때 버전과의 일치 검사(CONTRACT_COMPAT)에 쓰인다. `/readyz`에 보인다 |
 | `GATE_POLICY_FILE` | gate_policy JSON. 설정하지 않으면 기본 정책. 설정했는데 파일이 없거나 읽지 못하면 PolicyError로 기동 거부(fail-closed) |
 | `GATE_READ_TOKENS`, `GATE_WRITE_TOKENS` (또는 `*_FILE`) | 필수. 비밀이므로 `GATE_READ_TOKENS_FILE`, `GATE_WRITE_TOKENS_FILE`로 파일 경로를 주는 것이 표준이다(아래 "비밀은 NAME_FILE로"). `역할=토큰,역할=토큰` 형식으로 역할에 묶는다. 읽기 예: `survey-service=…,ops-feedback=…,question-authoring=…,model-lab=…`, 쓰기 예: `operator=…,ops-feedback=…,question-authoring=…,model-lab=…,release-approver=…` (승인 요청은 `release-approver` 쓰기 토큰 + gateway가 붙인 `X-Openit-User` 필요). 토큰이 없거나 틀리면 401(`WWW-Authenticate: Bearer`), 읽기 토큰으로 쓰기 경로를 부르거나 쓰기 토큰으로 읽기 면을 부르면 403이다(boundary-contracts CONVENTIONS.md "401과 403"). `/healthz`, `/readyz`는 인증이 없다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
 | `GATE_REQUEST_TIMEOUT_SECONDS`, `GATE_MAX_CONNECTIONS`, `GATE_SHUTDOWN_GRACE_SECONDS`, `GATE_MAX_PENDING_SUBMISSIONS` | 요청 소켓 timeout(30), 동시 연결 상한(64), 종료 유예(20), 결정 전 접수 상한(기본 없음). 근거는 docs/adr/0008 |
@@ -45,7 +45,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 
 ## gate_policy (선택)
 
-`GATE_POLICY_FILE`(또는 `judge` 설정의 `policy_file`)의 JSON이다. 통과 임계치는 없다. 형식은 `release_gate/schemas/gate_policy.schema.json`이 정하고 틀리면 `PolicyError`로 **시작하지 않는다**. 경로를 설정하지 않으면 기본 정책이다. 설정한 경로의 파일이 없거나 읽지 못하면 **시작하지 않는다**(조용히 기본 정책으로 가지 않는다).
+`GATE_POLICY_FILE`(또는 `judge` 설정의 `policy_file`)의 JSON이다. 통과 임계치는 없다. 형식은 계약 `GatePolicy` 스키마(boundary-contracts 2.2.1, `boundary_contracts.validator("GatePolicy")`)가 정하고 틀리면 `PolicyError`로 **시작하지 않는다**. 경로를 설정하지 않으면 기본 정책이다. 설정한 경로의 파일이 없거나 읽지 못하면 **시작하지 않는다**(조용히 기본 정책으로 가지 않는다).
 
 ```json
 {"gate_policy_version": "human-approval-2", "checks": {"CONTRACT_COMPAT": {"require_lineage_runtime_match": true}}}
@@ -54,13 +54,13 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 | 키 | 뜻 |
 | --- | --- |
 | `gate_policy_version` | 판정 기록에 남는 정책 버전(기본 `human-approval-1`) |
-| `checks.CONTRACT_COMPAT.require_lineage_runtime_match` | 학습 때 turn-engine·model-runtime 버전이 게이트 설치 버전과 같아야 한다(기본 true) |
+| `checks.CONTRACT_COMPAT.require_lineage_runtime_match` | 학습 때 turn-engine·model-runtime 버전이 게이트 기준 버전(turn-engine은 설정 기준 문자열, model-runtime은 설치 버전)과 같아야 한다(기본 true) |
 
 **이전 형식(`o11_resolved`, `required_checks`, `checks.ACCEPTANCE_EVAL.thresholds`)의 파일은 거부된다.** 지워야 한다. 자동 검사 네 가지는 정책이 줄일 수 없다.
 
 ## 후보 수집기: run-once 잡 (D39)
 
-`python -m release_gate collect --config collect.json` 은 한 번 실행하고 끝난다. 같은 조합은 게이트가 기존 접수를 돌려주므로 여러 번 실행해도 접수가 늘지 않는다(멱등). 언제 돌릴지는 deploy의 스케줄러가 정한다. 서비스는 수집을 스스로 돌리지 않는다. 표준 출력에 JSON 한 줄(`status`, `submitted`, `new`)을 내고, I1·I3가 일시적으로 안 되면 `deferred`를 내고 종료 코드 75(재시도 가능)로 끝난다. 다른 실패는 0이 아닌 코드와 로그다. `judge`는 대기 중인 접수의 판정을 한 걸음 진행하는 같은 형태의 잡이다(서비스의 루프와 같은 일).
+`python -m release_gate collect --config collect.json` 은 한 번 실행하고 끝난다. 같은 조합은 게이트가 기존 접수를 돌려주므로 여러 번 실행해도 접수가 늘지 않는다(멱등). 언제 돌릴지는 deploy의 스케줄러가 정한다. 서비스는 수집을 스스로 돌리지 않는다. 표준 출력에 JSON 한 줄(`status`, `submitted`, `new`)을 내고, I1·I3가 일시적으로 안 되면 `deferred`를 내고 종료 코드 75(재시도 가능)로 끝난다. 설정 오류와 예기치 못한 예외도 같은 형태로 `{"job", "status": "failed", "code", "reason"}` 한 줄을 내고 종료 코드 1이다(설정 오류 code는 `INVALID_RECORD`, 예기치 못한 예외는 `UNAVAILABLE`이며 reason에는 예외 종류만 싣고 자세한 것은 로그에 둔다). 모든 출력은 내기 전에 계약 `GateJobResult`로 자기 검사하고, 설정 파일은 계약 `GateJobConfig`(모르는 키 거부)로 검사한다. `judge`는 대기 중인 접수의 판정을 한 걸음 진행하는 같은 형태의 잡이다(서비스의 루프와 같은 일).
 
 설정 파일(JSON, 모두 선택이며 비우면 환경 변수를 쓴다):
 

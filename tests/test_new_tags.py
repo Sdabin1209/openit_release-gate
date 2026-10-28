@@ -23,7 +23,8 @@ def _old_versions(cur: str) -> list[str]:
     return sorted(out)
 
 
-TE, MR = md.version("turn-engine"), md.version("model-runtime")
+from release_gate.main import TURN_ENGINE_REFERENCE_VERSION as TE  # turn-engine은 설치하지 않는다(D109): 기준 문자열
+MR = md.version("model-runtime")
 
 
 @pytest.fixture

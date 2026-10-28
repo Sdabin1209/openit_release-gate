@@ -19,10 +19,10 @@ run() {
 
 # --upgrade: 오래된 설치가 있어도 핀 버전과 같아지게 한다(잠금 파일은 == 핀이라 내려가기도 한다).
 run "계약 패키지와 잠금 의존 설치" "${PIP[@]}" --upgrade -r requirements.txt
-# turn-engine·model-runtime: 태그 핀, 의존은 위에서 이미 맞췄으므로 --no-deps. 같은 버전이어도 소스가 다를 수 있어 다시 설치한다.
-run "turn-engine, model-runtime 설치" "${PIP[@]}" --no-deps --force-reinstall -r requirements-libs.txt
+# model-runtime: 태그 핀(turn-engine은 설치하지 않는다, requirements-libs.txt), 의존은 위에서 이미 맞췄으므로 --no-deps. 같은 버전이어도 소스가 다를 수 있어 다시 설치한다.
+run "model-runtime 설치" "${PIP[@]}" --no-deps --force-reinstall -r requirements-libs.txt
 run "이 리포와 시험 도구 설치" "${PIP[@]}" -e '.[test]'
 
 .venv/bin/python -m pip check >&2 || { echo "setup-env: 의존 충돌(pip check 실패)" >&2; exit 1; }
 echo "setup-env: 완료"
-.venv/bin/python -m pip list 2>/dev/null | grep -iE '^(boundary-contracts|turn-engine|model-runtime|release-gate|pytest) ' || true
+.venv/bin/python -m pip list 2>/dev/null | grep -iE '^(boundary-contracts|model-runtime|release-gate|pytest) ' || true

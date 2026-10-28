@@ -26,7 +26,7 @@
 | ReleaseReader (I4) | `reader.py` | 읽기. 읽기 전용 저장소로도 동작 |
 | HTTP 면 | `app.py`, `main.py` | `/healthz`, `/readyz`, 토큰 인증, 주기 작업 |
 
-의존은 `boundary_contracts`(sdk Protocol, errors, canonical, 패키지에 든 스키마), 문진 스키마(`CONTRACT_VERSION`, `QuestionBank`)뿐이다. turn-engine·model-runtime은 코드가 가져다 쓰지 않고, 설치된 패키지의 버전 문자열만 읽어 매니페스트와 호환 검사에 쓴다.
+의존은 `boundary_contracts`(sdk Protocol, errors, canonical, 패키지에 든 스키마), 문진 스키마(`CONTRACT_VERSION`, `QuestionBank`)뿐이다. turn-engine·model-runtime은 코드가 가져다 쓰지 않는다. model-runtime은 설치된 패키지의 버전 문자열을, turn-engine은 설정 기준 문자열(기본 0.4.3, D109)을 매니페스트와 호환 검사에 쓴다. 설정·정책·잡 결과·`/readyz`·ext의 형식은 계약 스키마(GateJobConfig, GatePolicy, GateJobResult, GateReadyz, GateExt)가 정본이고 리포 안에 사본을 두지 않는다.
 
 ## 2. 출고 결정은 사람이 한다 (D53)
 

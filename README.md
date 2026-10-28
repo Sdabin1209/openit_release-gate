@@ -12,7 +12,7 @@
 | --- | --- | --- | --- |
 | 입력 | question-authoring | I1 QuestionReader | 문항 세트(`get_question_bank`)와 검수 기록(`get_reviews`) |
 | 입력 | model-lab | I3 ModelRegistry | 모델 패키지 매니페스트와 어댑터(`get_manifest`, `open_adapter`) |
-| 입력 | turn-engine, model-runtime | I8, I9 | 코드는 쓰지 않고 설치된 버전 문자열만 읽어 기록·호환 검사 |
+| 입력 | turn-engine, model-runtime | I8, I9 | 코드는 쓰지 않는다. model-runtime은 설치된 버전 문자열, turn-engine은 설정 기준 문자열(D109, 설치하지 않음)을 기록·호환 검사에 쓴다 |
 | 입력 | 승인자, 운영자, 운영 관측 | I5 GateService (HTTP) | 후보 제출, 승인 결정, 활성화, 롤백 요청 |
 | 출력 | survey-service, 운영 관측, question-authoring, model-lab | I4 ReleaseReader (HTTP 읽기) | 활성 포인터, 릴리스 묶음, 판정 조회 |
 
@@ -56,7 +56,7 @@ bash scripts/setup-env.sh && . .venv/bin/activate
 # 2) 시험 (문진 스키마는 설치된 openit-survey-schema 패키지에서 읽는다)
 python -m pytest -q
 # 3) 이미지 빌드 + 스모크(/healthz, /readyz, 토큰 거부, 비root, 라벨). 호스트 포트는 Docker가 배정
-scripts/smoke.sh   # TURN_ENGINE_TAG, MODEL_RUNTIME_TAG(또는 GATE_LIB_WHEELS_DIR) 필수, 값은 deploy/scripts/lib.sh 기준 표에서 정해진다. 없으면 사용법을 보이고 실패
+scripts/smoke.sh   # MODEL_RUNTIME_TAG(또는 GATE_LIB_WHEELS_DIR) 필수, 값은 deploy/scripts/lib.sh 기준 표에서 정해진다. 없으면 사용법을 보이고 실패
 # 4) 실행 (이미지의 기본 진입점은 Dockerfile의 `CMD ... serve`. 아래는 코드 진입점)
 #    SIGTERM을 받으면 새 연결을 거부하고 처리 중인 요청을 기다린 뒤 저장소를 닫고 끝난다
 python -m release_gate serve
@@ -120,3 +120,4 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | [0008](docs/adr/0008-timeouts.md) | timeout 값과 근거 |
 | [0009](docs/adr/0009-retention.md) | 보존·정리 |
 | [0010](docs/adr/0010-rollback.md) | 롤백 설계 |
+| [0011](docs/adr/0011-turn-engine-reference-string.md) | turn-engine은 설치하지 않고 기준 문자열만 설정으로 |

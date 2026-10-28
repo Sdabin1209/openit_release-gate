@@ -19,7 +19,7 @@ import sys
 import threading
 import time
 
-from boundary_contracts import read_secret
+from boundary_contracts import read_secret, validator
 from boundary_contracts.errors import BoundaryError
 
 from .app import DEFAULT_MAX_CONNECTIONS, DEFAULT_REQUEST_TIMEOUT, GateHTTPServer, Loop
@@ -27,7 +27,7 @@ from .checks import CheckRegistry
 from .collector import CandidateCollector
 from .config import GateConfig
 from .gate import GateEngine
-from .policy import GatePolicy
+from .policy import GatePolicy, PolicyError
 from .postgres_store import DEFAULT_CONNECT_TIMEOUT, DEFAULT_PROBE_TIMEOUT, DEFAULT_STATEMENT_TIMEOUT
 from .registry import open_registry
 from .retention import (DEFAULT_ATTEMPTS_DAYS, DEFAULT_KEEP_RELEASES, DEFAULT_REJECTED_DAYS, RetentionPolicy,
@@ -38,6 +38,9 @@ from .store import SqliteStore
 
 log = logging.getLogger("gate")
 EX_TEMPFAIL = 75
+# 왜 상수: turn-engine 버전은 학습 계보(lineage.turn_engine_version)와 비교하는 기준 문자열일 뿐 코드 의존이 아니다.
+# D109: 2.x 동안 이 필드는 남고 값은 v0.4.3 고정 표지이며 3.0.0에서 action_rules_version으로 바뀐다. 그래서 패키지를 설치하지 않고 설정값(GATE_TURN_ENGINE_VERSION)으로 받는다(v 없음).
+TURN_ENGINE_REFERENCE_VERSION = "0.4.3"
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -63,8 +66,8 @@ def installed_version(*dist_names: str) -> "str | None":
 
 
 def lib_versions() -> "tuple[str | None, str | None]":
-    """(turn-engine, model-runtime). 환경 변수로 덮어쓸 수 있고 기본은 설치된 패키지에서 읽는다."""
-    return (os.environ.get("GATE_TURN_ENGINE_VERSION") or installed_version("turn-engine", "turn_engine"),
+    """(turn-engine, model-runtime). turn-engine은 설정값(기본 D109 표지 0.4.3), model-runtime은 환경 변수로 덮어쓸 수 있고 기본은 설치된 패키지에서 읽는다."""
+    return (os.environ.get("GATE_TURN_ENGINE_VERSION") or TURN_ENGINE_REFERENCE_VERSION,
             os.environ.get("GATE_MODEL_RUNTIME_VERSION") or installed_version("model-runtime", "model_runtime"))
 
 
@@ -116,14 +119,27 @@ def make(spec: str | None, options: dict | None = None):
     return getattr(importlib.import_module(mod), fn)(**_resolve_options(options or {}))
 
 
+def _safe_error(e) -> str:
+    """스키마 오류를 한 줄로. 왜 e.message를 그대로 안 쓰나: jsonschema 메시지는 위반한 값을 싣고, 설정에는 비밀이 잘못 적혀 있을 수 있다.
+    키 이름만 싣는 종류(모르는 키, 필수 키)만 원문을 쓰고 나머지는 경로와 위반 종류만 낸다."""
+    where = "/".join(map(str, e.path)) or "."
+    return f"{where}: {e.message}" if e.validator in ("additionalProperties", "required") else f"{where}: {e.validator} 위반"
+
+
 def load_config(path: str | None) -> dict:
     """수집·판정 잡의 설정 파일. 없으면 환경 변수만 쓴다. 깨진 파일은 실패한다."""
     if not path:
         return {}
     with open(path, encoding="utf-8") as f:
         cfg = json.load(f)
-    if not isinstance(cfg, dict):
-        raise SystemExit("설정 파일은 JSON 객체여야 한다")
+    # 왜: 형식의 정본은 계약의 GateJobConfig 스키마다(모르는 키 거부, 비밀은 {"secret": NAME}). 손으로 키를 검사하지 않는다(R7)
+    errs = sorted(validator("GateJobConfig").iter_errors(cfg), key=lambda e: list(e.path))
+    if errs:
+        hint = ""
+        if any(any(p in str(e.path[-1]).lower() for p in _SECRET_KEY_PARTS) for e in errs if e.path):
+            hint = '. 비밀 값을 설정 파일에 직접 적을 수 없다: 비밀은 NAME_FILE로 주고 설정에는 {"secret": "NAME"}만 쓴다'
+        raise SystemExit("설정 파일 형식 오류(GateJobConfig): " + "; ".join(_safe_error(e) for e in errs[:5]) + hint)
+    # 스키마는 옵션 최상위 키의 인라인 비밀만 표현한다. 중첩된 곳은 코드가 막는다(스키마 설명). 비밀 값은 읽지 않고 키 이름만 검사
     for k in ("i1_options", "i3_options"):   # 시작 때 바로 거부한다(비밀 값은 읽지 않고 키 이름만 검사)
         _check_inline_secrets(cfg.get(k) or {}, k)
     return cfg
@@ -254,6 +270,20 @@ def make_status(policy, judging, config, reg, engine, loop, retention: "Retentio
     return status
 
 
+def emit(out: dict) -> None:
+    """잡의 stdout JSON 한 줄. 내보내기 전에 계약 GateJobResult로 자기 검사한다(스케줄러가 읽는 약속이므로 어긋나면 내지 않는다)."""
+    errs = sorted(validator("GateJobResult").iter_errors(out), key=lambda e: list(e.path))
+    if errs:
+        raise BoundaryError("INVALID_RECORD", "GateJobResult 위반: " + "; ".join(
+            f"{'/'.join(map(str, e.path)) or '.'}: {e.message}" for e in errs[:3]))
+    print(json.dumps(out, ensure_ascii=False))
+
+
+def _failed(job: str, code: str, reason: str) -> int:
+    emit({"job": job, "status": "failed", "code": code, "reason": reason})
+    return 1
+
+
 def serve() -> None:
     _logging()
     cfg = load_config(os.environ.get("GATE_CONFIG"))
@@ -338,16 +368,16 @@ def collect(cfg: dict) -> int:
         made = c.run_once(raise_unavailable=True)
     except Exception as e:
         if isinstance(e, BoundaryError) and e.retryable:
-            print(json.dumps({"job": "collect", "status": "deferred", "reason": e.message}, ensure_ascii=False))
+            emit({"job": "collect", "status": "deferred", "reason": e.message})
             return EX_TEMPFAIL
         raise
     out = {"job": "collect", "status": "ok", "submitted": len(made), "new": len(reg.store.submission_ids()) - before}
     if c.skipped:
         # 읽지 못한 항목이 있으면 나머지는 제출했더라도 성공으로 끝내지 않는다(스케줄러의 FAIL 기록에 보이게 한다)
         out.update({"status": "partial", "skipped": c.skipped})
-        print(json.dumps(out, ensure_ascii=False))
+        emit(out)
         return 1
-    print(json.dumps(out, ensure_ascii=False))
+    emit(out)
     return 0
 
 
@@ -358,7 +388,7 @@ def judge(cfg: dict) -> int:
     if questions is None or models is None:
         raise SystemExit("i1_factory와 i3_factory가 필요하다")
     ds = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry()).process_pending()
-    print(json.dumps({"job": "judge", "status": "ok", "decisions": [d["decision_id"] for d in ds]}, ensure_ascii=False))
+    emit({"job": "judge", "status": "ok", "decisions": [d["decision_id"] for d in ds]})
     return 0
 
 
@@ -367,7 +397,7 @@ def prune(cfg: dict, *, dry_run: bool = False) -> int:
     policy = _retention_policy()
     _, _, _, reg = _build(cfg)
     out = retention_prune(reg.store, policy, now=utc_now(), apply=not dry_run)
-    print(json.dumps({"job": "prune", "status": "ok", **out}, ensure_ascii=False))
+    emit({"job": "prune", "status": "ok", **out})
     return 0
 
 
@@ -382,16 +412,22 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
     if a.cmd == "serve":
         serve()
-    else:
-        _logging()
+        return 0
+    _logging()
+    try:
         cfg = load_config(a.config)
-        try:
-            if a.cmd == "prune":
-                return prune(cfg, dry_run=a.dry_run)
-            return {"collect": collect, "judge": judge}[a.cmd](cfg)
-        except BoundaryError as e:
-            # 상한 안에 오류가 올라오므로 무한 대기하지 않고 비정상 종료 코드로 끝난다(DB·이웃 무응답 포함).
-            # 재시도 가능(UNAVAILABLE)이면 75, 인증 실패 등 재시도로 풀리지 않는 것은 1(조용히 삼키지 않는다, FAULT_POLICY 9)
-            print(json.dumps({"job": a.cmd, "status": "failed", "code": e.code, "reason": e.message}, ensure_ascii=False))
-            return EX_TEMPFAIL if e.retryable else 1
-    return 0
+        if a.cmd == "prune":
+            return prune(cfg, dry_run=a.dry_run)
+        return {"collect": collect, "judge": judge}[a.cmd](cfg)
+    except BoundaryError as e:
+        # 상한 안에 오류가 올라오므로 무한 대기하지 않고 비정상 종료 코드로 끝난다(DB·이웃 무응답 포함).
+        # 재시도 가능(UNAVAILABLE)이면 75, 인증 실패 등 재시도로 풀리지 않는 것은 1(조용히 삼키지 않는다, FAULT_POLICY 9)
+        _failed(a.cmd, e.code, e.message)
+        return EX_TEMPFAIL if e.retryable else 1
+    except (SystemExit, PolicyError, json.JSONDecodeError) as e:
+        # 설정 오류도 스케줄러가 읽는 JSON 한 줄로 낸다(CR-0009 헤드 답 2026-10-29). 종료 코드 1: 설정은 재시도로 풀리지 않는다
+        return _failed(a.cmd, "INVALID_RECORD", str(e.code if isinstance(e, SystemExit) else e))
+    except Exception as e:      # noqa: BLE001 - 예기치 못한 예외도 JSON 한 줄(같은 결정)
+        log.exception("%s 잡이 예기치 못한 예외로 끝났다", a.cmd)
+        # 예외 문구에는 접속 정보 같은 비밀이 섞일 수 있어 종류만 싣는다. 자세한 것은 로그(위). code는 5xx와 같은 UNAVAILABLE(CR-0010 대기), 종료 코드는 1
+        return _failed(a.cmd, "UNAVAILABLE", f"예기치 못한 예외: {type(e).__name__} (자세한 내용은 로그)")

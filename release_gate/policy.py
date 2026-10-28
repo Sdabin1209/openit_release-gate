@@ -7,7 +7,6 @@ D53: 출고는 사람이 정한다. 정책에는 통과 임계치가 없다. 자
 """
 from __future__ import annotations
 
-import importlib.resources
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,17 +16,13 @@ DEFAULT_VERSION = "human-approval-1"
 
 
 class PolicyError(ValueError):
-    """정책 파일이 형식(gate_policy.schema.json)을 어겼다."""
-
-
-def policy_schema() -> dict:
-    return json.loads(importlib.resources.files("release_gate").joinpath("schemas/gate_policy.schema.json")
-                      .read_text(encoding="utf-8"))
+    """정책 파일이 형식(계약 GatePolicy 스키마)을 어겼다."""
 
 
 def validate_policy(d: object) -> None:
-    import jsonschema
-    errs = sorted(jsonschema.Draft202012Validator(policy_schema()).iter_errors(d), key=lambda e: list(e.path))
+    # 왜: 형식의 정본은 계약의 GatePolicy 스키마다(boundary-contracts 2.2.1, 모르는 키 거부). 리포 안의 사본은 두지 않는다(R7).
+    import boundary_contracts
+    errs = sorted(boundary_contracts.validator("GatePolicy").iter_errors(d), key=lambda e: list(e.path))
     if errs:
         raise PolicyError("gate_policy 형식 오류: " + "; ".join(
             f"{'/'.join(map(str, e.path)) or '.'}: {e.message}" for e in errs[:5]))

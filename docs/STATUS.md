@@ -1,3 +1,8 @@
+# STATUS (단위 3, 2026-10-29): 계약 v2.2.1, model-runtime v0.9.0, 문진 스키마 패키지 survey-schema-v1.1.0
+- 설정·정책·잡 결과·ext를 계약 스키마(GateJobConfig, GatePolicy, GateJobResult, GateExt)로 검사한다. 리포 안의 gate_policy 스키마 사본은 지웠다. 설정 오류와 예기치 못한 예외도 stdout에 `status: failed` JSON 한 줄(종료 코드 1). `/readyz` 본문은 시험이 GateReadyz로 확인한다.
+- turn-engine 패키지를 설치하지 않는다. 기준 문자열은 설정 GATE_TURN_ENGINE_VERSION(기본 0.4.3, D109). 이미지 라벨 io.openit.turn-engine은 n/a. Dockerfile ARG 기본값은 n/a.
+- 이 줄 아래는 이전 단위의 기록이고, 거기 적힌 버전 값은 그 시점의 값이다.
+
 # STATUS (2026-10-27, turn-engine v0.4.0, boundary-contracts v2.0.2, model-runtime v0.7.3)
 - 2026-10-28 전수 점검 지적 수정(SIGTERM, 락 밖 복사, 제자리 검증, N+1, 보존 prune, 승인 X-Openit-User 필수, 요청 한도, 시도 기록, ADR 10편). pytest PostgreSQL 없이 356 통과 230 건너뜀, 포함 544 통과 42 건너뜀(정리-활성화 경쟁 수정 뒤), 0 실패. scripts/smoke.sh 통과(SMOKE OK, 라벨 model-runtime 0.7.3). 못 한 것은 boundary.md "감사 지적 처리"의 안 고친 것. push 안 함.
 - 2026-10-28 model-runtime 기본 태그를 v0.7.3으로 올렸다(build_image.sh, runbook, test_new_tags.py 기준). 확인: 이미지 라벨 model-runtime 0.7.3, venv에 model-runtime v0.7.3 설치(이웃 로컬 폴더의 태그 소스).

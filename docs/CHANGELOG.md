@@ -1,5 +1,11 @@
 # 변경 이력
 
+## (미배포) 단위 3: 계약 v2.2.1, model-runtime v0.9.0, 문진 스키마 v1.1.0, 계약 스키마로 검증
+
+- 핀: boundary-contracts v2.2.1, model-runtime v0.9.0, openit-survey-schema survey-schema-v1.1.0. turn-engine은 설치하지 않는다(ADR-0011, D109).
+- 설정 파일(`GateJobConfig`), 정책 파일(`GatePolicy`)을 계약 스키마로 검사한다(모르는 키 거부). `release_gate/schemas/gate_policy.schema.json` 사본은 삭제. 잡 출력은 `GateJobResult`로 자기 검사하고, 활성 포인터·롤백 영수증의 ext는 `GateExt`로 검사한다. 설정 오류와 예기치 못한 예외도 stdout에 `status: failed` JSON 한 줄(종료 코드 1).
+- Dockerfile ARG 기본값 unknown을 n/a로, 커밋을 못 읽으면 빌드를 멈춘다.
+
 ## (미배포) 정리와 활성화 경쟁 수정 (재점검 M1)
 
 - `prune`이 계획 뒤 활성화된 릴리스를 정리해 활성 포인터가 PRUNED를 가리킬 수 있던 것을 고쳤다: 삭제 직전 포인터 락 안에서 보호 대상 재확인, `switch_pointer`가 PRUNED 대상 전환 거부. 보호에 "활성화 전 승인 릴리스"를 더하고 keep=0도 활성·직전·활성화 전은 지우지 않는다.

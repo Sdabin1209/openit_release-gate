@@ -1,10 +1,11 @@
 # 빌드 컨텍스트는 scripts/stage_context.sh 가 만든 .build/ctx 이다: boundary-contracts 태그 시점 소스로 만든
-# wheel(wheels/), 선택으로 turn-engine·model-runtime wheel, 문진 스키마. 이미지 안에서는 ssh로 git을 받지 않는다. 직접 빌드: scripts/smoke.sh
+# wheel(wheels/), 선택으로 model-runtime wheel, 문진 스키마. 이미지 안에서는 ssh로 git을 받지 않는다. 직접 빌드: scripts/smoke.sh
 FROM python:3.12-slim
 
-ARG COMMIT=unknown
-ARG BOUNDARY_VERSION=unknown
-ARG SURVEY_SCHEMA_VERSION=unknown
+# 왜 n/a: 값 없음의 표기는 계약 ImageLabels에서 n/a 하나다(none·unset·unknown 불가). build_image.sh는 항상 실제 값을 넘긴다.
+ARG COMMIT=n/a
+ARG BOUNDARY_VERSION=n/a
+ARG SURVEY_SCHEMA_VERSION=n/a
 ARG TURN_ENGINE_VERSION=n/a
 ARG MODEL_RUNTIME_VERSION=n/a
 LABEL io.openit.service="release-gate" \
@@ -28,7 +29,7 @@ RUN pip install -r release-gate/requirements.lock
 COPY wheels ./wheels
 COPY survey-schema /opt/contracts/survey-schema
 COPY release-gate ./release-gate
-# turn-engine·model-runtime wheel이 컨텍스트에 있으면 함께 설치한다. 서비스는 설치된 버전을 읽어 라벨·매니페스트에 쓴다.
+# model-runtime wheel이 컨텍스트에 있으면 함께 설치한다. 서비스는 설치된 버전을 읽어 매니페스트에 쓴다. turn-engine은 설치하지 않는다(라벨 n/a, 기준 문자열은 설정 GATE_TURN_ENGINE_VERSION, D109).
 RUN pip install --no-deps ./wheels/*.whl ./release-gate && rm -rf /src
 
 USER gate

@@ -109,10 +109,12 @@ class GateServiceImpl:
         """GET /v1/submissions/{id}/review-report. 자동 검사가 끝난 제출만(아니면 CONFLICT, HTTP 409)."""
         return review_report_for(self.store, self.schemas, self.clock, submission_id)
 
-    @staticmethod
-    def _actor_ext(role: str, actor: Optional[str]) -> dict:
-        """행위자 기록(D85). ext의 키는 영역 이름이다. 요청자는 헤더로 정해진 값이며 본문의 자기 신고가 아니다."""
-        return {"release-gate": {"requested_by": actor or f"role:{role}", "requested_by_role": role}}
+    def _actor_ext(self, role: str, actor: Optional[str]) -> dict:
+        """행위자 기록(D85). ext의 키는 영역 이름이다. 요청자는 헤더로 정해진 값이며 본문의 자기 신고가 아니다.
+        왜 쓰기 전에 검사: 소비자(운영 화면)는 GateExt 모양을 믿고 표시한다. 값은 계약 GateExt 스키마로 자기 검사한다."""
+        ext = {"requested_by": actor or f"role:{role}", "requested_by_role": role}
+        self.schemas.validate("GateExt", ext)
+        return {"release-gate": ext}
 
     def _pointer(self, expected: int, release_id: str, cause: str, rollback: Optional[tuple] = None,
                  actor: Optional[tuple] = None) -> Optional[dict]:
