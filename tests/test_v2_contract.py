@@ -87,3 +87,13 @@ def test_tampered_system_prompt_in_stored_bundle_is_integrity_error(world, tmp_p
     with pytest.raises(BoundaryError) as e:
         world.reg.reader.load_bundle(rid, dest=tmp_path / "bad")
     assert e.value.code == "INTEGRITY_ERROR"
+
+
+def test_contract_compat_accepts_any_minor_of_major_2(world):
+    """계약 2.2.0(추가형 MINOR, CHANGELOG): CONTRACT_COMPAT는 MAJOR만 비교하므로 2.1·2.2 매니페스트를 모두 받는다."""
+    for i, psv in enumerate(("2.1", "2.2")):
+        a = world.m.add(f"lora-a{i}", "v1", "LORA_A", pipeline_schema_version=psv)
+        b = world.m.add(f"lora-b{i}", "v1", "LORA_B", pipeline_schema_version=psv)
+        sub = world.reg.service.submit_candidate(world.subject(a=a, b=b), requested_by_role="operator")
+        world.engine().process_pending()
+        assert world.reg.store.get_work(sub["submission_id"])["state"] == "AWAITING_APPROVAL", psv

@@ -16,10 +16,12 @@ from fakes import make_eval_report
 def _linked_adapter(world):
     m = world.m.add("lora-a", "1", "LORA_A")
     d = world.m.dirs[("lora-a", "1")]
-    os.symlink(d / "adapter.bin", d / "alias.bin")             # 파일을 가리키는 링크
-    m["adapter_hash"] = canonical.directory_hash(d)            # 해시에는 링크가 파일로 들어간다(재현 전제)
+    # 계약 2.2.0부터 canonical.directory_hash가 링크를 스스로 거부하므로(CHANGELOG 2.2.0, CONVENTIONS 8절) 해시는 링크를 넣기 전에 만든다.
+    # 어느 계약 버전이든 링크가 든 어댑터는 릴리스가 되면 안 된다는 기대는 같다
+    m["adapter_hash"] = canonical.directory_hash(d)
     m["content_hash"] = canonical.content_hash(m)
     world.m.reports[m["eval_report_ref"]] = json.dumps(make_eval_report(m)).encode()
+    os.symlink(d / "adapter.bin", d / "alias.bin")             # 파일을 가리키는 링크
     return m
 
 
