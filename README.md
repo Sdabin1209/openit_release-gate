@@ -57,7 +57,7 @@ pip install -e ../boundary-contracts -e '.[test]'
 # 2) 시험
 python -m pytest -q
 # 3) 이미지 빌드 + 스모크(/healthz, /readyz, 토큰 거부, 비root, 라벨). 호스트 포트는 Docker가 배정
-scripts/smoke.sh
+scripts/smoke.sh   # TURN_ENGINE_TAG, MODEL_RUNTIME_TAG(또는 GATE_LIB_WHEELS_DIR) 필수, 값은 deploy/scripts/lib.sh 기준 표에서 정해진다. 없으면 사용법을 보이고 실패
 # 4) 실행 (이미지의 기본 진입점은 Dockerfile의 `CMD ... serve`. 아래는 코드 진입점)
 #    SIGTERM을 받으면 새 연결을 거부하고 처리 중인 요청을 기다린 뒤 저장소를 닫고 끝난다
 python -m release_gate serve

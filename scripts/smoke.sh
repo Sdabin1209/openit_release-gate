@@ -4,6 +4,13 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER="${DOCKER:-docker}"
+# 왜: turn-engine·model-runtime 태그는 이 리포의 pin이 없고 deploy/scripts/lib.sh 표가 정본이다. 여기에 기본값을 적으면 표와 어긋나므로
+# 환경 변수(또는 준비된 wheel 폴더)로 받고, 없으면 Docker에 닿기 전에 사용법을 보이며 실패한다.
+if [ -z "${GATE_LIB_WHEELS_DIR:-}" ] && { [ -z "${TURN_ENGINE_TAG:-}" ] || [ -z "${MODEL_RUNTIME_TAG:-}" ]; }; then
+  echo "사용법: TURN_ENGINE_TAG=<태그> MODEL_RUNTIME_TAG=<태그> scripts/smoke.sh   (또는 GATE_LIB_WHEELS_DIR=<wheel 폴더>)" >&2
+  echo "이유: 두 태그의 기준 값은 deploy/scripts/lib.sh 표에서 정해지며 이 리포는 값을 따로 갖지 않는다." >&2
+  exit 2
+fi
 if ! "$DOCKER" info >/dev/null 2>&1; then
   echo "오류: 도커 데몬에 연결할 수 없다('$DOCKER info' 실패). 도커가 실행 중이고 이 셸에서 접근할 수 있는지 확인한다." >&2
   exit 1
