@@ -3,8 +3,7 @@
 ## 개발과 시험
 
 ```
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e ../boundary-contracts -e '.[test]'      # 운영·CI는 requirements.txt(태그 고정)
+bash scripts/setup-env.sh && . .venv/bin/activate      # 멱등. requirements.txt·requirements.lock·requirements-libs.txt(태그 고정)로 설치
 python -m pytest -q                                      # 단위, 적합성(메모리·SQLite, TEST_DATABASE_URL이 있으면 PostgreSQL도), HTTP
 TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)" python -m pytest -q   # PostgreSQL 포함. 없으면 그 시험은 SKIP이고 PASS로 세지 않는다
 scripts/dev-postgres.sh down                             # 시험용 postgres:16 정리 (../deploy/scripts/dev-postgres.sh 가 있으면 그것을 쓴다)

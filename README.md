@@ -48,12 +48,11 @@ model-lab(I3) ──────────┴─> 수집기/제출(I5) ─> �
 
 ## 3. 실행 방법
 
-전제: Python 3.10 이상(pyproject), 같은 워크스페이스의 `../boundary-contracts` 폴더(개발용 설치). 스모크에는 Docker 데몬이 필요하고 CI·운영 설치에는 GitHub SSH 접근이 필요하다(requirements.txt가 `git+ssh` 태그를 고정함). 비밀(토큰)은 환경 변수가 아니라 `NAME_FILE`(파일 경로)로 받는 것이 표준이다(D84): `GATE_READ_TOKENS_FILE`, `GATE_WRITE_TOKENS_FILE`, `GATE_I1_TOKEN_FILE`, `GATE_I3_TOKEN_FILE`. 값은 이미지·리포지토리·로그에 넣지 않는다.
+전제: Python 3.10 이상(pyproject), GitHub SSH 접근(설치가 `git+ssh` 태그 핀을 쓴다. 이웃 폴더는 필요 없다). 스모크에는 Docker 데몬이 필요하고 CI·운영 설치에는 GitHub SSH 접근이 필요하다(requirements.txt가 `git+ssh` 태그를 고정함). 비밀(토큰)은 환경 변수가 아니라 `NAME_FILE`(파일 경로)로 받는 것이 표준이다(D84): `GATE_READ_TOKENS_FILE`, `GATE_WRITE_TOKENS_FILE`, `GATE_I1_TOKEN_FILE`, `GATE_I3_TOKEN_FILE`. 값은 이미지·리포지토리·로그에 넣지 않는다.
 
 ```sh
-# 1) 설치 (CLAUDE.md, docs/runbook.md)
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e ../boundary-contracts -e '.[test]'
+# 1) 설치 (멱등, 핀: requirements.txt, requirements.lock, requirements-libs.txt)
+bash scripts/setup-env.sh && . .venv/bin/activate
 # 2) 시험
 python -m pytest -q
 # 3) 이미지 빌드 + 스모크(/healthz, /readyz, 토큰 거부, 비root, 라벨). 호스트 포트는 Docker가 배정
