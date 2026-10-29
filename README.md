@@ -12,7 +12,7 @@
 | --- | --- | --- | --- |
 | 입력 | question-authoring | I1 QuestionReader | 문항 세트(`get_question_bank`)와 검수 기록(`get_reviews`) |
 | 입력 | model-lab | I3 ModelRegistry | 모델 패키지 매니페스트와 어댑터(`get_manifest`, `open_adapter`) |
-| 입력 | turn-engine, model-runtime | I8, I9 | 코드는 쓰지 않는다. model-runtime은 설치된 버전 문자열, turn-engine은 설정 기준 문자열(D109, 설치하지 않음)을 기록·호환 검사에 쓴다 |
+| 입력 | model-runtime(I9), 계약의 LoRA-A 출력 규칙 | I9 | 코드는 쓰지 않는다. model-runtime은 설치된 버전 문자열, 규칙 세대는 계약 규칙 데이터의 `rules_version`(`action_rules_version`)을 기록·호환 검사에 쓴다 |
 | 입력 | 승인자, 운영자, 운영 관측 | I5 GateService (HTTP) | 후보 제출, 승인 결정, 활성화, 롤백 요청 |
 | 출력 | survey-service, 운영 관측, question-authoring, model-lab | I4 ReleaseReader (HTTP 읽기) | 활성 포인터, 릴리스 묶음, 판정 조회 |
 
@@ -31,7 +31,7 @@ HTTP 경로(boundary.md 기준): 쓰기는 `POST /v1/submissions`, `/v1/approval
 | `release_gate/app.py`, `main.py` | HTTP 면(WSGI 앱 + waitress), 진입점 `serve` / `collect` / `judge` |
 | `release_gate/factories.py`, `schemas.py` | I1·I3 HTTP 클라이언트 팩토리, 쓰기 전 스키마 검증 |
 | `tests/` | 적합성(memory·sqlite·postgres), HTTP, 비밀, 수집·정책, 계약 v2 시험. `fakes.py`가 이웃 대역 |
-| `scripts/` | `build-image.sh`(영역 빌드 진입점, 계약 BuildImageRequest), `smoke.sh`(스모크), 폐기 예정 `build_image.sh`·`stage_context.sh` |
+| `scripts/` | `build-image.sh`(영역 빌드 진입점, 계약 BuildImageRequest), `smoke.sh`(스모크) |
 | `Dockerfile`, `requirements.txt`, `requirements.lock` | 이미지와 태그 고정 의존 |
 | `docs/` | 아래 6절 |
 
@@ -120,7 +120,8 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | [0008](docs/adr/0008-timeouts.md) | timeout 값과 근거 |
 | [0009](docs/adr/0009-retention.md) | 보존·정리 |
 | [0010](docs/adr/0010-rollback.md) | 롤백 설계 |
-| [0011](docs/adr/0011-turn-engine-reference-string.md) | turn-engine은 설치하지 않고 기준 문자열만 설정으로 |
+| [0011](docs/adr/0011-turn-engine-reference-string.md) | (대체됨: 0017) turn-engine은 설치하지 않고 기준 문자열만 설정으로 |
+| [0017](docs/adr/0017-action-rules-version.md) | 계보 기준은 action_rules_version(계약 규칙 데이터), 라벨은 실제 설치 버전 |
 | [0012](docs/adr/0012-job-output-self-check.md) | 잡 출력 자기 검사, /readyz는 시험에서만, 종료 코드 |
 | [0013](docs/adr/0013-wsgi-waitress.md) | HTTP 면은 WSGI 앱 + waitress |
 | [0014](docs/adr/0014-yoyo-migrations.md) | 스키마 버전 관리는 yoyo-migrations |

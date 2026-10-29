@@ -5,7 +5,8 @@ import json
 import shutil
 from pathlib import Path
 
-from boundary_contracts import canonical
+from boundary_contracts import PIPELINE_SCHEMA_VERSION, canonical
+from boundary_contracts.action_rules import load_rules
 from boundary_contracts.errors import BoundaryError
 
 
@@ -24,6 +25,8 @@ def make_bank(version: int = 1, tag: str = "a") -> dict:
 
 def ref_of(id_, version, obj) -> dict:
     return {"id": id_, "version": str(version), "content_hash": canonical.sha256_hash(obj)}
+
+RULES = str(load_rules()["rules_version"])      # 계보 일치 검사의 기준(코드에 리터럴로 적지 않고 계약 규칙 데이터에서 읽는다)
 
 
 class FakeQuestions:
@@ -44,7 +47,7 @@ class FakeQuestions:
 
     @staticmethod
     def review(ref, *, approved=True, clinical=True, n=1, at="2026-10-14T00:00:00Z") -> dict:
-        r = {"pipeline_schema_version": "2.0", "review_id": f"rv-{ref['id']}-{ref['version']}-{n}",
+        r = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "review_id": f"rv-{ref['id']}-{ref['version']}-{n}",
              "question_set": ref, "reviewer_role": "clinical-reviewer",
              "decision": "APPROVED" if approved else "REJECTED", "clinical_basis_approved": clinical,
              "reviewed_at": at}
@@ -109,7 +112,7 @@ class FakeModels:
         self.down = False
 
     def add(self, package_id: str, version: str, role: str, *, files: dict | None = None,
-            runtime_contract_version=1, engine="0.1.0", runtime="0.1.0", base=("base-1", "r1"),
+            runtime_contract_version=1, rules=None, runtime="0.1.0", base=("base-1", "r1"),
             created_at="2026-10-14T00:00:00Z", metrics=None, report=True, prompt_path="system_prompt.txt", **over) -> dict:
         d = self.root / f"{package_id}-{version}"
         d.mkdir(parents=True, exist_ok=True)
@@ -121,14 +124,14 @@ class FakeModels:
             (d / name).parent.mkdir(parents=True, exist_ok=True)
             (d / name).write_bytes(data)
         sc = {"prompt_template": "v1", "decoding": {"mode": "constrained"}, "max_attempts": 2}
-        m = {"pipeline_schema_version": "2.0", "package_id": package_id, "version": version, "role": role,
+        m = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "package_id": package_id, "version": version, "role": role,
              "created_at": created_at, "runtime_contract_version": runtime_contract_version,
              "base_model": {"id": base[0], "revision": base[1]}, "adapter_hash": canonical.directory_hash(d),
              "serving_config": sc, "serving_config_hash": canonical.sha256_hash(sc),
              "system_prompt": {"path": prompt_path or "system_prompt.txt",
                                "sha256": canonical.file_hash(d / prompt_path) if prompt_path else "sha256:" + "0" * 64},
              "lineage": {"dataset": {"id": "ds", "version": "1", "content_hash": "sha256:" + "0" * 64},
-                         "training_run_id": "run-1", "turn_engine_version": engine, "model_runtime_version": runtime},
+                         "training_run_id": "run-1", "action_rules_version": rules or RULES, "model_runtime_version": runtime},
              "eval_report_ref": f"eval-{package_id}-{version}"}
         m.update(over)
         m["content_hash"] = canonical.content_hash(m)
@@ -192,7 +195,7 @@ DEFAULT_METRICS = [
 
 def make_eval_report(manifest: dict, *, metrics=None, created_at="2026-10-14T00:00:00Z") -> dict:
     """ModelPackageManifest에 맞는 EvaluationReport(시험용). 합격 여부나 임계치는 담지 않는다."""
-    rep = {"pipeline_schema_version": "2.0", "report_id": manifest["eval_report_ref"], "created_at": created_at,
+    rep = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "report_id": manifest["eval_report_ref"], "created_at": created_at,
            "role": manifest["role"],
            "package": {"id": manifest["package_id"], "version": manifest["version"],
                        "content_hash": manifest["content_hash"]},

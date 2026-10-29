@@ -318,7 +318,7 @@ def test_serve_exits_cleanly_on_sigterm(tmp_path):
     s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
     env = {k: v for k, v in os.environ.items() if not k.startswith("GATE_") and k != "PORT"}
     env.update({"GATE_DATA_DIR": str(tmp_path / "d"), "GATE_SURVEY_SCHEMA_DIR": str(SURVEY), "GATE_ALLOW_TEST": "1",
-                "GATE_TURN_ENGINE_VERSION": "0.1.0", "GATE_MODEL_RUNTIME_VERSION": "0.1.0", "GATE_READ_TOKENS": "survey-service=rt",
+                "GATE_MODEL_RUNTIME_VERSION": "0.1.0", "GATE_READ_TOKENS": "survey-service=rt",
                 "GATE_WRITE_TOKENS": "operator=wt", "PORT": str(port)})
     p = subprocess.Popen([sys.executable, "-m", "release_gate", "serve"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     try:

@@ -149,16 +149,17 @@ def test_bad_role_is_refused_before_it_reaches_ext(world):
     assert e.value.code == "INVALID_RECORD"
 
 
-# --- turn-engine: 코드 의존 없이 기준 문자열만 쓴다(D109)
+# --- 계보 기준은 계약 규칙 데이터에서 읽는다(3.0.0, D109), turn-engine은 어디에도 없다
 
-def test_turn_engine_reference_needs_no_installed_package(monkeypatch):
-    monkeypatch.delenv("GATE_TURN_ENGINE_VERSION", raising=False)
-    assert gate_main.lib_versions()[0] == "0.4.3"
-    monkeypatch.setenv("GATE_TURN_ENGINE_VERSION", "0.5.0")
-    assert gate_main.lib_versions()[0] == "0.5.0"
+def test_action_rules_version_comes_from_contract_data_not_a_literal():
+    from boundary_contracts.action_rules import load_rules
+    assert gate_main.action_rules_version() == str(load_rules()["rules_version"])
 
 
-def test_turn_engine_is_not_in_requirements():
+def test_turn_engine_is_gone_from_code_and_requirements():
+    import subprocess
     root = Path(__file__).resolve().parent.parent
-    pins = [l for l in (root / "requirements-libs.txt").read_text().splitlines() if l.strip() and not l.startswith("#")]
-    assert not any("turn-engine" in l or "turn_engine" in l for l in pins)
+    out = subprocess.run(["git", "grep", "-n", "-i", "-E", "turn_engine|turn-engine", "--", "release_gate", "scripts", "Dockerfile", "requirements*.txt", "deploy-exposure.json"],
+                         cwd=root, capture_output=True, text=True).stdout
+    # 설명 주석(왜 없는지)은 허용하지 않는다: 남아 있으면 지운다
+    assert out.strip() == "", out

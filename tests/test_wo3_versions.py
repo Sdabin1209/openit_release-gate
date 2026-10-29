@@ -1,5 +1,5 @@
 """wo3-2: 이웃 버전을 못 읽으면 매니페스트를 만들지 않고 거부. 기대값의 출처: 결정표 2절,
-INTERFACES I4(ReleaseManifest.turn_engine_version·model_runtime_version은 필수이고 서비스가 이 값으로 적재를 거부한다)."""
+INTERFACES I4(ReleaseManifest.action_rules_version·model_runtime_version은 필수이고 서비스가 이 값으로 적재를 거부한다)."""
 from __future__ import annotations
 
 import pytest
@@ -10,16 +10,15 @@ from release_gate import main as gate_main
 
 def test_unreadable_lib_versions_are_not_unset_string(monkeypatch):
     import importlib.metadata as md
-    monkeypatch.delenv("GATE_TURN_ENGINE_VERSION", raising=False)
     monkeypatch.delenv("GATE_MODEL_RUNTIME_VERSION", raising=False)
     monkeypatch.setattr(md, "version", lambda n: (_ for _ in ()).throw(md.PackageNotFoundError(n)))
-    assert "unset" not in gate_main.lib_versions()
+    assert gate_main.runtime_version() is None      # 가짜 문자열을 만들지 않는다
 
 
 @pytest.mark.parametrize("bad", [None, "unset", ""])
 def test_release_not_created_when_versions_unreadable(world, bad):
     cfg = GateConfig(supported_runtime_contract_version=world.survey.contract_version,
-                     turn_engine_version=bad, model_runtime_version=bad)
+                     action_rules_version=bad, model_runtime_version=bad)
     world.config = cfg
     sub = world.reg.service.submit_candidate(world.subject(), requested_by_role="operator")
     eng = GateEngine(world.reg.store, world.schemas, world.survey, cfg, GatePolicy.from_dict({"checks": {"CONTRACT_COMPAT": {"require_lineage_runtime_match": False}}}), world.q, world.m, clock=world.clock)

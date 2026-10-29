@@ -6,13 +6,11 @@ FROM python:3.12-slim
 ARG COMMIT=n/a
 ARG BOUNDARY_VERSION=n/a
 ARG SURVEY_SCHEMA_VERSION=n/a
-ARG TURN_ENGINE_VERSION=n/a
 ARG MODEL_RUNTIME_VERSION=n/a
 LABEL io.openit.service="release-gate" \
       io.openit.revision="${COMMIT}" \
       io.openit.contracts.boundary="${BOUNDARY_VERSION}" \
       io.openit.contracts.survey-schema="${SURVEY_SCHEMA_VERSION}" \
-      io.openit.turn-engine="${TURN_ENGINE_VERSION}" \
       io.openit.model-runtime="${MODEL_RUNTIME_VERSION}"
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 \
@@ -29,7 +27,7 @@ RUN pip install -r release-gate/requirements.lock
 COPY wheels ./wheels
 COPY survey-schema /opt/contracts/survey-schema
 COPY release-gate ./release-gate
-# model-runtime wheel이 컨텍스트에 있으면 함께 설치한다. 서비스는 설치된 버전을 읽어 매니페스트에 쓴다. turn-engine은 설치하지 않는다(라벨 n/a, 기준 문자열은 설정 GATE_TURN_ENGINE_VERSION, D109).
+# model-runtime wheel이 컨텍스트에 있으면 함께 설치한다. 서비스는 설치된 버전을 읽어 매니페스트에 쓴다.
 RUN pip install --no-deps ./wheels/*.whl ./release-gate && rm -rf /src
 
 USER gate

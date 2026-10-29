@@ -18,8 +18,21 @@ from boundary_contracts import validator
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "build-image.sh"
 WS = ROOT.parents[2] if (ROOT.parents[2] / "boundary-contracts").exists() else ROOT.parent   # deploy/build/wt-x -> 워크스페이스, 또는 형제 배치
+
+
+def _pin(fname: str, pattern: str) -> str:
+    import re
+    m = re.search(pattern, (ROOT / fname).read_text(encoding="utf-8"))
+    assert m, (fname, pattern)
+    return m.group(1)
+
+
+# 요청 버전은 이 리포의 고정과 같아야 라벨을 찍는다(U50). 시험은 고정 파일에서 읽어 고정이 오를 때 같이 따라간다
+PIN_BC = _pin("requirements.txt", r"boundary-contracts\.git@(v[0-9.]+)")
+PIN_MR = _pin("requirements-libs.txt", r"model-runtime\.git@(v[0-9.]+)")
+PIN_SS = "v" + _pin("requirements.txt", r"survey-schema-v([0-9.]+)")
 BASE = {"source_dir": str(ROOT), "revision": "abc1234", "image_tag": "release-gate-u42test:req",
-        "versions": {"boundary": "v2.5.1", "model_runtime": "v0.10.0", "survey_schema": "v1.1.0"},
+        "versions": {"boundary": PIN_BC, "model_runtime": PIN_MR, "survey_schema": PIN_SS},
         "dependency_sources": {"boundary": "/nonexistent/bc", "model_runtime": "/nonexistent/mr", "survey_schema": "/nonexistent/ss"}}
 
 
@@ -28,7 +41,8 @@ def fake_docker(tmp_path):
     """불리면 흔적을 남기고 실패하는 가짜 도커. 검증 단계에서 도커가 불리면 안 된다."""
     marker = tmp_path / "docker-called"
     f = tmp_path / "docker"
-    f.write_text(f"#!/bin/sh\necho called >> {marker}\nexit 99\n")
+    # info(데몬 확인)는 통과시키고 그 밖의 도커 호출(build 등)은 흔적을 남기고 실패한다
+    f.write_text(f'#!/bin/sh\ncase "$1" in info) exit 0;; esac\necho called >> {marker}\nexit 99\n')
     f.chmod(0o755)
     return f, marker
 
@@ -120,6 +134,17 @@ def test_missing_request_file_fails(tmp_path):
     assert r.returncode != 0 and "build-image:" in r.stderr
 
 
+def test_request_versions_that_differ_from_the_repo_pins_refuse_to_label(tmp_path, fake_docker):
+    # U50: 요청 버전이 이 리포의 고정과 다르면 라벨을 찍지 않고 분명한 메시지로 실패한다(라벨이 거짓이 되지 않게). 도커 빌드 전에 멈춘다
+    docker, marker = fake_docker
+    for key, bad in (("boundary", "v0.0.1"), ("model_runtime", "v0.0.1"), ("survey_schema", "v9.9.9")):
+        req = json.loads(json.dumps(BASE))
+        req["versions"][key] = bad
+        r = run(tmp_path, req, docker)
+        assert r.returncode != 0 and "고정" in r.stderr and bad in r.stderr and key in r.stderr, (key, r.stderr)
+        assert not marker.exists()
+
+
 def test_script_does_not_read_neighbor_repos_or_use_ssh():
     # 왜: 이웃 리포 경로(../model-runtime 등)와 빌드 중 SSH 대신 dependency_sources만 쓴다(계약 BuildImageRequest 설명, U42)
     text = SCRIPT.read_text(encoding="utf-8")
@@ -128,6 +153,20 @@ def test_script_does_not_read_neighbor_repos_or_use_ssh():
 
 
 # ---- 실제 빌드(스모크) ----
+
+def test_label_comes_from_the_installed_source_not_the_request(tmp_path, fake_docker):
+    # U50: 요청과 고정이 v-X인데 의존 소스 트리가 실제로는 다른 버전이면(태그를 잘못 꺼낸 경우) 실제 버전이 라벨이 되므로 불일치로 실패한다
+    docker, marker = fake_docker
+    bc = _extract("boundary-contracts", "v2.8.0", None, tmp_path / "bc")        # 요청은 PIN_BC라 하지만 소스는 2.8.0
+    if PIN_BC == "v2.8.0":
+        pytest.skip("고정이 시험이 쓰는 다른 버전과 같다")
+    mr = _extract("model-runtime", PIN_MR, None, tmp_path / "mr")
+    ss = _extract("survey-service", "survey-schema-" + PIN_SS, "schema", tmp_path / "ss")
+    req = {**BASE, "dependency_sources": {"boundary": str(bc), "model_runtime": str(mr), "survey_schema": str(ss)}}
+    r = run(tmp_path, req, docker)
+    assert r.returncode != 0 and "실제" in r.stderr and "2.8.0" in r.stderr, r.stderr[-600:]
+    assert not marker.exists()
+
 
 def _extract(repo: str, tag: str, sub: str | None, dest: Path) -> Path:
     args = ["git", "-C", str(WS / repo), "archive", tag] + ([sub] if sub else [])
@@ -145,9 +184,9 @@ def _docker_ok():
 
 @pytest.mark.skipif(not _docker_ok(), reason="도커 데몬이 없다")
 def test_real_build_emits_build_image_result_with_labels_from_request(tmp_path):
-    bc = _extract("boundary-contracts", "v2.5.1", None, tmp_path / "bc")
-    mr = _extract("model-runtime", "v0.10.0", None, tmp_path / "mr")
-    ss = _extract("survey-service", "survey-schema-v1.1.0", "schema", tmp_path / "ss")
+    bc = _extract("boundary-contracts", PIN_BC, None, tmp_path / "bc")
+    mr = _extract("model-runtime", PIN_MR, None, tmp_path / "mr")
+    ss = _extract("survey-service", "survey-schema-" + PIN_SS, "schema", tmp_path / "ss")
     tag = f"release-gate-u42test:{os.getpid()}"
     req = {**BASE, "image_tag": tag, "revision": subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip(),
            "dependency_sources": {"boundary": str(bc), "model_runtime": str(mr), "survey_schema": str(ss)}}
@@ -163,10 +202,11 @@ def test_real_build_emits_build_image_result_with_labels_from_request(tmp_path):
             layers.append(subprocess.run(["docker", "image", "inspect", "-f", "{{json .RootFS.Layers}}", tag], capture_output=True, text=True).stdout)
         assert res["image"] == tag
         want = {"io.openit.service": "release-gate", "io.openit.revision": req["revision"],
-                "io.openit.contracts.boundary": "v2.5.1", "io.openit.contracts.survey-schema": "1",
-                "io.openit.model-runtime": "v0.10.0", "io.openit.turn-engine": "n/a"}
+                "io.openit.contracts.boundary": PIN_BC, "io.openit.contracts.survey-schema": PIN_SS[1:].split(".")[0],
+                "io.openit.model-runtime": PIN_MR}
         assert {k: v for k, v in res["labels"].items() if k in want} == want
         assert set(res["labels"]) >= set(want)
+        assert "io.openit.turn-engine" not in res["labels"]      # 3.0.0: 라벨 제거(ImageLabels가 거부한다)
         validator("ImageLabels").validate(res["labels"])
         # U47: 노출 선언 라벨이 붙고 계약 Exposure를 통과하며 리포의 deploy-exposure.json과 같다
         exposure = json.loads(res["labels"]["io.openit.exposure"])

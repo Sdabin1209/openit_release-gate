@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 class GateConfig:
     """생성자 인자로만 받는다. 환경 변수는 main.py만 읽는다."""
     supported_runtime_contract_version: int
-    turn_engine_version: str
+    action_rules_version: str      # 계약 ActionExtractionRules.rules_version(LoRA-A 출력 규칙의 세대). 계보 일치 검사의 기준(3.0.0, D109)
     model_runtime_version: str
     # 허용 역할(D42, I5). 역할은 토큰에 묶여 있고(HTTP 면), 인자는 기록용이다.
     submit_roles: frozenset = frozenset({"operator", "release-gate-collector", "question-authoring", "model-lab"})

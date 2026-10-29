@@ -107,8 +107,7 @@ def pausable(pg_url):
 
 
 def _job_env(monkeypatch, url, **extra):
-    for k, v in {"GATE_SURVEY_SCHEMA_DIR": str(SURVEY), "GATE_ALLOW_TEST": "1", "GATE_TURN_ENGINE_VERSION": "0.1.0",
-                 "GATE_MODEL_RUNTIME_VERSION": "0.1.0", "GATE_DATABASE_URL": url, **extra}.items():
+    for k, v in {"GATE_SURVEY_SCHEMA_DIR": str(SURVEY), "GATE_ALLOW_TEST": "1", "GATE_MODEL_RUNTIME_VERSION": "0.1.0", "GATE_DATABASE_URL": url, **extra}.items():
         monkeypatch.setenv(k, v)
 
 

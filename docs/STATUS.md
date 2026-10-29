@@ -1,3 +1,6 @@
+# STATUS (계약 3.0.0 전환, U50)
+- 계약 고정 v3.0.0. `turn_engine_version`을 `action_rules_version`(계약 규칙 데이터의 rules_version)으로, 파이프라인 MAJOR 3. 옛 build_image 스크립트 삭제. build-image.sh는 라벨을 실제 설치 버전에서 찍고 고정과 다르면 실패(ADR-0017).
+
 # STATUS (U47): 계약 v2.7.0
 - `deploy-exposure.json`과 이미지 라벨 `io.openit.exposure`, 어댑터 ModelPackageLayout 검증(승인 시점), I4 `GET /v1/releases/{id}/question-bank`(ADR-0016). 시험 어댑터는 계약 필수 3파일 모양이다.
 

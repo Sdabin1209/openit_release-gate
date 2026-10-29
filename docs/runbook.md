@@ -20,7 +20,7 @@ GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh          # BuildImageRequest �
 | `GATE_DATA_DIR` | 레지스트리 디렉터리(볼륨). 기본 `/data`. 번들 파일(`releases/`)은 DB 종류와 상관없이 여기에 둔다. SQLite 모드에서는 DB 파일도 여기에 있다 |
 | `GATE_SURVEY_SCHEMA_DIR` | 문진 스키마(이미지에 포함). 경계 계약 스키마는 boundary-contracts 패키지에 들어 있다 |
 | `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION` | 빌드 때 고정한 문진 스키마 정수 버전 |
-| `GATE_TURN_ENGINE_VERSION`, `GATE_MODEL_RUNTIME_VERSION` | 선택(덮어쓰기). turn-engine은 패키지를 설치하지 않고 설정 기준 문자열을 쓴다(기본 `0.4.3`, v 없음. D109: 2.x 동안 계보 필드의 고정 표지, 3.0.0에서 바뀐다). 없으면 model-runtime은 **설치된 패키지의 실제 버전**을 읽고, 읽지 못하면 값이 없는 것으로 보고, 승인(매니페스트 생성)은 FAILED_PRECONDITION(RUNTIME_VERSION_UNKNOWN)으로 거부하며 이웃(I1·I3)이 연결된 `serve`는 시작하지 않는다. 이 값이 릴리스 매니페스트에 기록되고 학습 때 버전과의 일치 검사(CONTRACT_COMPAT)에 쓰인다. `/readyz`에 보인다 |
+| `GATE_MODEL_RUNTIME_VERSION` | 선택(덮어쓰기). 계보의 `action_rules_version` 기준은 설정이 아니라 설치된 계약의 규칙 데이터(`rules_version`)다. 없으면 model-runtime은 **설치된 패키지의 실제 버전**을 읽고, 읽지 못하면 값이 없는 것으로 보고, 승인(매니페스트 생성)은 FAILED_PRECONDITION(RUNTIME_VERSION_UNKNOWN)으로 거부하며 이웃(I1·I3)이 연결된 `serve`는 시작하지 않는다. 이 값이 릴리스 매니페스트에 기록되고 학습 때 버전과의 일치 검사(CONTRACT_COMPAT)에 쓰인다. `/readyz`에 보인다 |
 | `GATE_POLICY_FILE` | gate_policy JSON. 설정하지 않으면 기본 정책. 설정했는데 파일이 없거나 읽지 못하면 PolicyError로 기동 거부(fail-closed) |
 | `GATE_READ_TOKENS`, `GATE_WRITE_TOKENS` (또는 `*_FILE`) | 필수. 비밀이므로 `GATE_READ_TOKENS_FILE`, `GATE_WRITE_TOKENS_FILE`로 파일 경로를 주는 것이 표준이다(아래 "비밀은 NAME_FILE로"). `역할=토큰,역할=토큰` 형식으로 역할에 묶는다. 읽기 예: `survey-service=…,ops-feedback=…,question-authoring=…,model-lab=…`, 쓰기 예: `operator=…,ops-feedback=…,question-authoring=…,model-lab=…,release-approver=…` (승인 요청은 `release-approver` 쓰기 토큰 + gateway가 붙인 `X-Openit-User` 필요). 토큰이 없거나 틀리면 401(`WWW-Authenticate: Bearer`), 읽기 토큰으로 쓰기 경로를 부르거나 쓰기 토큰으로 읽기 면을 부르면 403이다(boundary-contracts CONVENTIONS.md "401과 403"). `/healthz`, `/readyz`는 인증이 없다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
 | `GATE_REQUEST_TIMEOUT_SECONDS`, `GATE_MAX_CONNECTIONS`, `GATE_SHUTDOWN_GRACE_SECONDS`, `GATE_MAX_PENDING_SUBMISSIONS` | 연결 무활동 timeout(30, 정수 초, waitress channel_timeout), 동시 연결 상한(64, 넘으면 새 연결은 대기, waitress connection_limit), 종료 유예(20), 결정 전 접수 상한(기본 없음). 근거는 docs/adr/0008 |
@@ -54,7 +54,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 | 키 | 뜻 |
 | --- | --- |
 | `gate_policy_version` | 판정 기록에 남는 정책 버전(기본 `human-approval-1`) |
-| `checks.CONTRACT_COMPAT.require_lineage_runtime_match` | 학습 때 turn-engine·model-runtime 버전이 게이트 기준 버전(turn-engine은 설정 기준 문자열, model-runtime은 설치 버전)과 같아야 한다(기본 true) |
+| `checks.CONTRACT_COMPAT.require_lineage_runtime_match` | 학습 때 `action_rules_version`·model-runtime 버전이 게이트 기준(규칙은 계약 규칙 데이터, model-runtime은 설치 버전)과 같아야 한다(기본 true) |
 
 **이전 형식(`o11_resolved`, `required_checks`, `checks.ACCEPTANCE_EVAL.thresholds`)의 파일은 거부된다.** 지워야 한다. 자동 검사 네 가지는 정책이 줄일 수 없다.
 
@@ -80,11 +80,11 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 
 ## 이미지
 
-`scripts/build_image.sh [태그]`가 빌드한다. 컨텍스트에는 boundary-contracts 태그(`BOUNDARY_CONTRACTS_TAG`, 없으면 `requirements.txt`의 pin)의 wheel이 들어가고, turn-engine(`TURN_ENGINE_TAG`)과 model-runtime(`MODEL_RUNTIME_TAG`)은 기본값이 없고 deploy가 환경 변수로 넘기며(값은 `deploy/scripts/lib.sh`), 없으면 실패한다. 이웃 리포지토리를 이웃 리포지토리를 `git archive <태그>`로 꺼내 wheel을 만들어 함께 설치한다(리포지토리는 수정하지 않는다). `GATE_LIB_WHEELS_DIR`를 주면 그 안의 wheel을 대신 쓴다. 라벨은 `io.openit.service`, `io.openit.revision`, `io.openit.contracts.boundary`, `io.openit.contracts.survey-schema`, `io.openit.turn-engine`, `io.openit.model-runtime`이고 값은 컨텍스트의 wheel 이름에서 읽는다. 값은 계약 ImageLabels 표기(`vX.Y.Z`)이고 turn-engine·model-runtime wheel이 없으면 `n/a`다. boundary-contracts wheel이 없으면 빌드가 멈춘다. 직접 `docker build`할 때 이 두 빌드 인자가 비어 있으면 서비스가 설치된 패키지에서 버전을 못 읽어 승인(매니페스트 생성)을 거부한다.
+이미지는 `scripts/build-image.sh <요청 JSON>`(계약 BuildImageRequest, ADR-0015)로만 빌드한다. 라벨은 요청 값이 아니라 실제로 만든 wheel·문진 스키마 소스에서 찍고, 요청 버전이 이 리포의 고정과 다르면 빌드하지 않는다(ADR-0017).
 
 ## 상태 확인
 
-- `GET /healthz`: 프로세스가 살아 있음. `GET /readyz`: 레지스트리를 읽을 수 있음. 본문에 `gate_policy_version`, `judging`, `awaiting_approval`(승인 대기 개수), 설치된 turn-engine·model-runtime 버전이 있다. `judging`이 disabled이면 I1·I3가 연결되지 않아 자동 검사와 승인 결정이 되지 않는다.
+- `GET /healthz`: 프로세스가 살아 있음. `GET /readyz`: 레지스트리를 읽을 수 있음. 본문에 `gate_policy_version`, `judging`, `awaiting_approval`(승인 대기 개수), `action_rules_version`, `model_runtime_version`이 있다. `judging`이 disabled이면 I1·I3가 연결되지 않아 자동 검사와 승인 결정이 되지 않는다.
 
 ## 자주 하는 일
 

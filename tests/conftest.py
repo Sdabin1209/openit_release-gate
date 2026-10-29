@@ -10,7 +10,7 @@ from boundary_contracts.errors import BoundaryError
 
 from release_gate import (GateConfig, GateEngine, GatePolicy, SchemaSet, SurveySchema,
                           memory_registry, postgres_registry, sqlite_registry)
-from fakes import FakeModels, FakeQuestions
+from fakes import FakeModels, FakeQuestions, RULES
 
 ROOT = Path(__file__).resolve().parents[2]
 # 왜: 문진 스키마는 survey-service가 배포한 패키지(requirements.txt의 openit-survey-schema)에서 읽는다. 이웃 폴더 없이 시험이 돌게 하기 위해서다.
@@ -44,7 +44,7 @@ def survey():
 @pytest.fixture
 def config(survey):
     return GateConfig(supported_runtime_contract_version=survey.contract_version,
-                      turn_engine_version="0.1.0", model_runtime_version="0.1.0")
+                      action_rules_version=RULES, model_runtime_version="0.1.0")
 
 
 PG_SKIP = "TEST_DATABASE_URL이 없어 PostgreSQL 시험을 건너뜀(PASS로 세지 않는다)"

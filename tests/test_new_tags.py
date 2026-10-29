@@ -1,4 +1,4 @@
-"""설치된 turn-engine·model-runtime 버전을 기준으로 한 CONTRACT_COMPAT(학습 때 버전 일치 검사).
+"""계약 규칙의 rules_version과 설치된 model-runtime 버전을 기준으로 한 CONTRACT_COMPAT(학습 때 버전 일치 검사).
 
 기준은 패키지 메타데이터에서 읽고, 반려되어야 할 옛 값은 기준에서 계산한다(버전이 올라도 이 시험을 고치지 않는다).
 """
@@ -23,14 +23,14 @@ def _old_versions(cur: str) -> list[str]:
     return sorted(out)
 
 
-from release_gate.main import TURN_ENGINE_REFERENCE_VERSION as TE  # turn-engine은 설치하지 않는다(D109): 기준 문자열
+from fakes import RULES  # 계약 규칙 데이터의 rules_version(리터럴이 아니다)
 MR = md.version("model-runtime")
 
 
 @pytest.fixture
 def world_new(world):
     world.config = GateConfig(supported_runtime_contract_version=world.survey.contract_version,
-                              turn_engine_version=TE, model_runtime_version=MR)
+                              action_rules_version=RULES, model_runtime_version=MR)
     return world
 
 
@@ -42,12 +42,12 @@ def _decide(w, **kw):
 
 
 def test_matching_new_versions_pass_compat(world_new):
-    assert _decide(world_new, engine=TE, runtime=MR) == []        # 반려 없음 -> 승인 대기
+    assert _decide(world_new, rules=RULES, runtime=MR) == []        # 반려 없음 -> 승인 대기
 
 
 @pytest.mark.parametrize("kw,needle",
-    [({"engine": v, "runtime": MR}, "turn-engine") for v in _old_versions(TE)]
-    + [({"engine": TE, "runtime": v}, "model-runtime") for v in _old_versions(MR)])
+    [({"rules": v, "runtime": MR}, "action_rules_version") for v in (str(int(RULES) - 1), str(int(RULES) + 1))]
+    + [({"rules": RULES, "runtime": v}, "model-runtime") for v in _old_versions(MR)])
 def test_old_versions_rejected_against_new_baseline(world_new, kw, needle):
     d = _decide(world_new, **kw)[0]
     assert d["result"] == "REJECT" and needle in " | ".join(d["reject_reasons"])

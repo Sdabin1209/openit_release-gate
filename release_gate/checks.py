@@ -175,9 +175,9 @@ class ContractCompat:
                 bad.append(f"{role}: serving_config_hash가 serving_config의 해시와 다르다")
             if strict_rt:
                 lin = m.get("lineage", {})
-                if lin.get("turn_engine_version") != cfg.turn_engine_version:
-                    bad.append(f"{role}: 학습 때의 turn-engine {lin.get('turn_engine_version')}이 "
-                               f"게이트 기준 {cfg.turn_engine_version}과 다르다")
+                if lin.get("action_rules_version") != cfg.action_rules_version:
+                    bad.append(f"{role}: 학습 때의 action_rules_version {lin.get('action_rules_version')}이 "
+                               f"게이트 기준 {cfg.action_rules_version}과 다르다")
                 if lin.get("model_runtime_version") != cfg.model_runtime_version:
                     bad.append(f"{role}: 학습 때의 model-runtime {lin.get('model_runtime_version')}이 "
                                f"게이트 기준 {cfg.model_runtime_version}과 다르다")

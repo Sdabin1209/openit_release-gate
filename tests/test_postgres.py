@@ -43,7 +43,6 @@ def test_build_reads_url_file_first(schemas, config, tmp_path, monkeypatch, pg_u
     f = tmp_path / "dburl"; f.write_text(pg_url + "\n")
     monkeypatch.setenv("GATE_SURVEY_SCHEMA_DIR", str(SURVEY))
     monkeypatch.setenv("GATE_ALLOW_TEST", "1")
-    monkeypatch.setenv("GATE_TURN_ENGINE_VERSION", "0.1.0")
     monkeypatch.setenv("GATE_MODEL_RUNTIME_VERSION", "0.1.0")
     monkeypatch.setenv("GATE_DATABASE_URL", BAD_URL)           # 파일이 우선
     monkeypatch.setenv("GATE_DATABASE_URL_FILE", str(f))
@@ -54,7 +53,6 @@ def test_build_reads_url_file_first(schemas, config, tmp_path, monkeypatch, pg_u
 def test_build_without_url_uses_sqlite(tmp_path, monkeypatch):
     monkeypatch.setenv("GATE_SURVEY_SCHEMA_DIR", str(SURVEY))
     monkeypatch.setenv("GATE_ALLOW_TEST", "1")
-    monkeypatch.setenv("GATE_TURN_ENGINE_VERSION", "0.1.0")
     monkeypatch.setenv("GATE_MODEL_RUNTIME_VERSION", "0.1.0")
     monkeypatch.delenv("GATE_DATABASE_URL", raising=False)
     monkeypatch.delenv("GATE_DATABASE_URL_FILE", raising=False)
@@ -123,7 +121,6 @@ def test_job_output_has_no_connection_info(world, capsys, monkeypatch, tmp_path)
         pytest.skip("PostgreSQL 전용")
     monkeypatch.setenv("GATE_SURVEY_SCHEMA_DIR", str(SURVEY))
     monkeypatch.setenv("GATE_ALLOW_TEST", "1")
-    monkeypatch.setenv("GATE_TURN_ENGINE_VERSION", "0.1.0")
     monkeypatch.setenv("GATE_MODEL_RUNTIME_VERSION", "0.1.0")
     monkeypatch.setenv("GATE_DATABASE_URL", world.reg.store._url)
     monkeypatch.setattr(gate_main, "_neighbors", lambda cfg: (world.q, world.m))

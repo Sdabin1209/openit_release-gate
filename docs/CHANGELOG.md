@@ -1,5 +1,11 @@
 # 변경 이력
 
+## (미배포) 계약 3.0.0 전환
+
+- 계약 boundary-contracts v3.0.0. `GateConfig.turn_engine_version` -> `action_rules_version`, 릴리스 매니페스트·`/readyz`의 필드도 같다. `GATE_TURN_ENGINE_VERSION` 환경 변수는 없어졌다. 2.x 레코드(pipeline_schema_version 2.x)는 CONTRACT_COMPAT가 MAJOR로 반려한다.
+- `build-image.sh`: 라벨은 실제 설치 버전에서 찍고 요청이 고정과 다르면 실패(U50). 이미지 라벨 `io.openit.turn-engine` 제거. 옛 `build_image.sh`·`stage_context.sh`·`image_label_args.sh` 삭제.
+- 시험: 메모리 구현·고정값의 레코드를 3.0으로, `ReleaseReader` Protocol isinstance 시험 추가.
+
 ## (미배포) U49: 승격된 계약 스키마의 영역 사본 정리
 
 `docs/change-requests/` 아래 스키마 사본 55개 파일을 지웠다(분류 근거는 계약 패키지 boundary-contracts v2.7.0의 스키마 이름과 비교). 이 사본을 읽는 시험·스크립트·문서 링크는 없었다(CR-0009의 설명 문장만 있어 고쳤다). 영역 시험은 단위 3부터 계약 패키지의 스키마를 쓴다.

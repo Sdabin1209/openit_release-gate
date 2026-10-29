@@ -225,7 +225,6 @@ def _job(world, monkeypatch, clients):
         pytest.skip("SQLite·PostgreSQL 레지스트리 전용(잡은 저장소를 열어 쓴다)")
     monkeypatch.setenv("GATE_SURVEY_SCHEMA_DIR", str(gate_main_survey()))
     monkeypatch.setenv("GATE_ALLOW_TEST", "1")
-    monkeypatch.setenv("GATE_TURN_ENGINE_VERSION", "0.1.0")
     monkeypatch.setenv("GATE_MODEL_RUNTIME_VERSION", "0.1.0")
     monkeypatch.delenv("GATE_DATABASE_URL", raising=False)
     monkeypatch.delenv("GATE_DATABASE_URL_FILE", raising=False)

@@ -45,6 +45,18 @@ except (OSError, ValueError) as e:
     sys.exit(f"build-image: 오류: source_dir/deploy-exposure.json을 읽지 못했다: {type(e).__name__}")
 except Exception as e:
     sys.exit("build-image: 오류: deploy-exposure.json이 Exposure를 어긴다: " + str(getattr(e, "message", e))[:300])
+# U50(라벨 정직성): 요청 versions가 이 리포의 고정과 다르면 라벨을 찍지 않고 멈춘다. 라벨은 아래에서 실제로 만든 wheel·문진 스키마에서 찍는다.
+import re
+def pin(fname, pattern):
+    m = re.search(pattern, open(r["source_dir"] + "/" + fname, encoding="utf-8").read())
+    if not m:
+        sys.exit(f"build-image: 오류: {fname}에서 고정 버전을 읽지 못했다")
+    return m.group(1)
+for key, got, want in (("boundary", v["boundary"], pin("requirements.txt", r"boundary-contracts\.git@(v[0-9][0-9.]*)")),
+                       ("model_runtime", v["model_runtime"], pin("requirements-libs.txt", r"model-runtime\.git@(v[0-9][0-9.]*)")),
+                       ("survey_schema", v["survey_schema"], "v" + pin("requirements.txt", r"survey-schema-v([0-9][0-9.]*)"))):
+    if got != want:
+        sys.exit(f"build-image: 오류: 요청 versions.{key}({got})가 이 리포의 고정({want})과 다르다. 라벨이 거짓이 되므로 빌드하지 않는다")
 exposure = json.dumps(ex, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 print(r["source_dir"], r["revision"], r["image_tag"], v["boundary"], v["model_runtime"], v["survey_schema"],
       d["boundary"], d["model_runtime"], d["survey_schema"], exposure, sep="\n")
@@ -55,8 +67,10 @@ src="${F[0]}" rev="${F[1]}" tag="${F[2]}" v_bc="${F[3]}" v_mr="${F[4]}" v_ss="${
 for d in "$src" "$s_bc" "$s_mr" "$s_ss"; do [ -d "$d" ] || die "디렉터리가 없다: $d"; done
 [ -f "$src/Dockerfile" ] || die "source_dir에 Dockerfile이 없다: $src"
 ss_major="${v_ss#v}"; ss_major="${ss_major%%.*}"
-[ "$(tr -d '[:space:]' < "$s_ss/CONTRACT_VERSION" 2>/dev/null)" = "$ss_major" ] \
-  || die "문진 스키마 소스의 CONTRACT_VERSION이 요청의 versions.survey_schema($v_ss) 주 버전과 다르다(라벨이 이미지 내용과 달라진다)"
+# 왜 실제 값에서 찍는다: 라벨은 이미지에 실제로 들어간 것이어야 한다(U50). 문진 스키마는 복사할 소스의 CONTRACT_VERSION(주 버전)이 실제 값이다
+ss_actual="$(tr -d '[:space:]' < "$s_ss/CONTRACT_VERSION" 2>/dev/null)"
+[ "$ss_actual" = "$ss_major" ] \
+  || die "실제 문진 스키마 소스의 CONTRACT_VERSION($ss_actual)이 요청의 versions.survey_schema($v_ss) 주 버전과 다르다(라벨이 이미지 내용과 달라진다)"
 "$DOCKER" info >/dev/null 2>&1 || die "도커 데몬에 연결할 수 없다('$DOCKER info' 실패)"
 
 # 2) 빌드 컨텍스트는 임시 폴더에 만든다(source_dir와 의존 소스 트리를 더럽히지 않는다).
@@ -70,6 +84,11 @@ for lib in boundary:"$s_bc" model_runtime:"$s_mr"; do
   cp -a "$from" "$work"
   "$PY" -m pip wheel -q --no-deps -w "$ctx/wheels" "$work" >&2
 done
+# 실제로 만든 wheel의 버전을 파일 이름에서 읽어 요청과 대조한다(태그를 잘못 꺼낸 소스 트리면 여기서 걸린다)
+wheel_version() { local f; f="$(ls "$ctx/wheels" | grep -E "^$1-[0-9]" | head -1)"; [ -n "$f" ] || die "$1 wheel을 만들지 못했다"; f="${f#$1-}"; echo "v${f%%-*}"; }
+act_bc="$(wheel_version boundary_contracts)"; act_mr="$(wheel_version model_runtime)"
+[ "$act_bc" = "$v_bc" ] || die "실제로 만든 boundary-contracts wheel 버전($act_bc)이 요청의 versions.boundary($v_bc)와 다르다. 라벨을 찍지 않는다"
+[ "$act_mr" = "$v_mr" ] || die "실제로 만든 model-runtime wheel 버전($act_mr)이 요청의 versions.model_runtime($v_mr)과 다르다. 라벨을 찍지 않는다"
 cp -a "$s_ss/CONTRACT_VERSION" "$s_ss/schemas" "$ctx/survey-schema/"
 cp -a "$src/pyproject.toml" "$src/requirements.lock" "$src/release_gate" "$ctx/release-gate/"
 find "$ctx" -name __pycache__ -type d -prune -exec rm -rf {} +
@@ -77,11 +96,11 @@ rm -rf "$ctx"/_src-*
 # 왜 컨텍스트 전체 시각 고정: 디렉터리·파일의 수정 시각이 COPY 층에 들어가 만든 시각이 다르면 같은 내용도 다른 이미지가 된다
 find "$ctx" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
-# 3) 빌드. 라벨 값은 요청에서 온다(이미지 라벨 계약 ImageLabels). turn-engine은 설치하지 않으므로 n/a(ADR-0011).
+# 3) 빌드. 라벨 값은 실제로 만든 wheel·문진 스키마 소스에서 온다(요청과 같음을 위에서 확인했다, U50).
 log "docker build: $tag"
 "$DOCKER" build -q -t "$tag" -f "$src/Dockerfile" --label "io.openit.exposure=$exposure" \
-  --build-arg COMMIT="$rev" --build-arg BOUNDARY_VERSION="$v_bc" --build-arg SURVEY_SCHEMA_VERSION="$ss_major" \
-  --build-arg TURN_ENGINE_VERSION="n/a" --build-arg MODEL_RUNTIME_VERSION="$v_mr" "$ctx" >&2
+  --build-arg COMMIT="$rev" --build-arg BOUNDARY_VERSION="$act_bc" --build-arg SURVEY_SCHEMA_VERSION="$ss_actual" \
+  --build-arg MODEL_RUNTIME_VERSION="$act_mr" "$ctx" >&2
 
 # 4) 결과: docker가 준 ID와 이미지에 실제로 붙은 io.openit.* 라벨을 읽어 BuildImageResult로 낸다(내기 전에 계약으로 자기 검사).
 image_id="$("$DOCKER" image inspect -f '{{.Id}}' "$tag")"

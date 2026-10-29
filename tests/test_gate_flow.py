@@ -211,7 +211,7 @@ def test_review_report_compares_same_metrics_and_marks_worse(world):
 # --- 자동 검사 반려 (사람에게 가기 전)
 @pytest.mark.parametrize("kw,needle", [
     ({"runtime_contract_version": 2}, "runtime_contract_version"),
-    ({"engine": "9.9.9"}, "turn-engine"),
+    ({"rules": "9"}, "action_rules_version"),
     ({"runtime": "9.9.9"}, "model-runtime"),
 ])
 def test_contract_compat_failures_reject_before_approval(world, kw, needle):

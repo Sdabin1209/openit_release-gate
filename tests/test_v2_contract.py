@@ -11,9 +11,9 @@ def submit(world, subject=None):
     return world.reg.service.submit_candidate(subject or world.subject(), requested_by_role="operator")
 
 
-def test_contract_package_is_major_2():
+def test_contract_package_is_major_3():
     import release_gate
-    assert PIPELINE_SCHEMA_VERSION.split(".")[0] == "2" and release_gate.SUPPORTED_PIPELINE_MAJOR == 2
+    assert PIPELINE_SCHEMA_VERSION.split(".")[0] == "3" and release_gate.SUPPORTED_PIPELINE_MAJOR == 3
 
 
 def test_release_copies_system_prompt_from_package(world, tmp_path):
@@ -31,8 +31,9 @@ def test_release_copies_system_prompt_from_package(world, tmp_path):
     assert f.read_bytes() == b"A-PROMPT" and canonical.file_hash(f) == a["system_prompt"]["sha256"]
 
 
-def test_v1_package_manifest_is_rejected_by_contract_check(world):
-    a = world.m.add("lora-a", "v1", "LORA_A", pipeline_schema_version="1.3")
+@pytest.mark.parametrize("old", ["1.3", "2.8"])
+def test_old_major_package_manifest_is_rejected_by_contract_check(world, old):
+    a = world.m.add("lora-a", "old" + old, "LORA_A", pipeline_schema_version=old)
     submit(world, world.subject(a=a))
     d = world.engine().process_pending()[0]
     assert d["result"] == "REJECT" and "MAJOR" in " | ".join(d["reject_reasons"])
@@ -88,9 +89,9 @@ def test_tampered_system_prompt_in_stored_bundle_is_integrity_error(world, tmp_p
     assert e.value.code == "INTEGRITY_ERROR"
 
 
-def test_contract_compat_accepts_any_minor_of_major_2(world):
-    """계약 2.2.0(추가형 MINOR, CHANGELOG): CONTRACT_COMPAT는 MAJOR만 비교하므로 2.1·2.2 매니페스트를 모두 받는다."""
-    for i, psv in enumerate(("2.1", "2.2")):
+def test_contract_compat_accepts_any_minor_of_major_3(world):
+    """CONTRACT_COMPAT는 MAJOR만 비교하므로(추가형 MINOR) 같은 MAJOR 3의 3.0·3.1 매니페스트를 모두 받는다."""
+    for i, psv in enumerate(("3.0", "3.1")):
         a = world.m.add(f"lora-a{i}", "v1", "LORA_A", pipeline_schema_version=psv)
         b = world.m.add(f"lora-b{i}", "v1", "LORA_B", pipeline_schema_version=psv)
         sub = world.reg.service.submit_candidate(world.subject(a=a, b=b), requested_by_role="operator")

@@ -38,9 +38,6 @@ from .store import SqliteStore
 
 log = logging.getLogger("gate")
 EX_TEMPFAIL = 75
-# 왜 상수: turn-engine 버전은 학습 계보(lineage.turn_engine_version)와 비교하는 기준 문자열일 뿐 코드 의존이 아니다.
-# D109: 2.x 동안 이 필드는 남고 값은 v0.4.3 고정 표지이며 3.0.0에서 action_rules_version으로 바뀐다. 그래서 패키지를 설치하지 않고 설정값(GATE_TURN_ENGINE_VERSION)으로 받는다(v 없음).
-TURN_ENGINE_REFERENCE_VERSION = "0.4.3"
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -65,10 +62,15 @@ def installed_version(*dist_names: str) -> "str | None":
     return None
 
 
-def lib_versions() -> "tuple[str | None, str | None]":
-    """(turn-engine, model-runtime). turn-engine은 설정값(기본 D109 표지 0.4.3), model-runtime은 환경 변수로 덮어쓸 수 있고 기본은 설치된 패키지에서 읽는다."""
-    return (os.environ.get("GATE_TURN_ENGINE_VERSION") or TURN_ENGINE_REFERENCE_VERSION,
-            os.environ.get("GATE_MODEL_RUNTIME_VERSION") or installed_version("model-runtime", "model_runtime"))
+def action_rules_version() -> str:
+    """계보 일치 검사의 기준. 값은 코드에 적지 않고 설치된 계약의 규칙 데이터(ActionExtractionRules.rules_version)에서 읽는다(3.0.0, D109)."""
+    from boundary_contracts.action_rules import load_rules
+    return str(load_rules()["rules_version"])
+
+
+def runtime_version() -> "str | None":
+    """model-runtime 버전. 환경 변수로 덮어쓸 수 있고 기본은 설치된 패키지에서 읽는다(읽지 못하면 None)."""
+    return os.environ.get("GATE_MODEL_RUNTIME_VERSION") or installed_version("model-runtime", "model_runtime")
 
 
 _SECRET_KEY_PARTS = ("token", "secret", "password", "passwd", "credential", "apikey", "api_key", "authorization", "private_key")
@@ -163,10 +165,9 @@ def _role_overrides() -> dict:
 
 
 def _gate_config(survey: SurveySchema) -> GateConfig:
-    te, mr = lib_versions()
     return GateConfig(
         supported_runtime_contract_version=int(_env("GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION", str(survey.contract_version))),
-        turn_engine_version=te, model_runtime_version=mr,
+        action_rules_version=action_rules_version(), model_runtime_version=runtime_version(),
         max_pending_submissions=_opt_int("GATE_MAX_PENDING_SUBMISSIONS"), **_role_overrides())
 
 
@@ -255,7 +256,7 @@ def make_status(policy, judging, config, reg, engine, loop, retention: "Retentio
     def status() -> dict:
         st = {"gate_policy_version": policy.version, "judging": judging,
               "awaiting_approval": len(reg.store.submission_ids(("AWAITING_APPROVAL",))),
-              "turn_engine_version": config.turn_engine_version,
+              "action_rules_version": config.action_rules_version,
               "model_runtime_version": config.model_runtime_version}
         if engine is not None:
             # 이웃(I1·I3) 문제가 조용히 묻히지 않게 한다(FAULT_POLICY 9). 503으로 만들지는 않는다: 읽기는 이웃과 무관하게 계속된다.
@@ -292,9 +293,9 @@ def serve() -> None:
     questions, models = _neighbors(cfg)
     tasks, judging, engine = [], "disabled (I1/I3 미연결: 자동 검사와 승인 결정 불가)", None
     if questions is not None and models is not None:
-        if not (config.turn_engine_version and config.model_runtime_version):
+        if not config.model_runtime_version:
             # 왜: 승인(릴리스 매니페스트 생성)이 되는 서비스는 이웃 버전을 모른 채 뜨지 않는다(결정표 2절). 환경 변수로 덮어쓸 수 있다
-            raise SystemExit("turn-engine 또는 model-runtime 버전을 읽지 못했다(설치되지 않음). GATE_TURN_ENGINE_VERSION, GATE_MODEL_RUNTIME_VERSION을 주거나 설치한다")
+            raise SystemExit("model-runtime 버전을 읽지 못했다(설치되지 않음). GATE_MODEL_RUNTIME_VERSION을 주거나 설치한다")
         engine = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry())
         tasks.append(engine.process_pending)
         judging = "enabled"
@@ -316,8 +317,8 @@ def serve() -> None:
                          write_tokens=_tokens("GATE_WRITE_TOKENS", True), status=status, engine=engine,
                          request_timeout=_seconds("GATE_REQUEST_TIMEOUT_SECONDS", DEFAULT_REQUEST_TIMEOUT),
                          max_connections=_opt_int("GATE_MAX_CONNECTIONS") or DEFAULT_MAX_CONNECTIONS)
-    log.info("gate-service 시작: policy=%s judging=%s turn-engine=%s model-runtime=%s", policy.version, judging,
-             config.turn_engine_version, config.model_runtime_version)
+    log.info("gate-service 시작: policy=%s judging=%s action-rules=%s model-runtime=%s", policy.version, judging,
+             config.action_rules_version, config.model_runtime_version)
     # 종료 유예 20초: 근거 기록 없음(설계 판단, 측정 안 함). deploy의 stop_grace_period가 이보다 길어야 한다(docs/adr/0008)
     grace = _seconds("GATE_SHUTDOWN_GRACE_SECONDS", 20.0)
     run_until_signal(srv, loop, reg.store, grace)

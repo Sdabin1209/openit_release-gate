@@ -21,7 +21,6 @@ def job_env(world, tmp_path, monkeypatch):
         monkeypatch.delenv("GATE_DATABASE_URL", raising=False)
     monkeypatch.setenv("GATE_SURVEY_SCHEMA_DIR", str(SURVEY))
     monkeypatch.setenv("GATE_ALLOW_TEST", "1")
-    monkeypatch.setenv("GATE_TURN_ENGINE_VERSION", "0.1.0")
     monkeypatch.setenv("GATE_MODEL_RUNTIME_VERSION", "0.1.0")
     monkeypatch.setattr(gate_main, "_neighbors", lambda cfg: (world.q, world.m))
     world.q.add("qs-main", 1)
@@ -79,14 +78,18 @@ def test_broken_config_file_fails(tmp_path):
         gate_main.load_config(str(f))
 
 
-def test_lib_versions_read_installed_model_runtime(monkeypatch):
-    monkeypatch.delenv("GATE_TURN_ENGINE_VERSION", raising=False)
+def test_runtime_version_reads_the_installed_model_runtime(monkeypatch):
     monkeypatch.delenv("GATE_MODEL_RUNTIME_VERSION", raising=False)
     import importlib.metadata as md
     real = md.version
     monkeypatch.setattr(md, "version", lambda n: {"model-runtime": "0.4.0"}.get(n) or real(n))
-    assert gate_main.lib_versions() == (gate_main.TURN_ENGINE_REFERENCE_VERSION, "0.4.0")   # turn-engine은 설치와 무관한 기준 문자열(D109)
+    assert gate_main.runtime_version() == "0.4.0"
     monkeypatch.setattr(md, "version", lambda n: (_ for _ in ()).throw(md.PackageNotFoundError(n)))
-    assert gate_main.lib_versions() == (gate_main.TURN_ENGINE_REFERENCE_VERSION, None)
-    monkeypatch.setenv("GATE_TURN_ENGINE_VERSION", "9.9.9")
-    assert gate_main.lib_versions()[0] == "9.9.9"
+    assert gate_main.runtime_version() is None
+    monkeypatch.setenv("GATE_MODEL_RUNTIME_VERSION", "9.9.9")
+    assert gate_main.runtime_version() == "9.9.9"
+
+
+def test_action_rules_version_is_read_from_contract_rules_data():
+    from boundary_contracts.action_rules import load_rules
+    assert gate_main.action_rules_version() == str(load_rules()["rules_version"])

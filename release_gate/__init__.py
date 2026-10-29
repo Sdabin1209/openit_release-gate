@@ -1,6 +1,6 @@
 """release-gate: 문항·모델 조합을 판정해 릴리스로 출고하고 활성 포인터를 관리한다."""
 __version__ = "0.7.0"
-SUPPORTED_PIPELINE_MAJOR = 2
+SUPPORTED_PIPELINE_MAJOR = 3
 from boundary_contracts import PIPELINE_SCHEMA_VERSION  # noqa: E402  (레코드를 만들 때 쓰는 경계 계약 버전)
 
 from .checks import CheckRegistry  # noqa: E402

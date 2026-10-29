@@ -4,19 +4,19 @@ from __future__ import annotations
 
 from release_gate import GateConfig
 
-from release_gate.main import TURN_ENGINE_REFERENCE_VERSION as TE  # 기준값은 D109의 고정 표지(설치하지 않는다)
+from fakes import RULES as TE  # 계보 기준은 계약 규칙 데이터의 rules_version
 
 
 def _world_with(world, rt):
-    cfg = GateConfig(supported_runtime_contract_version=world.survey.contract_version, turn_engine_version=TE, model_runtime_version=rt)
+    cfg = GateConfig(supported_runtime_contract_version=world.survey.contract_version, action_rules_version=TE, model_runtime_version=rt)
     world.config = cfg
     return cfg
 
 
 def _run(world, cfg, lineage_rt):
     from release_gate import GateEngine, GatePolicy
-    a = world.m.add("lora-a", "1", "LORA_A", engine=TE, runtime=lineage_rt)
-    b = world.m.add("lora-b", "1", "LORA_B", engine=TE, runtime=lineage_rt)
+    a = world.m.add("lora-a", "1", "LORA_A", rules=TE, runtime=lineage_rt)
+    b = world.m.add("lora-b", "1", "LORA_B", rules=TE, runtime=lineage_rt)
     sub = world.reg.service.submit_candidate(world.subject(a=a, b=b), requested_by_role="operator")
     eng = GateEngine(world.reg.store, world.schemas, world.survey, cfg, GatePolicy.default(), world.q, world.m, clock=world.clock)
     eng.process_pending()

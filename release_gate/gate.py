@@ -357,7 +357,7 @@ class GateEngine:
             return self._commit(sid, d, approval)
         # 왜: 이웃 라이브러리 버전을 읽지 못했는데 'unset' 같은 값으로 매니페스트를 만들면 서비스가 이 값으로 적재를 거부하는
         # 계약 필드(INTERFACES I4)에 거짓 값이 들어간다. 만들지 않고 거부한다(결정표 2절, fail-closed). 아무것도 기록되지 않는다
-        for name in ("turn_engine_version", "model_runtime_version"):
+        for name in ("action_rules_version", "model_runtime_version"):
             v = getattr(self.config, name)
             if not isinstance(v, str) or not v.strip() or v.strip() == "unset":
                 raise BoundaryError("FAILED_PRECONDITION", f"게이트 설정의 {name}을(를) 읽지 못해 릴리스 매니페스트를 만들 수 없다",
@@ -395,7 +395,7 @@ class GateEngine:
                    "created_at": d["decided_at"], "gate_decision_id": d["decision_id"],
                    "question_set": subject["question_set"], "lora_a": subject["lora_a"], "lora_b": subject["lora_b"],
                    "runtime_contract_version": self.config.supported_runtime_contract_version,
-                   "turn_engine_version": self.config.turn_engine_version,
+                   "action_rules_version": self.config.action_rules_version,
                    "model_runtime_version": self.config.model_runtime_version, "adapters": ext_adapters}
             man["content_hash"] = canonical.content_hash(man)
             self.schemas.validate("ReleaseManifest", man)

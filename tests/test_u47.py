@@ -148,3 +148,10 @@ def test_reader_and_memory_store_have_the_same_method(world):
     rid = world.make_release()
     out = world.reg.reader.get_release_question_bank(rid)
     assert out["release_id"] == rid and out["content_hash"] == canonical.sha256_hash(out["question_bank"])
+
+
+def test_reader_implements_the_sdk_protocol_including_get_release_question_bank(world):
+    # 계약 3.0.0: sdk.ReleaseReader Protocol에 get_release_question_bank가 들어갔다(runtime_checkable)
+    from boundary_contracts.sdk import ReleaseReader
+    assert isinstance(world.reg.reader, ReleaseReader)
+    assert "get_release_question_bank" in dir(ReleaseReader)
