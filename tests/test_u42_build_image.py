@@ -1,0 +1,144 @@
+"""U42: 영역 빌드 진입점 `bash scripts/build-image.sh <요청 JSON>` (계약 BuildImageRequest / BuildImageResult, boundary-contracts 2.5.x).
+기대값의 출처: 두 스키마의 설명과 conformance/examples(BuildImageRequest.json, BuildImageResult.json)와 examples_invalid.
+검증 시험은 도커를 부르지 않는다(가짜 DOCKER가 불리면 실패). 실제 빌드 시험은 도커 데몬과 이웃 리포의 태그(소스 트리를 꺼내는 용도, 시험에서만 읽는다)가 있을 때만 돈다."""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tarfile
+import io
+from pathlib import Path
+
+import pytest
+from boundary_contracts import validator
+
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts" / "build-image.sh"
+WS = ROOT.parents[2] if (ROOT.parents[2] / "boundary-contracts").exists() else ROOT.parent   # deploy/build/wt-x -> 워크스페이스, 또는 형제 배치
+BASE = {"source_dir": str(ROOT), "revision": "abc1234", "image_tag": "release-gate-u42test:req",
+        "versions": {"boundary": "v2.5.1", "model_runtime": "v0.10.0", "survey_schema": "v1.1.0"},
+        "dependency_sources": {"boundary": "/nonexistent/bc", "model_runtime": "/nonexistent/mr", "survey_schema": "/nonexistent/ss"}}
+
+
+@pytest.fixture
+def fake_docker(tmp_path):
+    """불리면 흔적을 남기고 실패하는 가짜 도커. 검증 단계에서 도커가 불리면 안 된다."""
+    marker = tmp_path / "docker-called"
+    f = tmp_path / "docker"
+    f.write_text(f"#!/bin/sh\necho called >> {marker}\nexit 99\n")
+    f.chmod(0o755)
+    return f, marker
+
+
+def run(tmp_path, req, docker="docker", extra_env=None):
+    p = tmp_path / "req.json"
+    p.write_text(json.dumps(req))
+    env = {**os.environ, "PYTHON": sys.executable, "DOCKER": str(docker), **(extra_env or {})}
+    return subprocess.run(["bash", str(SCRIPT), str(p)], capture_output=True, text=True, env=env, cwd=ROOT)
+
+
+def _mut(**kw):
+    r = json.loads(json.dumps(BASE))
+    for k, v in kw.items():
+        if v is None:
+            r.pop(k, None)
+        else:
+            r[k] = v
+    return r
+
+
+def _without(path):
+    r = json.loads(json.dumps(BASE))
+    d = r
+    for k in path[:-1]:
+        d = d[k]
+    del d[path[-1]]
+    return r
+
+
+CASES = {
+    "unknown-key": _mut(surprise=True),
+    "missing-image-tag": _mut(image_tag=None),
+    "relative-source-dir": _mut(source_dir="relative/path"),
+    "bad-revision": _mut(revision="HEAD"),
+    "missing-boundary-version": _without(("versions", "boundary")),
+    "missing-model-runtime-version": _without(("versions", "model_runtime")),
+    "missing-survey-schema-version": _without(("versions", "survey_schema")),
+    "missing-model-runtime-source": _without(("dependency_sources", "model_runtime")),
+    "missing-boundary-source": _without(("dependency_sources", "boundary")),
+    "missing-survey-schema-source": _without(("dependency_sources", "survey_schema")),
+    "variant-unknown": _mut(variant="gpu"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(CASES))
+def test_invalid_or_incomplete_request_fails_without_touching_docker(tmp_path, fake_docker, name):
+    docker, marker = fake_docker
+    r = run(tmp_path, CASES[name], docker)
+    assert r.returncode != 0, (name, r.stdout, r.stderr)
+    assert "build-image:" in r.stderr, r.stderr       # 우리 스크립트가 이유를 말하고 멈췄다(스크립트가 없어서 실패한 것이 아니다)
+    assert not marker.exists(), "검증 단계에서 도커가 불렸다"
+    assert r.stdout.strip() == "" or not r.stdout.strip().splitlines()[-1].startswith("{")      # 실패는 결과 JSON을 내지 않는다
+
+
+def test_missing_request_file_fails(tmp_path):
+    r = subprocess.run(["bash", str(SCRIPT), str(tmp_path / "nope.json")], capture_output=True, text=True, cwd=ROOT,
+                       env={**os.environ, "PYTHON": sys.executable})
+    assert r.returncode != 0 and "build-image:" in r.stderr
+
+
+def test_script_does_not_read_neighbor_repos_or_use_ssh():
+    # 왜: 이웃 리포 경로(../model-runtime 등)와 빌드 중 SSH 대신 dependency_sources만 쓴다(계약 BuildImageRequest 설명, U42)
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "../model-runtime" not in text and "../boundary-contracts" not in text and "../survey-service" not in text
+    assert "git+ssh" not in text and "git archive" not in text
+
+
+# ---- 실제 빌드(스모크) ----
+
+def _extract(repo: str, tag: str, sub: str | None, dest: Path) -> Path:
+    args = ["git", "-C", str(WS / repo), "archive", tag] + ([sub] if sub else [])
+    out = subprocess.run(args, capture_output=True)
+    if out.returncode != 0:
+        pytest.skip(f"{repo}의 태그 {tag}를 읽지 못했다")
+    dest.mkdir(parents=True)
+    tarfile.open(fileobj=io.BytesIO(out.stdout)).extractall(dest, filter="data")
+    return dest / sub if sub else dest
+
+
+def _docker_ok():
+    return shutil.which("docker") and subprocess.run(["docker", "info"], capture_output=True).returncode == 0
+
+
+@pytest.mark.skipif(not _docker_ok(), reason="도커 데몬이 없다")
+def test_real_build_emits_build_image_result_with_labels_from_request(tmp_path):
+    bc = _extract("boundary-contracts", "v2.5.1", None, tmp_path / "bc")
+    mr = _extract("model-runtime", "v0.10.0", None, tmp_path / "mr")
+    ss = _extract("survey-service", "survey-schema-v1.1.0", "schema", tmp_path / "ss")
+    tag = f"release-gate-u42test:{os.getpid()}"
+    req = {**BASE, "image_tag": tag, "revision": subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip(),
+           "dependency_sources": {"boundary": str(bc), "model_runtime": str(mr), "survey_schema": str(ss)}}
+    ids, layers = [], []
+    try:
+        for _ in range(2):
+            r = run(tmp_path, req)
+            assert r.returncode == 0, r.stderr[-1500:]
+            last = r.stdout.strip().splitlines()[-1]
+            res = json.loads(last)
+            validator("BuildImageResult").validate(res)
+            ids.append(res["image_id"])
+            layers.append(subprocess.run(["docker", "image", "inspect", "-f", "{{json .RootFS.Layers}}", tag], capture_output=True, text=True).stdout)
+        assert res["image"] == tag
+        want = {"io.openit.service": "release-gate", "io.openit.revision": req["revision"],
+                "io.openit.contracts.boundary": "v2.5.1", "io.openit.contracts.survey-schema": "1",
+                "io.openit.model-runtime": "v0.10.0", "io.openit.turn-engine": "n/a"}
+        assert {k: v for k, v in res["labels"].items() if k in want} == want
+        assert set(res["labels"]) >= set(want)
+        validator("ImageLabels").validate(res["labels"])
+        # 같은 요청은 같은 이미지 내용(멱등). 이미지 ID는 설정의 생성 시각이 들어가 달라질 수 있어 층(내용)으로 비교한다(ADR-0015)
+        assert layers[0] == layers[1], (ids, layers)
+    finally:
+        subprocess.run(["docker", "rmi", "-f", tag], capture_output=True)

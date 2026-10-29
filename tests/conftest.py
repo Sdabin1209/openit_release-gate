@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from boundary_contracts.errors import BoundaryError
 
 from release_gate import (GateConfig, GateEngine, GatePolicy, SchemaSet, SurveySchema,
                           memory_registry, postgres_registry, sqlite_registry)
@@ -100,12 +101,21 @@ class World:
         return {"question_set": qs, "lora_a": self.m.ref(a), "lora_b": self.m.ref(b)}
 
     def approve(self, sid, decision="APPROVE", reason=None, approver="trainer-1", **extra):
-        """승인자(release-approver)의 결정. (GateApproval, created)."""
-        body = {"submission_id": sid, "decision": decision, "approver_id": approver, "approver_role": "release-approver"}
+        """승인자(release-approver)의 결정. (GateApproval, created). 본문은 계약 ApprovalRequest 모양이고 approver는 X-Openit-User에 해당한다."""
+        body = {"submission_id": sid, "decision": decision, "approver_role": "release-approver"}
         if reason:
             body["reason"] = reason
+        if "report_hash" not in extra:       # 화면이 review-report에서 받은 해시를 돌려주는 것과 같다(X-Openit-Report-Hash)
+            body["report_hash"] = self.report_hash(sid)
         body.update(extra)
-        return self.engine().decide(body, token_role="release-approver")
+        return self.engine().decide(body, token_role="release-approver", approver_id=approver)
+
+    def report_hash(self, sid) -> str:
+        from boundary_contracts import canonical
+        try:
+            return canonical.sha256_hash(self.reg.service.get_review_report(sid))
+        except BoundaryError:      # 아직 보고서가 없다(자동 검사 전): 모양만 맞는 해시를 보내 서버의 전제 검사에 닿게 한다
+            return "sha256:" + "0" * 64
 
     def make_release(self, subject=None, role="operator") -> str:
         """자동 검사 -> 승인(APPROVE)까지 진행하고 release_id를 돌려준다."""

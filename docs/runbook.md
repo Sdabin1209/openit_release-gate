@@ -7,7 +7,7 @@ bash scripts/setup-env.sh && . .venv/bin/activate      # 멱등. requirements.tx
 python -m pytest -q                                      # 단위, 적합성(메모리·SQLite, TEST_DATABASE_URL이 있으면 PostgreSQL도), HTTP
 TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)" python -m pytest -q   # PostgreSQL 포함. 없으면 그 시험은 SKIP이고 PASS로 세지 않는다
 scripts/dev-postgres.sh down                             # 시험용 postgres:16 정리 (../deploy/scripts/dev-postgres.sh 가 있으면 그것을 쓴다)
-scripts/smoke.sh                                         # MODEL_RUNTIME_TAG(또는 GATE_LIB_WHEELS_DIR) 필수, 값은 deploy/scripts/lib.sh 기준 표에서 정해진다. 고정된 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(표준 `docker`, 데몬에 못 닿으면 중단)
+GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh          # BuildImageRequest 파일 필수, 값은 deploy/scripts/lib.sh 기준 표에서 정해진다. 고정된 태그의 wheel로 이미지 빌드, 호스트 포트는 Docker가 배정, /healthz·/readyz 확인(표준 `docker`, 데몬에 못 닿으면 중단)
 ```
 
 ## 환경 변수 (gate-service)
@@ -37,8 +37,8 @@ scripts/smoke.sh                                         # MODEL_RUNTIME_TAG(또
 ```
 # 승인 요청 보고서 보기 (읽기 토큰)
 curl -H "Authorization: Bearer $READ" http://gate:8080/v1/submissions/$SID/review-report
-# 결정 (쓰기 토큰, 역할 release-approver). report_hash는 선택: 보낸 값이 현재 보고서와 다르면 409 STALE_REPORT
-curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'","decision":"APPROVE","approver_id":"trainer-1","approver_role":"release-approver","reason":"지표 검토함","report_hash":"sha256:…"}' http://gate:8080/v1/approvals
+# 결정 (쓰기 토큰, 역할 release-approver). 본문은 계약 ApprovalRequest: report_hash 필수(보낸 값이 현재 보고서와 다르면 409 STALE_REPORT), approver_id는 보내지 않는다(X-Openit-User 헤더가 승인자)
+curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'","decision":"APPROVE","approver_role":"release-approver","reason":"지표 검토함","report_hash":"sha256:…"}' http://gate:8080/v1/approvals
 ```
 
 승인 대기 목록은 `GET /v1/submissions?status=AWAITING_APPROVAL`(읽기 토큰)로 본다. `/readyz`의 `awaiting_approval`은 개수다. 승인 결정은 `GATE_I1_FACTORY`, `GATE_I3_FACTORY`가 연결되어 있어야 한다(어댑터를 받아 릴리스에 묶는다). 연결이 없으면 503이다. 승인 결정 때 I3가 안 되면 아무것도 기록되지 않으므로 같은 요청을 다시 보낸다.

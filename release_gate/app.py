@@ -405,8 +405,6 @@ class _Req:
                     raise Unauthenticated("X-Openit-User 헤더가 없다(게이트웨이가 붙인 승인자 식별이 필요하다)")
                 if not _ID.match(user):
                     raise BoundaryError("INVALID_RECORD", "X-Openit-User가 ID 형식이 아니다")
-                if "approver_id" in b and b["approver_id"] != user:
-                    raise BoundaryError("INVALID_RECORD", "본문의 approver_id가 인증된 사용자(X-Openit-User)와 다르다")
                 eng = self.server.engine
                 if eng is None:
                     raise BoundaryError("UNAVAILABLE", "승인 결정에는 I1·I3 연결이 필요하다(GATE_I1_FACTORY, GATE_I3_FACTORY)")

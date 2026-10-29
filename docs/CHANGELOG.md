@@ -1,5 +1,10 @@
 # 변경 이력
 
+## (미배포) U42: 빌드 진입점, 계약 v2.5.1, ApprovalRequest 스키마 검증
+
+- `scripts/build-image.sh` 영역 빌드 진입점(ADR-0015). 계약 고정 boundary-contracts v2.5.1.
+- 동작 변경: `POST /v1/approvals` 본문을 계약 `ApprovalRequest`로 검증한다. 본문의 `approver_id`는 같은 값이어도 400(승인자는 X-Openit-User에서만), `report_hash`는 필수(이전에는 선택이고 없으면 서버가 현재 값을 채웠다). `GateEngine.decide`는 `approver_id`를 키워드 인자로 필수로 받는다.
+
 ## (미배포) 단위 4a: waitress, yoyo-migrations
 
 - HTTP 면을 WSGI 앱 + waitress 3.0.2로(ADR-0013). 연결 상한 초과는 503이 아니라 대기, 본문 1MiB 초과는 413(계약 본문 아님).

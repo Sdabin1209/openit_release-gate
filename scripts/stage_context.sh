@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 폐기 예정(U42, ADR-0015): 이미지는 scripts/build-image.sh(계약 BuildImageRequest)로 만든다. deploy의 build-images.sh가 아직 이 스크립트를 부르므로 deploy가 새 진입점으로 바꿀 때까지만 남긴다. 바꾼 뒤에는 지운다(이웃 리포 ../model-runtime 등을 읽는 옛 방식).
 # 이미지 빌드 컨텍스트를 .build/ctx 에 만든다. ../boundary-contracts 와 ../survey-service/schema 는 읽기만 한다.
 # boundary-contracts 는 태그 시점 소스(git archive)로 wheel을 만들어 담는다.
 # GATE_LIB_WHEELS_DIR 가 있으면 그 안의 *.whl(model-runtime 등 배포된 wheel)을 함께 담는다.

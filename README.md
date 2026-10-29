@@ -31,7 +31,7 @@ HTTP 경로(boundary.md 기준): 쓰기는 `POST /v1/submissions`, `/v1/approval
 | `release_gate/app.py`, `main.py` | HTTP 면(WSGI 앱 + waitress), 진입점 `serve` / `collect` / `judge` |
 | `release_gate/factories.py`, `schemas.py` | I1·I3 HTTP 클라이언트 팩토리, 쓰기 전 스키마 검증 |
 | `tests/` | 적합성(memory·sqlite·postgres), HTTP, 비밀, 수집·정책, 계약 v2 시험. `fakes.py`가 이웃 대역 |
-| `scripts/` | `build_image.sh`, `stage_context.sh`(이미지 컨텍스트), `smoke.sh`(스모크) |
+| `scripts/` | `build-image.sh`(영역 빌드 진입점, 계약 BuildImageRequest), `smoke.sh`(스모크), 폐기 예정 `build_image.sh`·`stage_context.sh` |
 | `Dockerfile`, `requirements.txt`, `requirements.lock` | 이미지와 태그 고정 의존 |
 | `docs/` | 아래 6절 |
 
@@ -56,7 +56,7 @@ bash scripts/setup-env.sh && . .venv/bin/activate
 # 2) 시험 (문진 스키마는 설치된 openit-survey-schema 패키지에서 읽는다)
 python -m pytest -q
 # 3) 이미지 빌드 + 스모크(/healthz, /readyz, 토큰 거부, 비root, 라벨). 호스트 포트는 Docker가 배정
-scripts/smoke.sh   # MODEL_RUNTIME_TAG(또는 GATE_LIB_WHEELS_DIR) 필수, 값은 deploy/scripts/lib.sh 기준 표에서 정해진다. 없으면 사용법을 보이고 실패
+GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh   # BuildImageRequest 파일 필수, 값은 deploy/scripts/lib.sh 기준 표에서 정해진다. 없으면 사용법을 보이고 실패
 # 4) 실행 (이미지의 기본 진입점은 Dockerfile의 `CMD ... serve`. 아래는 코드 진입점)
 #    SIGTERM을 받으면 새 연결을 거부하고 처리 중인 요청을 기다린 뒤 저장소를 닫고 끝난다
 python -m release_gate serve
@@ -124,3 +124,4 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | [0012](docs/adr/0012-job-output-self-check.md) | 잡 출력 자기 검사, /readyz는 시험에서만, 종료 코드 |
 | [0013](docs/adr/0013-wsgi-waitress.md) | HTTP 면은 WSGI 앱 + waitress |
 | [0014](docs/adr/0014-yoyo-migrations.md) | 스키마 버전 관리는 yoyo-migrations |
+| [0015](docs/adr/0015-build-image-entrypoint.md) | 영역 빌드 진입점 build-image.sh |

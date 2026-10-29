@@ -207,14 +207,14 @@ def test_approval_with_upstream_fault_records_nothing_and_can_be_retried(world, 
     sid = world.reg.service.submit_candidate(world.subject(), requested_by_role="operator")["submission_id"]
     world.engine().process_pending()
     fault.mode = mode
-    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "a1", "approver_role": "release-approver"}
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_role": "release-approver", "report_hash": world.report_hash(sid)}
     t = time.monotonic()
     with pytest.raises(BoundaryError) as e:
-        engine_on(world, fault).decide(body, token_role="release-approver")
+        engine_on(world, fault).decide(body, token_role="release-approver", approver_id="a1")
     assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < TIMEOUT * 3
     assert world.reg.store.get_approval(sid) is None and world.reg.store.latest_decision(sid) is None
     assert world.reg.store.get_work(sid)["state"] == "AWAITING_APPROVAL"
-    ap, created = world.engine().decide(body, token_role="release-approver")      # 같은 요청을 다시 보내면 된다
+    ap, created = world.engine().decide(body, token_role="release-approver", approver_id="a1")      # 같은 요청을 다시 보내면 된다
     assert created and world.reg.store.latest_decision(sid)["result"] == "PASS"
 
 
@@ -289,8 +289,8 @@ def _file_store(world):
     return world.reg.store
 
 
-def _approve_body(sid):
-    return {"submission_id": sid, "decision": "APPROVE", "approver_id": "a1", "approver_role": "release-approver"}
+def _approve_body(world, sid):
+    return {"submission_id": sid, "decision": "APPROVE", "approver_role": "release-approver", "report_hash": world.report_hash(sid)}
 
 
 @pytest.mark.parametrize("err", [errno.ENOSPC, errno.EROFS, errno.EACCES])
@@ -312,14 +312,14 @@ def test_bundle_write_failure_is_503_and_leaves_no_trace(world, monkeypatch, err
             raise OSError(err, "disk")
     monkeypatch.setattr(store_mod, "shutil", _Shutil())
     with pytest.raises(BoundaryError) as e:
-        world.engine().decide(_approve_body(sid), token_role="release-approver")
+        world.engine().decide(_approve_body(world, sid), token_role="release-approver", approver_id="a1")
     assert e.value.code == "UNAVAILABLE" and e.value.retryable
     assert store.get_approval(sid) is None and store.latest_decision(sid) is None
     assert store.get_work(sid)["state"] == "AWAITING_APPROVAL"
     assert not [p for p in (store.root / "releases").iterdir() if p.name.startswith(".tmp-")]        # 반쯤 쓴 임시 디렉터리 없음
     assert len(world.reg.reader.list_releases()[0]) == 1 and world.reg.reader.get_active_pointer() == base
     monkeypatch.undo()
-    _, created = world.engine().decide(_approve_body(sid), token_role="release-approver")        # 디스크가 돌아오면 같은 요청이 통과
+    _, created = world.engine().decide(_approve_body(world, sid), token_role="release-approver", approver_id="a1")        # 디스크가 돌아오면 같은 요청이 통과
     assert created and len(world.reg.reader.list_releases()[0]) == 2
 
 
@@ -330,11 +330,11 @@ def test_publish_rename_failure_is_503_and_rolls_back(world, monkeypatch):
     monkeypatch.setattr(type(store), "_publish_release_dir", lambda self, staged, rid: (_ for _ in ()).throw(
         BoundaryError("UNAVAILABLE", "옮길 수 없다")))
     with pytest.raises(BoundaryError):
-        world.engine().decide(_approve_body(sid), token_role="release-approver")
+        world.engine().decide(_approve_body(world, sid), token_role="release-approver", approver_id="a1")
     assert store.get_approval(sid) is None and world.reg.reader.list_releases()[0] == []
     assert not [p for p in (store.root / "releases").iterdir()]                                  # 임시 디렉터리까지 정리됨
     monkeypatch.undo()
-    world.engine().decide(_approve_body(sid), token_role="release-approver")
+    world.engine().decide(_approve_body(world, sid), token_role="release-approver", approver_id="a1")
     assert len(world.reg.reader.list_releases()[0]) == 1
 
 
@@ -351,7 +351,7 @@ def test_orphan_release_directory_never_reads_as_release_and_does_not_block_retr
     with pytest.raises(BoundaryError) as e:
         world.reg.reader.get_release(rid)
     assert e.value.code == "NOT_FOUND"                          # 디렉터리가 있어도 활성 릴리스 후보로 읽히지 않는다
-    world.engine().decide(_approve_body(sid), token_role="release-approver")
+    world.engine().decide(_approve_body(world, sid), token_role="release-approver", approver_id="a1")
     b = world.reg.reader.load_bundle(rid, dest=tmp_path / "b")  # 치우고 다시 만들었고 해시 검증 통과
     assert b.manifest["release_id"] == rid and (orphan / "adapters" / "LORA_A").is_dir()
 

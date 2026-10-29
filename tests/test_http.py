@@ -37,8 +37,7 @@ AUTO = "auto"      # 승인 호출에는 게이트웨이가 붙이는 X-Openit-U
 
 def _gw_user(path, body, token):
     if path == "/v1/approvals" and token == "wa":
-        a = (body or {}).get("approver_id")
-        return a if isinstance(a, str) and a else "gw-user"
+        return "gw-user"      # 승인자는 본문이 아니라 헤더에서만 온다(계약 ApprovalRequest: approver_id를 보내지 않는다)
     return None
 
 
@@ -192,7 +191,7 @@ def test_review_report_and_approval_over_http(world, server):
     world.schemas.validate("ReviewReport", rr)
     from boundary_contracts import canonical
     h = canonical.sha256_hash(rr)
-    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "trainer-1", "approver_role": "release-approver"}
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_role": "release-approver"}
     # 권한: 읽기 토큰, 다른 역할의 쓰기 토큰, 역할 주장 불일치
     assert call(server, "/v1/approvals", body, "rt")[0] == 403
     assert call(server, "/v1/approvals", body, "wt")[0] == 403
@@ -201,9 +200,9 @@ def test_review_report_and_approval_over_http(world, server):
     st, ap = call(server, "/v1/approvals", dict(body, report_hash=h), "wa")
     assert st == 201 and ap["decision"] == "APPROVE" and ap["report_hash"] == h and ap["approver_role"] == "release-approver"
     world.schemas.validate("GateApproval", ap)
-    st2, ap2 = call(server, "/v1/approvals", body, "wa")
+    st2, ap2 = call(server, "/v1/approvals", dict(body, report_hash=h), "wa")
     assert st2 == 200 and ap2 == ap                                              # 멱등
-    st3, e = call(server, "/v1/approvals", dict(body, decision="REJECT", reason="번복"), "wa")
+    st3, e = call(server, "/v1/approvals", dict(body, decision="REJECT", reason="번복", report_hash=h), "wa")
     assert st3 == 409 and e["code"] == "CONFLICT"
     d = call(server, f"/v1/decisions?submission_id={sid}", token="rt")[1]["items"][0]
     assert d["result"] == "PASS" and d["approval_id"] == ap["approval_id"]
@@ -212,8 +211,8 @@ def test_review_report_and_approval_over_http(world, server):
 
 
 def test_approval_needs_engine_and_valid_body(world, server):
-    assert call(server, "/v1/approvals", {"submission_id": "sub-none", "decision": "APPROVE", "approver_id": "t",
-                                          "approver_role": "release-approver"}, "wa")[0] == 404
+    assert call(server, "/v1/approvals", {"submission_id": "sub-none", "decision": "APPROVE", "approver_role": "release-approver",
+                                          "report_hash": "sha256:" + "0" * 64}, "wa")[0] == 404
     assert call(server, "/v1/approvals", {"decision": "APPROVE"}, "wa")[0] == 400
     assert call(server, "/v1/approvals", {"submission_id": "x", "decision": "APPROVE", "approval_id": "ap-1",
                                           "approver_id": "t"}, "wa")[0] == 400
@@ -246,10 +245,8 @@ def test_submission_views_over_http(world, server):
     sid = {k: v["submission_id"] for k, v in dict(ok=ok, bad=bad, rej=rej, wait=wait, pend=pend).items()}
     for k in ("ok", "bad", "rej", "wait"):          # 'pend'는 일부러 검사하지 않는다
         eng.advance(sid[k])
-    eng.decide({"submission_id": sid["ok"], "decision": "APPROVE", "approver_id": "t", "approver_role": "release-approver"},
-               token_role="release-approver")
-    eng.decide({"submission_id": sid["rej"], "decision": "REJECT", "reason": "x", "approver_id": "t",
-                "approver_role": "release-approver"}, token_role="release-approver")
+    world.approve(sid["ok"], approver="t")
+    world.approve(sid["rej"], decision="REJECT", reason="x", approver="t")
     want = {"ok": "PASSED", "bad": "REJECTED_AUTO", "rej": "REJECTED_HUMAN", "wait": "AWAITING_APPROVAL", "pend": "PENDING_CHECK"}
     for k, st_ in want.items():
         st, v = call(server, f"/v1/submissions/{sid[k]}", token="rt")
@@ -325,7 +322,7 @@ def test_report_hash_header_matches_and_is_accepted(world, server):
     assert st == 200 and h["X-Openit-Report-Hash"] == canonical.sha256_hash(rr)         # 서버가 대조에 쓰는 값
     again = hcall(server, f"/v1/submissions/{sid}/review-report", token="rq")[2]["X-Openit-Report-Hash"]
     assert again == h["X-Openit-Report-Hash"]                                           # 같은 보고서는 같은 해시
-    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "ignored", "approver_role": "release-approver",
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_role": "release-approver",
             "report_hash": h["X-Openit-Report-Hash"]}                                   # 계산하지 않고 받은 값을 그대로
     st, ap, _ = hcall(server, "/v1/approvals", body, "wa")
     assert st == 201 and ap["report_hash"] == h["X-Openit-Report-Hash"]
@@ -336,7 +333,7 @@ def test_conflict_reasons_stale_and_already_decided(world, server):
     h = hcall(server, f"/v1/submissions/{sid}/review-report", token="rt")[2]["X-Openit-Report-Hash"]
     other = world.make_release(world.subject(qs=world.q.add("qs-oth", 1)))
     world.reg.service.activate(other, requested_by_role="operator")            # 기준이 바뀌어 보고서가 낡는다
-    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "t1", "approver_role": "release-approver",
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_role": "release-approver",
             "report_hash": h}
     st, e, _ = hcall(server, "/v1/approvals", body, "wa")
     assert st == 409 and e["code"] == "CONFLICT" and e["details"]["reason"] == "STALE_REPORT"
@@ -350,7 +347,7 @@ def test_conflict_reasons_stale_and_already_decided(world, server):
 
 def test_x_openit_user_header_is_the_approver(world, server):
     sid = _awaiting(world, server)
-    body = {"submission_id": sid, "decision": "APPROVE", "approver_role": "release-approver"}
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_role": "release-approver", "report_hash": world.report_hash(sid)}
     assert hcall(server, "/v1/approvals", body, "wa", {"X-Openit-User": "bad id!"})[0] == 400      # Id 형식이 아니다
     assert hcall(server, "/v1/approvals", body, "wa", {"X-Openit-User": "x" * 129})[0] == 400
     assert world.reg.store.get_approval(sid) is None
@@ -372,11 +369,13 @@ def test_approval_without_header_is_401_and_records_nothing_but_the_attempt(worl
     assert att["status"] == 401 and att["role"] == "release-approver" and att["user"] is None and att["target"] == sid
 
 
-def test_approval_header_differs_from_body_is_400_and_attempt_has_actor(world, server):
+def test_approver_id_in_body_is_refused_even_when_it_matches_the_header(world, server):
+    # 계약 ApprovalRequest: approver_id는 보내지 않는다(X-Openit-User가 유일한 길). 같은 값이어도 모르는 키라서 거부한다
     sid = _awaiting(world, server)
-    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "someone-else", "approver_role": "release-approver"}
+    body = {"submission_id": sid, "decision": "APPROVE", "approver_id": "gw-user-7", "approver_role": "release-approver",
+            "report_hash": world.report_hash(sid)}
     st, e, _ = hcall(server, "/v1/approvals", body, "wa", {"X-Openit-User": "gw-user-7"})
-    assert st == 400 and world.reg.store.get_approval(sid) is None
+    assert st == 400 and e["code"] == "INVALID_RECORD" and world.reg.store.get_approval(sid) is None
     att = world.reg.store.list_attempts()[0]
     assert att["user"] == "gw-user-7" and att["status"] == 400 and att["code"] == "INVALID_RECORD"      # 거부된 시도도 행위자와 함께 남는다
-    assert hcall(server, "/v1/approvals", dict(body, approver_id="gw-user-7"), "wa", {"X-Openit-User": "gw-user-7"})[0] == 201
+    assert hcall(server, "/v1/approvals", {k: v for k, v in body.items() if k != "approver_id"}, "wa", {"X-Openit-User": "gw-user-7"})[0] == 201

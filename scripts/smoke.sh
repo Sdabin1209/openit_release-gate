@@ -4,23 +4,24 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER="${DOCKER:-docker}"
-# 왜: model-runtime 태그는 이 리포의 pin이 없고 deploy/scripts/lib.sh 표가 정본이다. 여기에 기본값을 적으면 표와 어긋나므로
-# 환경 변수(또는 준비된 wheel 폴더)로 받고, 없으면 Docker에 닿기 전에 사용법을 보이며 실패한다.
-if [ -z "${GATE_LIB_WHEELS_DIR:-}" ] && [ -z "${MODEL_RUNTIME_TAG:-}" ]; then
-  echo "사용법: MODEL_RUNTIME_TAG=<태그> scripts/smoke.sh   (또는 GATE_LIB_WHEELS_DIR=<wheel 폴더>)" >&2
-  echo "이유: 태그의 기준 값은 deploy/scripts/lib.sh 표에서 정해지며 이 리포는 값을 따로 갖지 않는다." >&2
+# 왜: 이미지는 영역 빌드 진입점(scripts/build-image.sh, 계약 BuildImageRequest)으로만 만든다. 버전과 의존 소스 트리는 이 리포가 따로 갖지 않으므로
+# 요청 파일을 환경 변수 GATE_BUILD_REQUEST로 받는다(deploy가 만드는 것과 같은 모양). 없으면 Docker에 닿기 전에 사용법을 보이며 실패한다.
+if [ -z "${GATE_BUILD_REQUEST:-}" ]; then
+  echo "사용: GATE_BUILD_REQUEST=<BuildImageRequest JSON 파일> scripts/smoke.sh" >&2
+  echo "이유: 버전·의존 소스 트리의 기준은 deploy 기준표이며 이 리포는 값을 따로 갖지 않는다(docs/runbook.md 이미지 절)." >&2
   exit 2
 fi
 if ! "$DOCKER" info >/dev/null 2>&1; then
   echo "오류: 도커 데몬에 연결할 수 없다('$DOCKER info' 실패). 도커가 실행 중이고 이 셸에서 접근할 수 있는지 확인한다." >&2
   exit 1
 fi
-tag="release-gate:smoke"; name="release-gate-smoke-$$"
+name="release-gate-smoke-$$"
 sdir="$(mktemp -d)"
 cleanup() { "$DOCKER" rm -f "$name" >/dev/null 2>&1 || true; rm -rf "$sdir"; }
 trap cleanup EXIT
 
-"$here/scripts/build_image.sh" "$tag" >/dev/null
+result="$(DOCKER="$DOCKER" bash "$here/scripts/build-image.sh" "$GATE_BUILD_REQUEST")" || { echo "FAIL: 이미지 빌드"; exit 1; }
+tag="$(printf '%s\n' "$result" | tail -1 | "${PYTHON:-python3}" -c 'import json,sys; print(json.load(sys.stdin)["image"])')"
 # 비밀은 환경 변수가 아니라 파일로 준다(NAME_FILE, D84). 비root 사용자가 읽도록 0644
 printf 'survey-service=smoke-read' > "$sdir/read_tokens"; printf 'operator=smoke-write' > "$sdir/write_tokens"; chmod 755 "$sdir"; chmod 644 "$sdir"/*
 "$DOCKER" run -d --name "$name" -p 127.0.0.1::8080 -v "$sdir:/run/secrets:ro" \

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 폐기 예정(U42, ADR-0015): 이미지는 scripts/build-image.sh(계약 BuildImageRequest)로 만든다. deploy의 build-images.sh가 아직 이 스크립트를 부르므로 deploy가 새 진입점으로 바꿀 때까지만 남긴다. 바꾼 뒤에는 지운다(이웃 리포 ../model-runtime 등을 읽는 옛 방식).
 # 이미지를 빌드한다: scripts/build_image.sh [이미지 태그]. 라벨 값은 컨텍스트의 wheel 이름에서 읽는다(설치되는 버전과 같다).
 # 표준 `docker` 명령을 쓴다(실행 파일 이름은 DOCKER 환경 변수로만 바꾼다). 데몬에 못 닿으면 중단한다.
 set -euo pipefail

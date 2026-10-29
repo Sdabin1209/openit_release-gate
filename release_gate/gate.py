@@ -284,28 +284,22 @@ class GateEngine:
         return None
 
     # --- 사람의 결정 (POST /v1/approvals)
-    def decide(self, body: dict, *, token_role: str, approver_id: Optional[str] = None) -> tuple:
+    def decide(self, body: dict, *, token_role: str, approver_id: str) -> tuple:
         """(GateApproval, created). 같은 submission_id에 같은 결정이면 (기존, False), 다른 결정이면 CONFLICT(details.reason=ALREADY_DECIDED).
-    report_hash가 현재 보고서와 다르면 CONFLICT(details.reason=STALE_REPORT)."""
+    report_hash가 현재 보고서와 다르면 CONFLICT(details.reason=STALE_REPORT). approver_id는 본문이 아니라 게이트웨이가 인증한 X-Openit-User에서 온다(D69, D88)."""
         if token_role not in self.config.approver_roles:
             raise BoundaryError("PERMISSION_DENIED", f"역할 {token_role}은 출고 결정 권한이 없다")
-        if not isinstance(body, dict):
-            raise BoundaryError("INVALID_RECORD", "본문이 객체가 아니다")
-        if approver_id is not None:   # 게이트웨이가 인증한 사용자(X-Openit-User)가 본문의 approver_id를 대신한다(D69)
-            body = {**body, "approver_id": approver_id}
-        for k in ("approval_id", "decided_at"):
-            if k in body:
-                raise BoundaryError("INVALID_RECORD", f"{k}는 서버가 채운다")
-        if body.get("approver_role") not in (None, token_role):
+        # 권한 검사(토큰 역할 대 본문이 주장한 역할)는 모양 검사가 아니라 인가라서 스키마 앞에 둔다(403이 400보다 먼저)
+        if isinstance(body, dict) and body.get("approver_role") not in (None, token_role):
             raise BoundaryError("PERMISSION_DENIED", "approver_role이 토큰의 역할과 다르다")
-        sid = body.get("submission_id")
-        if not isinstance(sid, str) or not sid:
-            raise BoundaryError("INVALID_RECORD", "submission_id가 없다")
+        # 왜: 본문의 모양(필수 키, 모르는 키, 반려 사유, 해시 형식)은 계약 ApprovalRequest 스키마가 정본이다. 손으로 다시 검사하지 않는다(R7, U44)
+        self.schemas.validate("ApprovalRequest", body)
+        sid = body["submission_id"]
         self.store.get_submission(sid)  # NOT_FOUND
-        sent_hash = body.get("report_hash")
-        rec = {k: v for k, v in body.items() if k not in ("report_hash",)}
+        sent_hash = body["report_hash"]
+        rec = {k: v for k, v in body.items() if k != "report_hash"}
         rec.update({"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "approval_id": "ap-" + _sub_hex(sid),
-                    "approver_role": token_role, "decided_at": ts(self.clock())})
+                    "approver_id": approver_id, "approver_role": token_role, "decided_at": ts(self.clock())})
         existing = self.store.get_approval(sid)
         if existing:
             return self._same_or_conflict(existing, rec)
@@ -315,7 +309,7 @@ class GateEngine:
                                 {"state": w["state"]})
         report = review_report_for(self.store, self.schemas, self.clock, sid)
         h = canonical.sha256_hash(report)
-        if sent_hash is not None and sent_hash != h:
+        if sent_hash != h:
             raise BoundaryError("CONFLICT", "STALE_REPORT: 승인자가 본 보고서와 현재 보고서가 다르다",
                                 {"reason": "STALE_REPORT", "current_report_hash": h})
         rec["report_hash"] = h

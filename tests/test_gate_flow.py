@@ -116,15 +116,17 @@ def test_decide_is_idempotent_and_conflicting_decision_is_409(world):
 def test_decide_permissions_and_preconditions(world):
     sub = submit(world)
     eng = world.engine()
-    body = {"submission_id": sub["submission_id"], "decision": "APPROVE", "approver_id": "t1",
-            "approver_role": "release-approver"}
-    assert code(eng.decide, body, token_role="release-approver").code == "FAILED_PRECONDITION"      # 자동 검사 전
+    body = {"submission_id": sub["submission_id"], "decision": "APPROVE", "approver_role": "release-approver",
+            "report_hash": world.report_hash(sub["submission_id"])}
+    kw = {"approver_id": "t1"}
+    assert code(eng.decide, body, token_role="release-approver", **kw).code == "FAILED_PRECONDITION"      # 자동 검사 전
     eng.process_pending()
-    assert code(eng.decide, body, token_role="operator").code == "PERMISSION_DENIED"
-    assert code(eng.decide, dict(body, approver_role="operator"), token_role="release-approver").code == "PERMISSION_DENIED"
-    assert code(eng.decide, dict(body, submission_id="sub-none"), token_role="release-approver").code == "NOT_FOUND"
-    assert code(eng.decide, dict(body, decision="MAYBE"), token_role="release-approver").code == "INVALID_RECORD"
-    assert code(eng.decide, dict(body, approval_id="ap-x"), token_role="release-approver").code == "INVALID_RECORD"
+    body["report_hash"] = world.report_hash(sub["submission_id"])
+    assert code(eng.decide, body, token_role="operator", **kw).code == "PERMISSION_DENIED"
+    assert code(eng.decide, dict(body, approver_role="operator"), token_role="release-approver", **kw).code == "PERMISSION_DENIED"
+    assert code(eng.decide, dict(body, submission_id="sub-none"), token_role="release-approver", **kw).code == "NOT_FOUND"
+    assert code(eng.decide, dict(body, decision="MAYBE"), token_role="release-approver", **kw).code == "INVALID_RECORD"
+    assert code(eng.decide, dict(body, approval_id="ap-x"), token_role="release-approver", **kw).code == "INVALID_RECORD"
     assert state(world, sub) == "AWAITING_APPROVAL" and world.reg.store.get_approval(sub["submission_id"]) is None
 
 

@@ -1,3 +1,7 @@
+# STATUS (U42): 빌드 진입점과 계약 v2.5.1
+- `scripts/build-image.sh`(ADR-0015)와 시험. 계약 고정 v2.5.1. 승인 요청 본문(ApprovalRequest)은 계약 스키마로 검증한다: 본문에 approver_id를 보내면 거부, report_hash 필수(이전에는 선택).
+- 옛 `build_image.sh`, `stage_context.sh`는 deploy가 새 진입점으로 바꿀 때까지 남긴 폐기 예정 스크립트다.
+
 # STATUS (단위 4a-B): 시작 때 DDL을 yoyo-migrations로
 - `release_gate/migrations/<방언>/0001.initial.sql`과 `migrate.py`(ADR-0014). 이미 있는 DB는 그대로 받아들이고 이력만 남는다. 읽기 전용 연결은 마이그레이션하지 않는다.
 

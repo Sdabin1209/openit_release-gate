@@ -33,8 +33,8 @@ def test_collect_judge_bundle_over_http(world, neighbors, tmp_path):
                      GatePolicy.default(), qc, mc, CheckRegistry(), clock=world.clock)
     assert eng.process_pending() == []                    # 자동 검사 통과 -> 승인 요청
     assert any(r.endswith("/eval-reports/eval-lora-a-1") or "/eval-reports/" in r for r in neighbors.requests)
-    ap, _ = eng.decide({"submission_id": subs[0]["submission_id"], "decision": "APPROVE", "approver_id": "t1",
-                        "approver_role": "release-approver"}, token_role="release-approver")
+    ap, _ = eng.decide({"submission_id": subs[0]["submission_id"], "decision": "APPROVE", "approver_role": "release-approver",
+                        "report_hash": world.report_hash(subs[0]["submission_id"])}, token_role="release-approver", approver_id="t1")
     d = world.reg.store.latest_decision(subs[0]["submission_id"])
     assert d["result"] == "PASS" and d["approval_id"] == ap["approval_id"]
     assert any(r.endswith("/adapter") for r in neighbors.requests)       # 어댑터를 HTTP로 받아 릴리스에 묶었다

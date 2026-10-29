@@ -25,8 +25,8 @@ def test_release_not_created_when_versions_unreadable(world, bad):
     eng = GateEngine(world.reg.store, world.schemas, world.survey, cfg, GatePolicy.from_dict({"checks": {"CONTRACT_COMPAT": {"require_lineage_runtime_match": False}}}), world.q, world.m, clock=world.clock)
     eng.process_pending()
     with pytest.raises(Exception) as e:
-        eng.decide({"submission_id": sub["submission_id"], "decision": "APPROVE", "approver_id": "u1",
-                    "approver_role": "release-approver"}, token_role="release-approver")
+        eng.decide({"submission_id": sub["submission_id"], "decision": "APPROVE", "approver_role": "release-approver",
+                    "report_hash": world.report_hash(sub["submission_id"])}, token_role="release-approver", approver_id="u1")
     assert getattr(e.value, "code", None) == "FAILED_PRECONDITION"
     assert world.reg.store.list_releases()[0] == []                                    # 릴리스가 만들어지지 않았다
     assert world.reg.store.latest_decision(sub["submission_id"]) is None              # 아무것도 기록되지 않았다

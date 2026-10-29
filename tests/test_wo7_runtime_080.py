@@ -26,8 +26,8 @@ def _run(world, cfg, lineage_rt):
 def test_manifest_records_0_8_0_and_major_minor_matches_server(world):
     cfg = _world_with(world, "0.8.0")
     sub, eng = _run(world, cfg, "0.8.0")
-    eng.decide({"submission_id": sub["submission_id"], "decision": "APPROVE", "approver_id": "u1", "approver_role": "release-approver"},
-               token_role="release-approver")
+    eng.decide({"submission_id": sub["submission_id"], "decision": "APPROVE", "approver_role": "release-approver",
+                "report_hash": world.report_hash(sub["submission_id"])}, token_role="release-approver", approver_id="u1")
     d = world.reg.store.latest_decision(sub["submission_id"])
     assert d["result"] == "PASS"
     man = world.reg.store.get_release(d["release_id"])
