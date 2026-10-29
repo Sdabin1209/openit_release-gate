@@ -66,11 +66,13 @@ PY
 src="${F[0]}" rev="${F[1]}" tag="${F[2]}" v_bc="${F[3]}" v_mr="${F[4]}" v_ss="${F[5]}" s_bc="${F[6]}" s_mr="${F[7]}" s_ss="${F[8]}" exposure="${F[9]}"
 for d in "$src" "$s_bc" "$s_mr" "$s_ss"; do [ -d "$d" ] || die "디렉터리가 없다: $d"; done
 [ -f "$src/Dockerfile" ] || die "source_dir에 Dockerfile이 없다: $src"
-ss_major="${v_ss#v}"; ss_major="${ss_major%%.*}"
-# 왜 실제 값에서 찍는다: 라벨은 이미지에 실제로 들어간 것이어야 한다(U50). 문진 스키마는 복사할 소스의 CONTRACT_VERSION(주 버전)이 실제 값이다
-ss_actual="$(tr -d '[:space:]' < "$s_ss/CONTRACT_VERSION" 2>/dev/null)"
-[ "$ss_actual" = "$ss_major" ] \
-  || die "실제 문진 스키마 소스의 CONTRACT_VERSION($ss_actual)이 요청의 versions.survey_schema($v_ss) 주 버전과 다르다(라벨이 이미지 내용과 달라진다)"
+# 왜 실제 값에서 찍는다: 라벨은 이미지에 실제로 들어간 것이어야 한다(U50). 문진 스키마 패키지의 실제 버전은 복사할 소스 트리의 pyproject version이다
+# (정수 계약 버전 CONTRACT_VERSION과는 다른 수다: 패키지 2.0.0에서도 CONTRACT_VERSION은 1일 수 있다). 라벨은 그 주 버전이다.
+ss_full="$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' "$s_ss/pyproject.toml" 2>/dev/null | head -1)"
+[ -n "$ss_full" ] || die "문진 스키마 소스의 pyproject.toml에서 version을 읽지 못했다: $s_ss"
+[ "v$ss_full" = "$v_ss" ] \
+  || die "실제 문진 스키마 소스의 버전(v$ss_full)이 요청의 versions.survey_schema($v_ss)와 다르다. 라벨을 찍지 않는다"
+ss_actual="${ss_full%%.*}"
 "$DOCKER" info >/dev/null 2>&1 || die "도커 데몬에 연결할 수 없다('$DOCKER info' 실패)"
 
 # 2) 빌드 컨텍스트는 임시 폴더에 만든다(source_dir와 의존 소스 트리를 더럽히지 않는다).

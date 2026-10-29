@@ -16,7 +16,6 @@ LABEL io.openit.service="release-gate" \
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 \
     GATE_SURVEY_SCHEMA_DIR=/opt/contracts/survey-schema \
     GATE_DATA_DIR=/data \
-    GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION=${SURVEY_SCHEMA_VERSION} \
     PORT=8080
 
 RUN useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin gate \
