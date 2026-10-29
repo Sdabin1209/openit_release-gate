@@ -37,12 +37,21 @@ for grp, name, keys in (("versions", v, ("model_runtime", "survey_schema")), ("d
     for k in keys:
         if k not in name:
             sys.exit(f"build-image: 오류: 요청에 {grp}.{k}가 없다(이 영역이 쓴다)")
+# 노출 선언(U47): 리포 안의 deploy-exposure.json이 정본이다. 계약 Exposure로 검증해 이미지 라벨 io.openit.exposure(JSON 문자열)로 단다.
+try:
+    ex = json.load(open(r["source_dir"] + "/deploy-exposure.json", encoding="utf-8"))
+    validator("Exposure").validate(ex)
+except (OSError, ValueError) as e:
+    sys.exit(f"build-image: 오류: source_dir/deploy-exposure.json을 읽지 못했다: {type(e).__name__}")
+except Exception as e:
+    sys.exit("build-image: 오류: deploy-exposure.json이 Exposure를 어긴다: " + str(getattr(e, "message", e))[:300])
+exposure = json.dumps(ex, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 print(r["source_dir"], r["revision"], r["image_tag"], v["boundary"], v["model_runtime"], v["survey_schema"],
-      d["boundary"], d["model_runtime"], d["survey_schema"], sep="\n")
+      d["boundary"], d["model_runtime"], d["survey_schema"], exposure, sep="\n")
 PY
 ) || exit 1
-[ "${#F[@]}" -eq 9 ] || die "요청을 읽지 못했다"
-src="${F[0]}" rev="${F[1]}" tag="${F[2]}" v_bc="${F[3]}" v_mr="${F[4]}" v_ss="${F[5]}" s_bc="${F[6]}" s_mr="${F[7]}" s_ss="${F[8]}"
+[ "${#F[@]}" -eq 10 ] || die "요청을 읽지 못했다"
+src="${F[0]}" rev="${F[1]}" tag="${F[2]}" v_bc="${F[3]}" v_mr="${F[4]}" v_ss="${F[5]}" s_bc="${F[6]}" s_mr="${F[7]}" s_ss="${F[8]}" exposure="${F[9]}"
 for d in "$src" "$s_bc" "$s_mr" "$s_ss"; do [ -d "$d" ] || die "디렉터리가 없다: $d"; done
 [ -f "$src/Dockerfile" ] || die "source_dir에 Dockerfile이 없다: $src"
 ss_major="${v_ss#v}"; ss_major="${ss_major%%.*}"
@@ -70,7 +79,7 @@ find "$ctx" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 # 3) 빌드. 라벨 값은 요청에서 온다(이미지 라벨 계약 ImageLabels). turn-engine은 설치하지 않으므로 n/a(ADR-0011).
 log "docker build: $tag"
-"$DOCKER" build -q -t "$tag" -f "$src/Dockerfile" \
+"$DOCKER" build -q -t "$tag" -f "$src/Dockerfile" --label "io.openit.exposure=$exposure" \
   --build-arg COMMIT="$rev" --build-arg BOUNDARY_VERSION="$v_bc" --build-arg SURVEY_SCHEMA_VERSION="$ss_major" \
   --build-arg TURN_ENGINE_VERSION="n/a" --build-arg MODEL_RUNTIME_VERSION="$v_mr" "$ctx" >&2
 

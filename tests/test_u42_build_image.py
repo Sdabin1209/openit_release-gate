@@ -98,6 +98,22 @@ def test_default_python_is_the_area_own_venv_not_the_callers(tmp_path, fake_dock
     assert not marker.exists()
 
 
+def test_missing_or_invalid_exposure_file_fails_the_build(tmp_path, fake_docker):
+    docker, marker = fake_docker
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "Dockerfile").write_text("FROM scratch\n")
+    for d in ("bc", "mr", "ss"):
+        (tmp_path / d).mkdir()
+    (tmp_path / "ss" / "CONTRACT_VERSION").write_text("1")
+    req = {**BASE, "source_dir": str(src), "dependency_sources": {"boundary": str(tmp_path / "bc"), "model_runtime": str(tmp_path / "mr"), "survey_schema": str(tmp_path / "ss")}}
+    r = run(tmp_path, req, docker)
+    assert r.returncode != 0 and "deploy-exposure.json" in r.stderr
+    (src / "deploy-exposure.json").write_text('{"service": "release-gate", "routes": []}')
+    r = run(tmp_path, req, docker)
+    assert r.returncode != 0 and "Exposure를 어긴다" in r.stderr and not marker.exists()
+
+
 def test_missing_request_file_fails(tmp_path):
     r = subprocess.run(["bash", str(SCRIPT), str(tmp_path / "nope.json")], capture_output=True, text=True, cwd=ROOT,
                        env={**os.environ, "PYTHON": sys.executable})
@@ -152,6 +168,10 @@ def test_real_build_emits_build_image_result_with_labels_from_request(tmp_path):
         assert {k: v for k, v in res["labels"].items() if k in want} == want
         assert set(res["labels"]) >= set(want)
         validator("ImageLabels").validate(res["labels"])
+        # U47: 노출 선언 라벨이 붙고 계약 Exposure를 통과하며 리포의 deploy-exposure.json과 같다
+        exposure = json.loads(res["labels"]["io.openit.exposure"])
+        validator("Exposure").validate(exposure)
+        assert exposure == json.loads((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
         # 같은 요청은 같은 이미지 내용(멱등). 이미지 ID는 설정의 생성 시각이 들어가 달라질 수 있어 층(내용)으로 비교한다(ADR-0015)
         assert layers[0] == layers[1], (ids, layers)
     finally:

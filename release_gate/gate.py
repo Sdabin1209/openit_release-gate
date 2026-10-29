@@ -324,6 +324,18 @@ class GateEngine:
             raise
         return rec, True
 
+    def _check_adapter_layout(self, role: str, root: Path, manifest: dict) -> None:
+        """이웃(model-lab)에게서 받은 어댑터 디렉터리가 계약 ModelPackageLayout과 맞는가: 필수 3파일, 그 밖의 파일 없음, 파일 해시.
+        왜 여기만: 이웃 입력이라 검증한다. 우리가 묶어 저장한 사본은 해시가 전체를 덮어 변조·추가 파일이 해시에서 잡히므로 읽을 때 다시 하지 않는다(R7)."""
+        files = {p.relative_to(root).as_posix(): canonical.file_hash(p) for p in sorted(root.rglob("*")) if p.is_file()}
+        sp = manifest["system_prompt"]
+        doc = {"role": role, "adapter_files": files, "adapter_hash": manifest["adapter_hash"],
+               "system_prompt": {"path": sp["path"], "sha256": sp["sha256"]}}
+        try:
+            self.schemas.validate("ModelPackageLayout", doc)
+        except BoundaryError as e:
+            raise BoundaryError("INTEGRITY_ERROR", f"{role} 어댑터가 ModelPackageLayout과 다르다: {e.message}") from e
+
     @staticmethod
     def _same_or_conflict(existing: dict, rec: dict) -> tuple:
         if existing["decision"] == rec["decision"] and existing.get("reason") == rec.get("reason"):
@@ -370,6 +382,7 @@ class GateEngine:
                 # 왜: 링크가 든 어댑터는 계약 directory_hash가 INTEGRITY_ERROR로 거부한다(CONVENTIONS 8절, 2.2.0). 같은 검사를 다시 하지 않는다(R7).
                 if canonical.directory_hash(p) != m["adapter_hash"]:
                     raise BoundaryError("INTEGRITY_ERROR", f"{role} 어댑터 내용이 adapter_hash와 다르다")
+                self._check_adapter_layout(role, Path(p), m)
                 adapters[role] = Path(p)
                 sp = m["system_prompt"]  # D75: 시스템 프롬프트는 패키지의 일부. 파일을 확인하고 값을 그대로 복사한다
                 f = Path(p) / sp["path"]

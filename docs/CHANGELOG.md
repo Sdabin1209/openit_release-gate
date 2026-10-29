@@ -1,5 +1,9 @@
 # 변경 이력
 
+## (미배포) U47: 계약 v2.7.0
+
+- 계약 고정 boundary-contracts v2.7.0. 노출 선언 라벨 `io.openit.exposure`(`deploy-exposure.json`). I4 `GET /v1/releases/{id}/question-bank` 추가. 동작 변경: 승인 때 어댑터가 계약 ModelPackageLayout(필수 3파일 외 파일 없음)과 다르면 INTEGRITY_ERROR로 거부한다.
+
 ## (미배포) U43: 계약 v2.6.0, setup-env.sh 결과 보고
 
 - 계약 고정 boundary-contracts v2.6.0. `scripts/setup-env.sh`의 마지막 줄이 `SetupEnvReport` JSON이다(진행 기록은 표준 오류). 표준 출력에 진행 기록을 기대하던 호출자가 있으면 표준 오류를 보도록 바꿔야 한다.

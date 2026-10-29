@@ -1,3 +1,6 @@
+# STATUS (U47): 계약 v2.7.0
+- `deploy-exposure.json`과 이미지 라벨 `io.openit.exposure`, 어댑터 ModelPackageLayout 검증(승인 시점), I4 `GET /v1/releases/{id}/question-bank`(ADR-0016). 시험 어댑터는 계약 필수 3파일 모양이다.
+
 # STATUS (U43): 계약 v2.6.0, setup-env.sh의 SetupEnvReport
 - `scripts/setup-env.sh`가 표준 출력 마지막 줄에 계약 `SetupEnvReport` 한 줄(area, status, exit_code, seconds, environment{kind, path, test_command})을 내고 진행 기록은 표준 오류로 낸다. 실패해도 `status: fail` 보고를 낸다. 시험: `tests/test_u43_setup_env_report.py`.
 

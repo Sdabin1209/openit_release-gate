@@ -337,7 +337,7 @@ def test_approve_with_i3_down_leaves_submission_waiting(world):
 def test_adapter_tamper_blocks_pass_without_recording_approval(world):
     sub = submit(world)
     world.engine().process_pending()
-    (world.m.dirs[("lora-a", "1")] / "adapter.bin").write_bytes(b"tampered")
+    (world.m.dirs[("lora-a", "1")] / "adapter_model.safetensors").write_bytes(b"tampered")
     assert code(world.approve, sub["submission_id"]).code == "INTEGRITY_ERROR"
     assert world.reg.store.get_approval(sub["submission_id"]) is None
     assert world.reg.reader.list_releases()[0] == []

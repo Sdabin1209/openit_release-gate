@@ -113,7 +113,8 @@ class FakeModels:
             created_at="2026-10-14T00:00:00Z", metrics=None, report=True, prompt_path="system_prompt.txt", **over) -> dict:
         d = self.root / f"{package_id}-{version}"
         d.mkdir(parents=True, exist_ok=True)
-        files = dict(files or {"adapter.bin": f"{package_id}{version}".encode(), "cfg/x.json": b"{}"})
+        # 계약 ModelPackageLayout: 필수 파일 셋(adapter_model.safetensors, adapter_config.json, system_prompt.txt)만 있다
+        files = dict(files or {"adapter_model.safetensors": f"{package_id}{version}".encode(), "adapter_config.json": b"{}"})
         if prompt_path is not None:  # D75: 시스템 프롬프트 파일은 어댑터 디렉터리 안에 있다(adapter_hash에 포함)
             files.setdefault(prompt_path, f"SYSTEM PROMPT {role}".encode())
         for name, data in files.items():

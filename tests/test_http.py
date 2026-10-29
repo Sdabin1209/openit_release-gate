@@ -154,7 +154,7 @@ def test_bundle_tar_over_http_with_hash_verification(world, server, tmp_path):
     assert canonical.sha256_hash(bank) == man["question_set"]["content_hash"]
     for role in ("LORA_A", "LORA_B"):
         assert canonical.directory_hash(out / "adapters" / role) == man["adapters"][role]["adapter_hash"]
-    assert (out / "adapters" / "LORA_A" / "cfg" / "x.json").read_bytes() == b"{}"
+    assert (out / "adapters" / "LORA_A" / "adapter_config.json").read_bytes() == b"{}"
     assert raw(server, "/v1/releases/rel-none/bundle", "rt")[0] == 404
     assert raw(server, f"/v1/releases/{rid}/bundle", "wt")[0] == 403
     assert raw(server, f"/v1/releases/{rid}/bundle", "bad")[0] == 401      # 틀린 토큰: 401

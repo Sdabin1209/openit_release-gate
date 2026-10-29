@@ -367,6 +367,8 @@ class _Req:
                     return 200, r.reader.get_release(rest[0])
                 if len(rest) == 2 and rest[1] == "bundle":
                     return "bundle", rest[0]
+                if len(rest) == 2 and rest[1] == "question-bank":
+                    return 200, r.reader.get_release_question_bank(rest[0])      # 어댑터 없이 문항 세트만(I4, 2.7.0). PASS가 아니면 412
             if path == "/v1/submissions":
                 cursor, limit = self._page(q)
                 items, nxt = r.service.list_submissions(status=q.get("status", [None])[0], cursor=cursor, limit=limit)

@@ -78,6 +78,26 @@ class ReleaseReaderImpl:
     def load_bundle(self, release_id: str, *, dest: Path) -> ReleaseBundle:
         return verify_release(self._store, release_id, Path(dest))
 
+    def get_release_question_bank(self, release_id: str) -> dict:
+        """I4 get_release_question_bank(2.7.0, SurveyQuestionBankRead): 어댑터 없이 릴리스에 묶인 문항 세트만. PASS가 아니면 FAILED_PRECONDITION(HTTP 412).
+        문항 세트 해시를 매니페스트와 대조한다(어댑터는 읽지 않으므로 어댑터 검증은 하지 않는다)."""
+        manifest = self._store.get_release(release_id)
+        if canonical.content_hash(manifest) != manifest["content_hash"]:
+            raise BoundaryError("INTEGRITY_ERROR", f"릴리스 매니페스트의 content_hash가 맞지 않는다: {release_id}")
+        try:
+            decision = self._store.get_decision(manifest["gate_decision_id"])
+        except BoundaryError as e:
+            if e.code == "NOT_FOUND":
+                raise BoundaryError("FAILED_PRECONDITION", f"릴리스의 판정 기록이 없다: {release_id}") from e
+            raise
+        if decision.get("result") != "PASS" or decision.get("release_id") != release_id:
+            raise BoundaryError("FAILED_PRECONDITION", f"통과(PASS)하지 않은 릴리스다: {release_id}")
+        bank = self._store.read_question_bank(release_id)
+        h = canonical.sha256_hash(bank)
+        if h != manifest["question_set"]["content_hash"]:
+            raise BoundaryError("INTEGRITY_ERROR", f"묶음의 문항 세트 해시가 매니페스트와 다르다: {release_id}")
+        return {"release_id": release_id, "content_hash": h, "question_bank": bank}
+
     def get_decision(self, decision_id: str) -> dict:
         return self._store.get_decision(decision_id)
 

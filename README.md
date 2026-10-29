@@ -125,3 +125,4 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | [0013](docs/adr/0013-wsgi-waitress.md) | HTTP 면은 WSGI 앱 + waitress |
 | [0014](docs/adr/0014-yoyo-migrations.md) | 스키마 버전 관리는 yoyo-migrations |
 | [0015](docs/adr/0015-build-image-entrypoint.md) | 영역 빌드 진입점 build-image.sh |
+| [0016](docs/adr/0016-exposure-and-adapter-layout.md) | 노출 선언 라벨, 어댑터 레이아웃 검증, question-bank 경로 |

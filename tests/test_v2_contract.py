@@ -17,8 +17,7 @@ def test_contract_package_is_major_2():
 
 
 def test_release_copies_system_prompt_from_package(world, tmp_path):
-    a = world.m.add("lora-a", "p", "LORA_A", files={"adapter.bin": b"a", "prompts/a.txt": b"A-PROMPT"},
-                    prompt_path="prompts/a.txt")
+    a = world.m.add("lora-a", "p", "LORA_A", files={"adapter_model.safetensors": b"a", "adapter_config.json": b"{}", "system_prompt.txt": b"A-PROMPT"})
     b = world.m.add("lora-b", "p", "LORA_B")
     rid = world.make_release(world.subject(a=a, b=b))
     man = world.reg.reader.get_release(rid)
@@ -26,9 +25,9 @@ def test_release_copies_system_prompt_from_package(world, tmp_path):
     assert man["pipeline_schema_version"] == PIPELINE_SCHEMA_VERSION   # 왜: 계약이 정한 값(정본)과 비교한다. 리터럴은 계약 MINOR가 오를 때 낡는다
     for role, pkg in (("LORA_A", a), ("LORA_B", b)):
         assert man["adapters"][role]["system_prompt"] == pkg["system_prompt"]
-    assert man["adapters"]["LORA_A"]["system_prompt"]["path"] == "prompts/a.txt"
+    assert man["adapters"]["LORA_A"]["system_prompt"]["path"] == "system_prompt.txt"
     bundle = world.reg.reader.load_bundle(rid, dest=tmp_path / "b")
-    f = bundle.adapters["LORA_A"] / "prompts/a.txt"
+    f = bundle.adapters["LORA_A"] / "system_prompt.txt"
     assert f.read_bytes() == b"A-PROMPT" and canonical.file_hash(f) == a["system_prompt"]["sha256"]
 
 

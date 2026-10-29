@@ -20,7 +20,7 @@ def _linked_adapter(world):
     m["adapter_hash"] = canonical.directory_hash(d)
     m["content_hash"] = canonical.content_hash(m)
     world.m.reports[m["eval_report_ref"]] = json.dumps(make_eval_report(m)).encode()
-    os.symlink(d / "adapter.bin", d / "alias.bin")             # 파일을 가리키는 링크
+    os.symlink(d / "adapter_model.safetensors", d / "alias.bin")             # 파일을 가리키는 링크
     return m
 
 

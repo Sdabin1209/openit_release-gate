@@ -96,6 +96,7 @@ class Store:
     def get_release(self, release_id: str) -> dict: ...
     def list_releases(self, *, cursor=None, limit=100) -> tuple[list, Optional[str]]: ...
     def read_release_parts(self, release_id: str, dest: Path) -> tuple[dict, dict]: ...
+    def read_question_bank(self, release_id: str) -> dict: ...      # 어댑터 없이 릴리스에 묶인 문항 세트만(I4 get_release_question_bank)
     # 활성 포인터와 롤백
     def get_pointer(self) -> Optional[dict]: ...
     def pointer_history(self) -> list[dict]: ...
@@ -311,6 +312,11 @@ class MemoryStore(Store):
             nxt = str(page[-1]) if len(seqs) > limit else None
             return [json.loads(json.dumps(self._releases[s - 1])) for s in page], nxt
 
+    def read_question_bank(self, release_id):
+        with self._lock:
+            self.get_release(release_id)
+            return json.loads(json.dumps(self._release_files[release_id][0]))
+
     def read_release_parts(self, release_id, dest):
         with self._lock:
             self.get_release(release_id)
@@ -469,6 +475,13 @@ class ReleaseFiles:
             return json.loads((self.root / "releases" / release_id / "eval_reports.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}  # 기준 보고서가 없는 릴리스(비교 기준 없음)
+
+    def read_question_bank(self, release_id):
+        self.get_release(release_id)
+        try:
+            return json.loads((self.root / "releases" / release_id / "question_bank.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            raise BoundaryError("INTEGRITY_ERROR", f"릴리스 묶음의 문항 세트를 읽을 수 없다: {release_id}") from e
 
     def read_release_parts(self, release_id, dest=None):
         """문항 세트와 역할별 어댑터 디렉터리. dest가 None이면 복사하지 않고 릴리스 디렉터리를 그대로 가리킨다(읽기 전용으로 쓸 것).

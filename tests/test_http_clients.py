@@ -57,7 +57,7 @@ def test_reader_over_http(world, srv, tmp_path):
     # 번들: 클라이언트가 모든 해시를 검증한다
     b = rd.load_bundle(r1, dest=tmp_path / "bundle")
     assert b.manifest == m1 and b.question_bank == world.q.banks[("qs-main", "1")]
-    assert (b.adapters["LORA_B"] / "adapter.bin").exists()
+    assert (b.adapters["LORA_B"] / "adapter_model.safetensors").exists()
     assert code(rd.load_bundle, "rel-none", dest=tmp_path / "x") == "NOT_FOUND"
 
 
