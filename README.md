@@ -51,7 +51,7 @@ model-lab(I3) ──────────┴─> 수집기/제출(I5) ─> �
 전제: Python 3.10 이상(pyproject), GitHub SSH 접근(설치가 `git+ssh` 태그 핀을 쓴다: requirements.txt, requirements-libs.txt. 이웃 폴더는 필요 없다). 스모크에는 Docker 데몬이 필요하고 CI·운영 설치에는 GitHub SSH 접근이 필요하다(requirements.txt가 `git+ssh` 태그를 고정함). 비밀(토큰)은 환경 변수가 아니라 `NAME_FILE`(파일 경로)로 받는 것이 표준이다(D84): `GATE_READ_TOKENS_FILE`, `GATE_WRITE_TOKENS_FILE`, `GATE_I1_TOKEN_FILE`, `GATE_I3_TOKEN_FILE`. 값은 이미지·리포지토리·로그에 넣지 않는다.
 
 ```sh
-# 1) 설치 (멱등, 핀: requirements.txt, requirements.lock, requirements-libs.txt)
+# 1) 설치 (멱등, 핀: requirements.txt, requirements.lock, requirements-libs.txt). 표준 출력 마지막 줄은 계약 SetupEnvReport(시험 명령 포함), 진행 기록은 표준 오류
 bash scripts/setup-env.sh && . .venv/bin/activate
 # 2) 시험 (문진 스키마는 설치된 openit-survey-schema 패키지에서 읽는다)
 python -m pytest -q

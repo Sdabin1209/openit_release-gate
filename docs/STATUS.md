@@ -1,3 +1,6 @@
+# STATUS (U43): 계약 v2.6.0, setup-env.sh의 SetupEnvReport
+- `scripts/setup-env.sh`가 표준 출력 마지막 줄에 계약 `SetupEnvReport` 한 줄(area, status, exit_code, seconds, environment{kind, path, test_command})을 내고 진행 기록은 표준 오류로 낸다. 실패해도 `status: fail` 보고를 낸다. 시험: `tests/test_u43_setup_env_report.py`.
+
 # STATUS (U42): 빌드 진입점과 계약 v2.5.1
 - `scripts/build-image.sh`(ADR-0015)와 시험. 계약 고정 v2.5.1. 승인 요청 본문(ApprovalRequest)은 계약 스키마로 검증한다: 본문에 approver_id를 보내면 거부, report_hash 필수(이전에는 선택).
 - 옛 `build_image.sh`, `stage_context.sh`는 deploy가 새 진입점으로 바꿀 때까지 남긴 폐기 예정 스크립트다.

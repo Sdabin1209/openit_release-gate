@@ -1,5 +1,9 @@
 # 변경 이력
 
+## (미배포) U43: 계약 v2.6.0, setup-env.sh 결과 보고
+
+- 계약 고정 boundary-contracts v2.6.0. `scripts/setup-env.sh`의 마지막 줄이 `SetupEnvReport` JSON이다(진행 기록은 표준 오류). 표준 출력에 진행 기록을 기대하던 호출자가 있으면 표준 오류를 보도록 바꿔야 한다.
+
 ## (미배포) U42: 빌드 진입점, 계약 v2.5.1, ApprovalRequest 스키마 검증
 
 - `scripts/build-image.sh` 영역 빌드 진입점(ADR-0015). 계약 고정 boundary-contracts v2.5.1.
