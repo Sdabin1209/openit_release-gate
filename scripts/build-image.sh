@@ -2,14 +2,16 @@
 # 영역 빌드 진입점(계약 BuildImageRequest / BuildImageResult, boundary-contracts 2.5.x, OPEN_GAPS U42, docs/adr/0015-build-image-entrypoint.md).
 # 사용: bash scripts/build-image.sh <요청 JSON 파일>   (영역 리포 루트에서)
 # 결과: 표준 출력 마지막 줄에 BuildImageResult JSON 한 줄. 진행 기록은 표준 오류. 종료 0이 성공.
-# 환경 변수: DOCKER(도커 실행 파일, 기본 docker), PYTHON(boundary-contracts 2.5 이상이 설치된 python, 기본 python3). 비밀은 받지도 쓰지도 않는다.
+# 환경 변수: DOCKER(도커 실행 파일, 기본 docker), PYTHON(boundary-contracts 2.5 이상이 설치된 python, 기본은 setup-env.sh가 만든 이 리포의 .venv, 없으면 python3). 비밀은 받지도 쓰지도 않는다.
 set -euo pipefail
 log() { echo "build-image: $*" >&2; }
 die() { log "오류: $*"; exit 1; }
 req="${1:-}"
 [ -n "$req" ] || die "사용: bash scripts/build-image.sh <요청 JSON 파일>"
 [ -f "$req" ] || die "요청 파일이 없다: $req"
-PY="${PYTHON:-python3}"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 왜 영역 자신의 .venv가 기본: 호출자가 이 영역의 환경(PYTHON)을 알아야 한다면 구조 규칙 1을 어긴다. 환경은 setup-env.sh가 만든다.
+if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"; elif [ -x "$here/.venv/bin/python" ]; then PY="$here/.venv/bin/python"; else PY="python3"; fi
 DOCKER="${DOCKER:-docker}"
 
 # 1) 요청 검증과 값 읽기. 왜 계약 validator: 영역 경계 입력의 모양은 계약 스키마가 정본이다(모르는 키·필수 키 없음은 여기서 거부).

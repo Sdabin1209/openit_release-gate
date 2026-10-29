@@ -84,6 +84,20 @@ def test_invalid_or_incomplete_request_fails_without_touching_docker(tmp_path, f
     assert r.stdout.strip() == "" or not r.stdout.strip().splitlines()[-1].startswith("{")      # 실패는 결과 JSON을 내지 않는다
 
 
+def test_default_python_is_the_area_own_venv_not_the_callers(tmp_path, fake_docker):
+    # 왜: 호출자(deploy)가 PYTHON을 넘겨야 한다면 deploy가 이 영역의 환경을 아는 것이다(구조 규칙 1). 기본은 setup-env.sh가 만든 영역 자신의 .venv다.
+    if not (ROOT / ".venv" / "bin" / "python").exists():
+        pytest.skip("영역 .venv가 없다(setup-env.sh 전)")
+    docker, marker = fake_docker
+    p = tmp_path / "req.json"
+    p.write_text(json.dumps(CASES["unknown-key"]))
+    env = {k: v for k, v in os.environ.items() if k != "PYTHON"}
+    env.update({"DOCKER": str(docker), "PATH": "/usr/bin:/bin"})        # 호출자의 python(boundary_contracts가 없는 시스템 python)만 보이는 환경
+    r = subprocess.run(["bash", str(SCRIPT), str(p)], capture_output=True, text=True, env=env, cwd=tmp_path)
+    assert r.returncode != 0 and "BuildImageRequest를 어긴다" in r.stderr, r.stderr      # 계약을 읽어 검증까지 갔다
+    assert not marker.exists()
+
+
 def test_missing_request_file_fails(tmp_path):
     r = subprocess.run(["bash", str(SCRIPT), str(tmp_path / "nope.json")], capture_output=True, text=True, cwd=ROOT,
                        env={**os.environ, "PYTHON": sys.executable})
