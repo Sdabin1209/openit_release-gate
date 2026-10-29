@@ -1,6 +1,0 @@
-{
-  "job": "judge",
-  "status": "failed",
-  "code": "PERMISSION_DENIED",
-  "reason": "이웃 인증 실패"
-}

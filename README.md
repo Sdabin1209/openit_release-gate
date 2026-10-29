@@ -102,7 +102,7 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | `docs/runbook.md` | 환경 변수, 승인 절차, 정책, run-once 잡, 이미지, 백업, 비밀 파일화 |
 | `docs/STATUS.md` | 한 일, 남은 일, 확인하지 못한 것 |
 | `docs/CHANGELOG.md` | 변경 이력 |
-| `docs/change-requests/` | 헤드에 낸 변경 요청 CR-0001~0007(모두 결정됨, 기록용) |
+| `docs/change-requests/` | 헤드에 낸 변경 요청 CR-0001~0010(기록용. 계약으로 승격된 스키마 사본은 지웠다: CHANGELOG U49) |
 
 ## 6-1. 구조 결정 기록 (ADR, 왜)
 

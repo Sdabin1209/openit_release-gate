@@ -1,5 +1,20 @@
 # 변경 이력
 
+## (미배포) U49: 승격된 계약 스키마의 영역 사본 정리
+
+`docs/change-requests/` 아래 스키마 사본 55개 파일을 지웠다(분류 근거는 계약 패키지 boundary-contracts v2.7.0의 스키마 이름과 비교). 이 사본을 읽는 시험·스크립트·문서 링크는 없었다(CR-0009의 설명 문장만 있어 고쳤다). 영역 시험은 단위 3부터 계약 패키지의 스키마를 쓴다.
+
+| 파일(묶음) | 분류 | 처리 | 근거 |
+| --- | --- | --- | --- |
+| `contract-ready/schemas/` GateExt, GateJobConfig, GateJobResult, GatePolicy, GateReadyz (5) | (가) 승격 | 지움 | 같은 이름이 계약에 있다 |
+| `contract-ready/examples/valid·invalid/` (27) | (가) 승격 | 지움 | 계약 `conformance/examples`, `examples_invalid`로 올라갔고 시험(`test_u3_contract_schemas.py`)이 그것을 쓴다 |
+| `contract-ready/validate.py`, `MANIFEST.json` (2) | (가) 승격 | 지움 | 승격 절차의 도구와 기록. 계약이 같은 목록을 가진다 |
+| `schemas/gate-ext·gate-job-config·gate-job-result·gate-policy·gate-readyz.schema.json` (5) | (가) 승격 | 지움 | 위 다섯의 초기 초안(같은 형식) |
+| `schemas/gate-build-context.schema.json` (1) | (나) 계약에 없음, 쓰지 않는 초안 | 지움 | 환경 변수·디렉터리 배치를 적은 초안이고 읽는 코드가 없었다. U42의 BuildImageRequest와 `scripts/build-image.sh`가 대체했다 |
+| `schemas/examples/` (14, 그중 2개는 gate-build-context 것), `schemas/validate_examples.py` (1) | 위 초안의 예시·검증 스크립트 | 지움 | 사본과 함께 |
+
+남긴 것: `docs/change-requests/CR-0001`~`CR-0010.md`(변경 요청 문서는 기록이라 스키마 사본이 아니다). 영역 소유로 남길 (나) 스키마는 없다.
+
 ## (미배포) U47: 계약 v2.7.0
 
 - 계약 고정 boundary-contracts v2.7.0. 노출 선언 라벨 `io.openit.exposure`(`deploy-exposure.json`). I4 `GET /v1/releases/{id}/question-bank` 추가. 동작 변경: 승인 때 어댑터가 계약 ModelPackageLayout(필수 3파일 외 파일 없음)과 다르면 INTEGRITY_ERROR로 거부한다.

@@ -1,6 +1,6 @@
 # CR-0009 영역 경계를 넘는 형식의 스키마 초안 (지시서 1 B, RG-09)
 
-- 상태: **제안(헤드 결정 대기).** 대상: 헤드가 계약(boundary-contracts)에 올릴지, 영역 사이에 오가지 않는다고 결정할지. 이 영역의 코드는 아직 바꾸지 않았다(스키마를 쓰도록 바꾸는 것은 헤드가 계약에 올린 뒤).
+- 상태: **닫힘(D107, 2026-10-29: 헤드가 계약에 올렸다. U49, 2026-10-30: 이 폴더의 스키마·예시·검증 스크립트 사본을 지웠다).** 정본은 계약 패키지다(`boundary_contracts.load_schema`/`validator`의 GateJobConfig, GateJobResult, GatePolicy, GateReadyz, GateExt). 6번 `gate-build-context`는 계약에 올라가지 않았고 U42의 BuildImageRequest(`scripts/build-image.sh`)가 대신해 지웠다. 아래 "초안 위치" 경로는 지운 파일이며 git 기록에서 볼 수 있다. 당시 질문 대상: 헤드가 계약(boundary-contracts)에 올릴지, 영역 사이에 오가지 않는다고 결정할지. 이 영역의 코드는 아직 바꾸지 않았다(스키마를 쓰도록 바꾸는 것은 헤드가 계약에 올린 뒤).
 - 초안 위치: `docs/change-requests/schemas/*.schema.json`(JSON Schema 2020-12), 예시: `schemas/examples/`, 검증: `schemas/validate_examples.py`.
 - 근거: 점검 보고서 RG-09(`docs/audit/structure-rules-2026-10-28.md`). deploy가 실제로 이것들을 읽는지는 deploy 폴더를 읽을 수 없어 **확인하지 못했다**. 읽지 않는다면 "영역 사이에 안 오간다"로 닫아도 된다.
 

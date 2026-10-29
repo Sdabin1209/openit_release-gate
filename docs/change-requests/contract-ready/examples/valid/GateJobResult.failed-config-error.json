@@ -1,6 +1,0 @@
-{
-  "job": "collect",
-  "status": "failed",
-  "code": "INVALID_RECORD",
-  "reason": "i1_factory와 i3_factory(또는 GATE_I1_FACTORY, GATE_I3_FACTORY)가 필요하다"
-}

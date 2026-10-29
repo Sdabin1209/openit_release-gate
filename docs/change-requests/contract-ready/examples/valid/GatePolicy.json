@@ -1,8 +1,0 @@
-{
-  "gate_policy_version": "human-approval-1",
-  "checks": {
-    "CONTRACT_COMPAT": {
-      "require_lineage_runtime_match": true
-    }
-  }
-}
