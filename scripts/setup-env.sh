@@ -29,6 +29,10 @@ run "계약 패키지와 잠금 의존 설치" "${PIP[@]}" --upgrade -r requirem
 run "model-runtime 설치" "${PIP[@]}" --no-deps --force-reinstall -r requirements-libs.txt >&2
 run "이 리포와 시험 도구 설치" "${PIP[@]}" -e '.[test]' >&2
 
+# 왜 두 번째 venv: 타입 생성 도구(datamodel-code-generator)는 개발 전용이라 이미지·런타임 환경(.venv)에 넣지 않는다. 시험(test_structure)이 생성 결과를 다시 만들어 대조하므로 시험 명령이 돌려면 있어야 한다.
+[ -d .venv-tools ] || python3 -m venv .venv-tools >&2
+run "타입 생성 도구 설치" .venv-tools/bin/python -m pip install -q --disable-pip-version-check -r requirements-tools.txt >&2
+
 .venv/bin/python -m pip check >&2 || { echo "setup-env: 의존 충돌(pip check 실패)" >&2; exit 1; }
 echo "setup-env: 완료" >&2
 .venv/bin/python -m pip list 2>/dev/null | grep -iE '^(boundary-contracts|model-runtime|release-gate|pytest) ' >&2 || true
