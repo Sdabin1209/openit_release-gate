@@ -1,5 +1,9 @@
 # 변경 이력
 
+## (미배포) 의존 고정 올림 (wo-401)
+
+- model-runtime v0.11.2 -> v0.11.4(`requirements-libs.txt`, 배포 기준표를 따른다), openit-link v0.4.0 -> v0.4.1(`requirements.txt`). 코드 변경 없음.
+
 ## (미배포) 영역 구조 개편 (U400, D117·D118) + 계약 v3.1.1
 
 - 계약 고정 boundary-contracts v3.1.1, 통신 기반 라이브러리 openit-link v0.4.0(requirements.txt). v3.1.0부터 계약 클라이언트가 `activate` 본문(`requested_by_role`은 `operator`만)을 보내기 전에 검사하므로 `tests/test_http_clients.py`의 기대를 INVALID_RECORD로 고쳤다.
