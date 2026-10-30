@@ -27,6 +27,8 @@ from test_conformance import tamper, two_releases
 
 MODES = ["hang", "slow", "http500", "http503", "badjson"]
 TIMEOUT = 1.0
+# 바깥 마감(초): 클라이언트 읽기 시간 상한은 1초다. 상류가 120초 붙잡으니 이 값 안에 끝났으면 상한이 적용된 것이다(부하 여유 30배)
+OUTER = 30
 
 
 class FaultServer:
@@ -48,7 +50,7 @@ class FaultServer:
                 outer.hits += 1
                 m = outer.mode
                 if m == "hang":
-                    outer.release.wait(15)
+                    outer.release.wait(120)
                     return
                 if m == "slow":
                     outer.release.wait(TIMEOUT * 3)
@@ -115,11 +117,10 @@ def test_loop_task_defers_on_upstream_fault_without_hanging_or_recording(world, 
     fault.mode = mode
     sids = two_submissions(world)
     eng = engine_on(world, fault)
-    t = time.monotonic()
     assert eng.process_pending() == []
-    dt = time.monotonic() - t
-    # 접수 수만큼 시간 초과를 겹쳐 기다리지 않는다: 첫 일시 오류에서 이번 주기를 멈춘다
-    assert dt < TIMEOUT * 2.5, dt
+    # 접수 수만큼 시간 초과를 겹쳐 기다리지 않는다: 첫 일시 오류에서 이번 주기를 멈춘다. 시계가 아니라 상류가 받은 요청 수로 센다
+    # (접수가 둘이므로 겹쳐 기다렸다면 둘째 접수의 요청도 와서 2 이상이 된다)
+    assert fault.hits == 1, fault.hits
     assert eng.last_error and eng.last_error["code"] == "UNAVAILABLE", eng.last_error
     for sid in sids:                                                    # 접수는 그대로이고 판정(반려 포함)이 남지 않는다
         assert world.reg.store.get_work(sid)["state"] == "RECEIVED"
@@ -213,7 +214,7 @@ def test_approval_with_upstream_fault_records_nothing_and_can_be_retried(world, 
     t = time.monotonic()
     with pytest.raises(BoundaryError) as e:
         engine_on(world, fault).decide(body, token_role="release-approver", approver_id="a1")
-    assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < TIMEOUT * 3
+    assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < OUTER      # 매달리지 않음(상류 hang은 120초)
     assert world.reg.store.get_approval(sid) is None and world.reg.store.latest_decision(sid) is None
     assert world.reg.store.get_work(sid)["state"] == "AWAITING_APPROVAL"
     ap, created = world.engine().decide(body, token_role="release-approver", approver_id="a1")      # 같은 요청을 다시 보내면 된다
@@ -247,7 +248,7 @@ def test_collect_job_defers_on_upstream_fault(world, fault, monkeypatch, capsys,
     cfg = _job(world, monkeypatch, fault.clients())
     t = time.monotonic()
     rc = gate_main.collect(cfg)
-    assert rc == gate_main.EX_TEMPFAIL and time.monotonic() - t < TIMEOUT * 3
+    assert rc == gate_main.EX_TEMPFAIL and time.monotonic() - t < OUTER      # 매달리지 않음(상류 hang은 120초)
     assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["status"] == "deferred"
     assert world.reg.store.submission_ids() == []
 

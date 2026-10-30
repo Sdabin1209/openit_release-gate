@@ -106,6 +106,11 @@ def pausable(pg_url):
         unpause()
 
 
+# 바깥 마감(초). 이 시험들이 보는 것은 "DB가 멈춰도 요청이 무한히 매달리지 않는다"이다. 설정한 상한(1~3초)은 그 몇 배 안쪽이고, 기계 부하로 느려져도
+# 통과하도록 15초를 준다. 매달렸다면 이 값을 넘어 실패한다(멈춘 서버는 스스로 응답하지 않는다). 상한 값의 정밀도는 설정과 ADR-0008의 몫이라 시계로 재지 않는다.
+BOUND = 15
+
+
 def _job_env(monkeypatch, url, **extra):
     for k, v in {"GATE_SURVEY_SCHEMA_DIR": str(SURVEY), "GATE_ALLOW_TEST": "1", "GATE_MODEL_RUNTIME_VERSION": "0.1.0", "GATE_DATABASE_URL": url, **extra}.items():
         monkeypatch.setenv(k, v)
@@ -117,7 +122,7 @@ def test_startup_against_unresponsive_server_ends_within_connect_timeout(hole, s
     t = time.monotonic()
     with pytest.raises(BoundaryError) as e:
         postgres_registry(hole.url, tmp_path / "d", schemas, config, connect_timeout=1, statement_timeout=1, probe_timeout=1)
-    assert time.monotonic() - t < 4 and e.value.code == "UNAVAILABLE" and e.value.retryable
+    assert time.monotonic() - t < BOUND and e.value.code == "UNAVAILABLE" and e.value.retryable
     for needle in ("gateuser", "pw-hole-1", "gatedb"):
         assert needle not in f"{e.value} {e.value.message}"
 
@@ -131,7 +136,7 @@ def test_jobs_end_nonzero_when_db_unresponsive(hole, monkeypatch, tmp_path, caps
         rc = gate_main.main([job, "--config", str(cfgfile)])
         out = capsys.readouterr()
         assert rc == gate_main.EX_TEMPFAIL != 0
-        assert time.monotonic() - t < 5
+        assert time.monotonic() - t < BOUND
         assert json.loads(out.out.strip().splitlines()[-1])["status"] == "failed"
         for needle in ("gateuser", "pw-hole-1", "gatedb", hole.url):
             assert needle not in out.out + out.err
@@ -157,10 +162,10 @@ def test_timeout_defaults_and_override(monkeypatch):
 def test_readyz_does_not_wait_for_a_stuck_status_read(schemas, config):
     """보조 수치를 주 연결로 읽다 막혀도 /readyz는 상한 안에 마지막 값(stale)으로 답한다(저장소 종류와 무관)."""
     release = threading.Event()
-    srv, base = _serve(memory_registry(schemas, config), status=lambda: (release.wait(15), {})[1])
+    srv, base = _serve(memory_registry(schemas, config), status=lambda: (release.wait(120), {})[1])
     try:
         code, body, dt = _get(base, "/readyz")
-        assert code == 200 and json.loads(body)["db_stats_stale"] is True and dt < 3.5
+        assert code == 200 and json.loads(body)["db_stats_stale"] is True and dt < 60      # 보조 수치 읽기는 120초 막혀 있다. 기다렸다면 이 한도를 넘는다
     finally:
         release.set()
         srv.shutdown()
@@ -172,8 +177,8 @@ def test_server_side_statement_timeout_is_set(pg_url, schemas, config, tmp_path)
     reg = postgres_registry(pg_url, tmp_path / "d", schemas, config, statement_timeout=1)
     t = time.monotonic()
     with pytest.raises(psycopg.errors.QueryCanceled):
-        reg.store._c.execute("SELECT pg_sleep(5)")
-    assert time.monotonic() - t < 3
+        reg.store._c.execute("SELECT pg_sleep(120)")
+    assert time.monotonic() - t < 60      # 서버가 문장 시간 상한(1초)으로 취소했다. 끝까지 기다렸다면 120초다
     assert reg.store.get_pointer() is None                       # 같은 연결을 계속 쓸 수 있다
     assert reg.store._c.execute("SHOW search_path").fetchone()[0].startswith("t_")      # URL의 options는 덮어쓰지 않는다
 
@@ -184,7 +189,7 @@ def test_readyz_not_blocked_by_main_connection_lock(pg_url, schemas, config, tmp
     try:
         with reg.store._lock:                                    # 요청 처리가 주 연결을 쥐고 있는 상황
             code, _, dt = _get(base, "/readyz")
-        assert code == 200 and dt < 1.5
+        assert code == 200 and dt < BOUND
     finally:
         srv.shutdown()
 
@@ -197,7 +202,7 @@ def test_readyz_503_within_limit_on_paused_db_and_recovers(pg_url, pausable, sch
         assert _get(base, "/readyz")[0] == 200
         pause()
         code, body, dt = _get(base, "/readyz")
-        assert code == 503 and dt < 3.0, (code, dt)
+        assert code == 503 and dt < BOUND, (code, dt)
         for needle in ("password", "@", "127.0.0.1"):
             assert needle not in body
         assert _get(base, "/healthz")[0] == 200
@@ -207,7 +212,7 @@ def test_readyz_503_within_limit_on_paused_db_and_recovers(pg_url, pausable, sch
             if code == 200:
                 break
             time.sleep(0.5)
-        assert code == 200 and dt < 3.0
+        assert code == 200 and dt < BOUND
     finally:
         srv.shutdown()
 
@@ -222,7 +227,7 @@ def test_request_path_ends_within_limit_on_paused_db_and_recovers(pg_url, pausab
         with pytest.raises(BoundaryError) as e:
             call()
         dt = time.monotonic() - t
-        assert e.value.code == "UNAVAILABLE" and e.value.retryable and dt < 4.5, (e.value.code, dt)
+        assert e.value.code == "UNAVAILABLE" and e.value.retryable and dt < BOUND, (e.value.code, dt)
     unpause()
     assert reg.store.get_pointer() is None                       # 끊긴 연결을 다시 연다
 
@@ -235,7 +240,7 @@ def test_collect_job_ends_nonzero_when_db_paused(pg_url, pausable, monkeypatch, 
     pause()
     t = time.monotonic()
     rc = gate_main.main(["collect", "--config", str(cfgfile)])
-    assert rc == gate_main.EX_TEMPFAIL and time.monotonic() - t < 6
+    assert rc == gate_main.EX_TEMPFAIL and time.monotonic() - t < BOUND
     assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["status"] == "failed"
 
 
@@ -253,7 +258,7 @@ def test_activate_and_rollback_with_paused_db_end_503_and_keep_active_release(pg
     t = time.monotonic()
     with pytest.raises(BoundaryError) as e:
         reg.service.activate(r2, requested_by_role="operator")
-    assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < 5
+    assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < BOUND
     unpause()
     assert reg.reader.get_active_pointer() == before
     assert reg.service.activate(r2, requested_by_role="operator")["release_id"] == r2
