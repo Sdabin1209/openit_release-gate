@@ -77,9 +77,9 @@ def http_question_reader(base_url=None, token=None, timeout=None):
     """I1 HTTP 클라이언트. base_url·token이 인자로 오지 않으면 GATE_I1_URL과 비밀 GATE_I1_TOKEN(`_FILE` 경로 우선)에서 읽는다.
     읽기 timeout 기본 10초(`GATE_I1_TIMEOUT`): FAULT_POLICY 4(읽기 timeout 필수)와 승인 요청이 gateway 15초 안에 끝나야 한다는 설계 판단. 측정 안 함(docs/adr/0008)."""
     try:
-        from boundary_contracts.clients import HttpQuestionReader
+        from openit_link.clients import HttpQuestionReader
     except ImportError as e:
-        raise SystemExit(f"boundary_contracts.clients.HttpQuestionReader이(가) 설치된 boundary-contracts에 없다: {e}")
+        raise SystemExit(f"openit_link.clients.HttpQuestionReader이(가) 설치된 boundary-contracts에 없다: {e}")
     url = base_url or os.environ.get("GATE_I1_URL")
     tok = token or read_secret("GATE_I1_TOKEN")
     if not url or not tok:

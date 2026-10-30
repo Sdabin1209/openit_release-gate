@@ -80,7 +80,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 
 ## 이미지
 
-이미지는 `scripts/build-image.sh <요청 JSON>`(계약 BuildImageRequest, ADR-0015)로만 빌드한다. 라벨은 요청 값이 아니라 실제로 만든 wheel·문진 스키마 소스에서 찍고, 요청 버전이 이 리포의 고정과 다르면 빌드하지 않는다(ADR-0017).
+이미지는 `scripts/build-image.sh <요청 JSON>`(계약 BuildImageRequest, ADR-0015)로만 빌드한다. 라벨은 요청 값이 아니라 실제로 만든 wheel·문진 스키마 소스에서 찍고, 요청 버전이 이 리포의 고정과 다르면 빌드하지 않는다(ADR-0017). openit-link(통신 기반, D118)는 고정 태그의 소스 트리를 환경 변수 `OPENIT_LINK_SRC`로 받아 wheel로 이미지에 넣는다(계약 BuildImageRequest에 link 키가 아직 없다. 변경 요청 `docs/change-requests/CR-0012`).
 
 ## 상태 확인
 

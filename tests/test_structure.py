@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 import jsonschema
-import pytest
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 
@@ -85,9 +84,3 @@ def test_every_code_file_belongs_somewhere():
         rel = p.relative_to(ROOT).as_posix()
         ok = any(x in p.parts for x in ("components", "wiring", "types")) or ENTRY.search(rel) or p.name == "__init__.py"
         assert ok, f"{rel}: components/·wiring/·types/·진입점 어디에도 속하지 않음"
-
-
-def test_head_structure_check_if_present():
-    head = ROOT.parents[2] / "head" / "scripts" / "structure-check.py"
-    if not head.exists():
-        pytest.skip("헤드 도구가 이웃 폴더에 없다(헤드가 따로 돌린다)")

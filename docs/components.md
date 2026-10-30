@@ -39,7 +39,7 @@
 | --- | --- | --- | --- | --- |
 | 문항 읽기 (보내는 쪽, I1) | `components/link_questions.py` | 문항 세트 ID 목록 / 계약 ArtifactRef | QuestionInventory, SubjectQuestions | I1에서 검수 완료 최신 참조와 문항 세트·검수 기록을 읽어 내부 타입으로 바꾼다. HTTP 클라이언트 생성기 `http_question_reader` |
 | 모델 읽기 (보내는 쪽, I3) | `components/link_models.py` | 패키지 ID 목록 / 판정 대상 조합 | ModelInventory, SubjectModels, 어댑터 경로 | I3에서 매니페스트·평가 보고서(해시·형식·대상 확인)와 어댑터를 읽어 내부 타입으로 바꾼다. `http_model_registry` |
-| HTTP 면 (받는 쪽, I4·I5) | `components/link_http_server.py` | HTTP 요청(계약 `HTTP.md`) | HTTP 응답(계약 레코드, BoundaryError) | 통신 기반 라이브러리 openit_link(D118) 위에 경로 표를 적고 waitress로 서빙한다. 번들 tar 스트리밍, 응답 머리글 `X-Openit-Report-Hash`, 쓰기 시도 기록, 우아한 종료 |
+| HTTP 면 (받는 쪽, I4·I5) | `components/link_http_server.py` | HTTP 요청(계약 `HTTP.md`) | HTTP 응답(계약 레코드, BoundaryError) | 통신 기반 라이브러리 openit_link(D118) 위에 경로 표를 적고 waitress로 서빙한다. 번들 tar 스트리밍(openit_link 0.2.0), 응답 머리글 `X-Openit-Report-Hash`, 쓰기 시도 기록, 우아한 종료 |
 
 ## wiring (컴포넌트가 아니다, 영역의 몫: 규칙 5)
 

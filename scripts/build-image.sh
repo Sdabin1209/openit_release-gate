@@ -2,7 +2,7 @@
 # 영역 빌드 진입점(계약 BuildImageRequest / BuildImageResult, boundary-contracts 2.5.x, OPEN_GAPS U42, docs/adr/0015-build-image-entrypoint.md).
 # 사용: bash scripts/build-image.sh <요청 JSON 파일>   (영역 리포 루트에서)
 # 결과: 표준 출력 마지막 줄에 BuildImageResult JSON 한 줄. 진행 기록은 표준 오류. 종료 0이 성공.
-# 환경 변수: DOCKER(도커 실행 파일, 기본 docker), PYTHON(boundary-contracts 2.5 이상이 설치된 python, 기본은 setup-env.sh가 만든 이 리포의 .venv, 없으면 python3). 비밀은 받지도 쓰지도 않는다.
+# 환경 변수: OPENIT_LINK_SRC(통신 기반 라이브러리 openit-link의 고정 태그 소스 트리, 필수. 계약 BuildImageRequest에 link 키가 아직 없어 환경 변수로 받는다: 변경 요청 CR-0012), DOCKER(도커 실행 파일, 기본 docker), PYTHON(boundary-contracts 2.5 이상이 설치된 python, 기본은 setup-env.sh가 만든 이 리포의 .venv, 없으면 python3). 비밀은 받지도 쓰지도 않는다.
 set -euo pipefail
 log() { echo "build-image: $*" >&2; }
 die() { log "오류: $*"; exit 1; }
@@ -65,6 +65,8 @@ PY
 [ "${#F[@]}" -eq 10 ] || die "요청을 읽지 못했다"
 src="${F[0]}" rev="${F[1]}" tag="${F[2]}" v_bc="${F[3]}" v_mr="${F[4]}" v_ss="${F[5]}" s_bc="${F[6]}" s_mr="${F[7]}" s_ss="${F[8]}" exposure="${F[9]}"
 for d in "$src" "$s_bc" "$s_mr" "$s_ss"; do [ -d "$d" ] || die "디렉터리가 없다: $d"; done
+link_src="${OPENIT_LINK_SRC:-}"
+[ -n "$link_src" ] && [ -d "$link_src" ] || die "OPENIT_LINK_SRC(openit-link 고정 태그 소스 트리)가 필요하다"
 [ -f "$src/Dockerfile" ] || die "source_dir에 Dockerfile이 없다: $src"
 # 왜 실제 값에서 찍는다: 라벨은 이미지에 실제로 들어간 것이어야 한다(U50). 문진 스키마 패키지의 실제 버전은 복사할 소스 트리의 pyproject version이다
 # (정수 계약 버전 CONTRACT_VERSION과는 다른 수다: 패키지 2.0.0에서도 CONTRACT_VERSION은 1일 수 있다). 라벨은 그 주 버전이다.
@@ -80,7 +82,7 @@ ctx="$(mktemp -d)"; trap 'rm -rf "$ctx"' EXIT
 mkdir -p "$ctx/wheels" "$ctx/survey-schema" "$ctx/release-gate"
 # 왜 SOURCE_DATE_EPOCH 고정: wheel 안 파일 시각이 매번 달라 이미지 층이 바뀌는 것을 막는다(같은 요청은 같은 이미지)
 export SOURCE_DATE_EPOCH=315532800
-for lib in boundary:"$s_bc" model_runtime:"$s_mr"; do
+for lib in boundary:"$s_bc" model_runtime:"$s_mr" link:"$link_src"; do
   name="${lib%%:*}"; from="${lib#*:}"; work="$ctx/_src-$name"
   log "wheel: $name ($from)"
   cp -a "$from" "$work"
@@ -88,6 +90,9 @@ for lib in boundary:"$s_bc" model_runtime:"$s_mr"; do
 done
 # 실제로 만든 wheel의 버전을 파일 이름에서 읽어 요청과 대조한다(태그를 잘못 꺼낸 소스 트리면 여기서 걸린다)
 wheel_version() { local f; f="$(ls "$ctx/wheels" | grep -E "^$1-[0-9]" | head -1)"; [ -n "$f" ] || die "$1 wheel을 만들지 못했다"; f="${f#$1-}"; echo "v${f%%-*}"; }
+# openit-link는 라벨이 없다(계약 ImageLabels에 키가 없음). 실제 wheel 버전이 이 리포의 고정(requirements.txt)과 같은지만 확인한다
+want_link="$(sed -n 's/.*openit_link\.git@\(v[0-9][0-9.]*\).*/\1/p' "$src/requirements.txt" | head -1)"
+[ "$(wheel_version openit_link)" = "$want_link" ] || die "openit-link wheel 버전($(wheel_version openit_link))이 이 리포의 고정($want_link)과 다르다"
 act_bc="$(wheel_version boundary_contracts)"; act_mr="$(wheel_version model_runtime)"
 [ "$act_bc" = "$v_bc" ] || die "실제로 만든 boundary-contracts wheel 버전($act_bc)이 요청의 versions.boundary($v_bc)와 다르다. 라벨을 찍지 않는다"
 [ "$act_mr" = "$v_mr" ] || die "실제로 만든 model-runtime wheel 버전($act_mr)이 요청의 versions.model_runtime($v_mr)과 다르다. 라벨을 찍지 않는다"

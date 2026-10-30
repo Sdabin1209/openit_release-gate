@@ -27,6 +27,7 @@ from waitress import wasyncore
 from boundary_contracts import PIPELINE_SCHEMA_VERSION, canonical
 from boundary_contracts.errors import BoundaryError
 from openit_link import App, Request, Response, Route
+from openit_link.server import REASON
 
 from ..types.validators import validate
 
@@ -38,7 +39,6 @@ DEFAULT_MAX_CONNECTIONS = 64       # waitress connection_limit: 넘으면 새 �
 DEFAULT_THREADS = 8                # waitress threads: 앱을 동시에 실행하는 스레드 수. waitress 기본 4의 2배, 측정 안 함
 MAX_BODY_BYTES = 1 << 20           # 요청 본문 상한 1MiB(초과는 413). openit_link의 기본값과 같다
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
-_STREAM = "X-Gate-Stream"          # 번들 tar를 메모리에 올리지 않으려고 핸들러가 래퍼에 넘기는 내부 표시(응답에는 나가지 않는다)
 
 
 def _unauth(message: str) -> BoundaryError:
@@ -179,7 +179,6 @@ class GateApp:
         self.registry, self.status = registry, status
         self.read_tokens, self.write_tokens = dict(read_tokens), dict(write_tokens)
         self._last_status: dict = {}
-        self._streams: dict = {}
         routes = build_routes(registry, engine, frozenset(self.read_tokens.values()), frozenset(self.write_tokens.values()), self._stream)
         self._app = App(routes, self._token_roles(), ready=self._ready)
 
@@ -217,7 +216,7 @@ class GateApp:
         self._last_status = v
         return v
 
-    # --- 번들 tar: 임시 파일에 만들어 검증이 끝난 뒤에만 보낸다(검증 실패가 200 중간에 끊기지 않게)
+    # --- 번들 tar: 임시 파일에 만들어 검증이 끝난 뒤에만 보낸다(검증 실패가 200 중간에 끊기지 않게). 본문은 bytes 반복자로 흘린다(openit_link 0.2.0)
     def _stream(self, release_id: str) -> Response:
         f = tempfile.TemporaryFile()
         try:
@@ -227,9 +226,7 @@ class GateApp:
         except BaseException:
             f.close()
             raise
-        key = str(id(f))
-        self._streams[key] = (f, size)
-        return Response(200, b"", {_STREAM: key}, content_type="application/x-tar")
+        return Response(200, _chunks(f), {"Content-Length": str(size)}, content_type="application/x-tar")
 
     def _token_roles(self) -> dict:
         return {**{t: READ + r for t, r in self.read_tokens.items()}, **{t: WRITE + r for t, r in self.write_tokens.items()}}
@@ -264,15 +261,10 @@ class GateApp:
         self._log(environ, status)
         if method == "POST" and status >= 400:
             self._record_attempt(environ, path, status, body, raw)
-        key = headers.pop(_STREAM, None)
-        if key is not None:
-            f, size = self._streams.pop(key)
-            headers["Content-Length"] = str(size)
-            start_response(f"{status} OK", list(headers.items()))
-            wrapper = environ.get("wsgi.file_wrapper")
-            return wrapper(f, 65536) if wrapper else _Closing(f)
+        if not isinstance(body, (bytes, bytearray)):
+            start_response(f"{status} {REASON.get(status, '')}".strip(), list(headers.items()))
+            return body
         headers["Content-Length"] = str(len(body))
-        from openit_link.server import REASON
         start_response(f"{status} {REASON.get(status, '')}".strip(), list(headers.items()))
         return [body]
 
@@ -325,18 +317,13 @@ class GateApp:
             log.warning("시도 기록 실패")
 
 
-class _Closing:
-    """wsgi.file_wrapper가 없는 서버를 위한 파일 반복자(닫을 때 파일도 닫는다)."""
-
-    def __init__(self, f):
-        self._f = f
-
-    def __iter__(self):
-        while chunk := self._f.read(65536):
+def _chunks(f):
+    """파일을 조각으로 흘리고 끝나면(또는 연결이 끊겨 닫히면) 파일을 닫는다."""
+    try:
+        while chunk := f.read(65536):
             yield chunk
-
-    def close(self):
-        self._f.close()
+    finally:
+        f.close()
 
 
 class GateHTTPServer(GateApp):

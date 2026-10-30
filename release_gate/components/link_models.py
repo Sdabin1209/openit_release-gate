@@ -115,9 +115,9 @@ class ModelsLink:
 def http_model_registry(base_url=None, token=None, timeout=None):
     """I3 HTTP 클라이언트. GATE_I3_URL, 비밀 GATE_I3_TOKEN, 읽기 timeout 기본 10초(GATE_I3_TIMEOUT, 근거는 link_questions와 같다)."""
     try:
-        from boundary_contracts.clients import HttpModelRegistry
+        from openit_link.clients import HttpModelRegistry
     except ImportError as e:
-        raise SystemExit(f"boundary_contracts.clients.HttpModelRegistry이(가) 설치된 boundary-contracts에 없다: {e}")
+        raise SystemExit(f"openit_link.clients.HttpModelRegistry이(가) 설치된 boundary-contracts에 없다: {e}")
     url = base_url or os.environ.get("GATE_I3_URL")
     tok = token or read_secret("GATE_I3_TOKEN")
     if not url or not tok:

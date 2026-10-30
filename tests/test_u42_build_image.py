@@ -30,6 +30,7 @@ def _pin(fname: str, pattern: str) -> str:
 # 요청 버전은 이 리포의 고정과 같아야 라벨을 찍는다(U50). 시험은 고정 파일에서 읽어 고정이 오를 때 같이 따라간다
 PIN_BC = _pin("requirements.txt", r"boundary-contracts\.git@(v[0-9.]+)")
 PIN_MR = _pin("requirements-libs.txt", r"model-runtime\.git@(v[0-9.]+)")
+PIN_LINK = _pin("requirements.txt", r"openit_link\.git@(v[0-9.]+)")
 PIN_SS = "v" + _pin("requirements.txt", r"survey-schema-v([0-9.]+)")
 BASE = {"source_dir": str(ROOT), "revision": "abc1234", "image_tag": "release-gate-u42test:req",
         "versions": {"boundary": PIN_BC, "model_runtime": PIN_MR, "survey_schema": PIN_SS},
@@ -47,10 +48,16 @@ def fake_docker(tmp_path):
     return f, marker
 
 
+def _link_src(tmp_path) -> Path:
+    """openit-link 고정 태그의 소스 트리(계약 BuildImageRequest에 link 키가 아직 없어 환경 변수로 준다, CR-0012)."""
+    d = tmp_path / "link-src"
+    return d if d.exists() else _extract("link", PIN_LINK, None, d)
+
+
 def run(tmp_path, req, docker="docker", extra_env=None):
     p = tmp_path / "req.json"
     p.write_text(json.dumps(req))
-    env = {**os.environ, "PYTHON": sys.executable, "DOCKER": str(docker), **(extra_env or {})}
+    env = {**os.environ, "PYTHON": sys.executable, "DOCKER": str(docker), "OPENIT_LINK_SRC": str(_link_src(tmp_path)), **(extra_env or {})}
     return subprocess.run(["bash", str(SCRIPT), str(p)], capture_output=True, text=True, env=env, cwd=ROOT)
 
 

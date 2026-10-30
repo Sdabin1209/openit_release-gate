@@ -85,7 +85,7 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 
 ## 5. 시험 상태와 이 영역의 열린 항목 (head/docs/OPEN_GAPS.md, 읽기 전용으로 확인)
 
-- 시험 개수의 정본은 이 항목 하나다. 실측 한 가지 조건: 워크스페이스 밖의 새 `git clone`(이웃 폴더 없음)에 `bash scripts/setup-env.sh` 후 `python -m pytest -q -rs`, PostgreSQL 없음(`TEST_DATABASE_URL` 없음), Linux(WSL2) Python 3.12 한 환경, 2026-10-28: **353 통과, 233 건너뜀, 0 실패**(92.80초). 건너뜀은 PostgreSQL 시험과 저장소 종류 조건 시험이다. PostgreSQL을 띄운 실행, `scripts/smoke.sh`, `serve`/`collect`/`judge` 실행, 실제 이웃 연동은 하지 않았다.
+- 시험 개수의 정본은 이 항목 하나다. 2026-10-30(U400), Linux(WSL2) Python 3.12: 워크트리에서 PostgreSQL 16(`scripts/dev-postgres.sh up`, compose.dev.yaml)을 띄워 `python -m pytest -q -p no:cacheprovider`: **832 통과, 48 건너뜀, 0 실패**(183.6초). 건너뜀 48은 저장소 종류 조건 시험(예: 메모리에는 파일이 없다)이고 PostgreSQL 때문에 건너뛴 것은 없다. 새 복사본(.venv 새로 설치, git 이력 없음)에서는 817 통과, 63 건너뜀(이웃 폴더가 없어 build-image 실제 빌드 시험 등 15건 추가로 건너뜀), 0 실패였다. 이미지: `scripts/smoke.sh` 통과(`OPENIT_LINK_SRC` 필요, runbook).
 
 - 이 영역 소유의 열린 항목은 없다. G08(기본 태그 올림)은 닫힘(시험 209 통과, release-gate 7139123).
 - 간접으로 닿는 열린 항목(소유는 다른 영역): G11(문진 스키마 정수 버전 1 안의 비호환 변경, 같은 잠금으로 함께 배포 필요, 다른 영역 의존), U07(실제 LLM 데모 부분, GPU 의존), U10(평가가 가짜 모델로만 돌았음, GPU 의존), D-A(운영 도메인·토큰 발급·회전 등, 사용자 결정), U12(두 번째 독립 머신 확인, 미실시).
