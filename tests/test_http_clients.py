@@ -109,11 +109,12 @@ def test_role_mismatch_and_read_token_cannot_write(world, srv):
     assert code(HttpGateService(srv, "w-ops").activate, "rel-x", requested_by_role="operator") == "PERMISSION_DENIED"
     ro = HttpGateService(srv, "r-surv")
     assert code(ro.submit_candidate, s, requested_by_role="survey-service") == "PERMISSION_DENIED"
-    assert code(ro.activate, "rel-x", requested_by_role="survey-service") == "PERMISSION_DENIED"
+    # 계약 3.1.0: 클라이언트가 보내기 전에 ActivateRequest(requested_by_role=operator)로 검사한다
+    assert code(ro.activate, "rel-x", requested_by_role="survey-service") == "INVALID_RECORD"
     assert code(ro.request_rollback, rollback_req("rb-z", "a", "b", role="survey-service")) == "PERMISSION_DENIED"
     assert world.reg.store.submission_ids() == []
     # 허용 목록 밖의 역할(토큰과 일치해도)은 거부
-    assert code(HttpGateService(srv, "w-ops").activate, "rel-x", requested_by_role="ops-feedback") == "PERMISSION_DENIED"
+    assert code(HttpGateService(srv, "w-ops").activate, "rel-x", requested_by_role="ops-feedback") == "INVALID_RECORD"
     # 쓰기 토큰으로 읽기 면을 쓸 수 없고, 잘못된 토큰도 거부
     assert code(HttpReleaseReader(srv, "w-op").get_active_pointer) == "PERMISSION_DENIED"
     assert code(HttpReleaseReader(srv, "nope").list_releases) == "PERMISSION_DENIED"
