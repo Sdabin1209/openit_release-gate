@@ -2,7 +2,7 @@
 
 규약(401/403, X-Openit-User, 413, 계약 검증, BoundaryError 본문, /healthz·/readyz)은 통신 기반 라이브러리 openit_link(D118)가 지킨다.
 여기서 하는 일: 경로 표(Route), waitress 서빙·우아한 종료(ADR-0013), 번들 tar 스트리밍, 응답 머리글 X-Openit-Report-Hash,
-거부·실패한 쓰기 시도 기록, 접근 로그.
+거부·실패한 쓰기 시도 기록(openit_link의 on_result 훅), 접근 로그.
 읽기(읽기 토큰): GET /v1/active-pointer {"item"}, /v1/releases, /v1/releases/<id>, /v1/releases/<id>/bundle (tar), /v1/releases/<id>/question-bank,
   /v1/decisions?question_set_id=&question_set_version=&lora_a_id=&lora_a_version=&lora_b_id=&lora_b_version=&submission_id=, /v1/decisions/<id>,
   /v1/submissions (SubmissionView 목록, status 필터, D68), /v1/submissions/<id>, /v1/submissions/<id>/review-report (D53). 목록은 {"items", "next_cursor"}이고 쿼리 cursor, limit(기본 100, 최대 500).
@@ -171,7 +171,7 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
 
 
 class GateApp:
-    """WSGI 앱. openit_link.App 위에 얇은 껍질을 씌운다: 번들 스트리밍, 쓰기 시도 기록, 접근 로그, 예기치 못한 예외의 JSON 본문."""
+    """WSGI 앱. openit_link.App 위에 서버별 방어만 씌운다: 접근 로그, 예기치 못한 예외의 JSON 본문, 시도 기록용 본문 보관."""
 
     def __init__(self, registry, *, read_tokens: dict, write_tokens: dict, status: Callable[[], dict], engine=None):
         self.shutting_down = False
@@ -179,8 +179,9 @@ class GateApp:
         self.registry, self.status = registry, status
         self.read_tokens, self.write_tokens = dict(read_tokens), dict(write_tokens)
         self._last_status: dict = {}
+        self._local = threading.local()      # 요청을 처리하는 스레드마다 읽어 둔 본문(시도 기록의 대상 ID용)
         routes = build_routes(registry, engine, frozenset(self.read_tokens.values()), frozenset(self.write_tokens.values()), self._stream)
-        self._app = App(routes, self._token_roles(), ready=self._ready)
+        self._app = App(routes, self._token_roles(), ready=self._ready, on_result=self._on_result)
 
     # --- /readyz
     def _ready(self) -> tuple:
@@ -247,11 +248,9 @@ class GateApp:
         if method == "POST" and 0 < n <= MAX_BODY_BYTES:
             raw = environ["wsgi.input"].read(n)         # 시도 기록이 대상 ID를 읽을 수 있게 본문을 한 번 읽어 되돌려 놓는다
             environ["wsgi.input"] = io.BytesIO(raw)
+        self._local.raw = raw
         try:
             status, headers, body = self._app.handle(environ)
-        except RecursionError:   # 깊게 중첩된 JSON: 500이 아니라 잘못된 본문(400)
-            status, headers = 400, {"Content-Type": "application/json"}
-            body = json.dumps(BoundaryError("INVALID_RECORD", "본문의 JSON이 너무 깊게 중첩되어 있다").to_record(PIPELINE_SCHEMA_VERSION), ensure_ascii=False).encode()
         except Exception:  # 서비스는 죽지 않는다. 원인은 로그에 남긴다.
             log.exception("처리 중 예외")
             # 왜: BoundaryError 코드 열거에 내부 오류가 없다(CONVENTIONS 3절). 클라이언트는 5xx를 UNAVAILABLE로 읽으므로(HTTP.md 12행) 같은 코드로 맞춘다.
@@ -259,8 +258,6 @@ class GateApp:
             status, headers = 500, {"Content-Type": "application/json"}
             body = json.dumps(BoundaryError("UNAVAILABLE", "내부 오류").to_record(PIPELINE_SCHEMA_VERSION), ensure_ascii=False).encode()
         self._log(environ, status)
-        if method == "POST" and status >= 400:
-            self._record_attempt(environ, path, status, body, raw)
         if not isinstance(body, (bytes, bytearray)):
             start_response(f"{status} {REASON.get(status, '')}".strip(), list(headers.items()))
             return body
@@ -277,23 +274,17 @@ class GateApp:
         log.info("%s %s role=%s user=%s", environ.get("REMOTE_ADDR", "-"), _CTRL.sub("?", line)[:300],
                  _CTRL.sub("?", (self._role_of(environ) or "-")[2:] or "-")[:64], _CTRL.sub("?", environ.get("HTTP_X_OPENIT_USER") or "-")[:64])
 
-    def _record_attempt(self, environ, path: str, status: int, body: bytes, raw: bytes) -> None:
-        """거부·실패한 쓰기 시도(승인·활성화·롤백·접수)를 행위자와 함께 남긴다(추가 전용, 보존 기간 뒤 정리).
-        유효한 쓰기 토큰의 요청만 남긴다: 토큰이 틀린 요청은 누구인지 알 수 없고 DB를 키울 수 있어 접근 로그에만 남는다."""
-        role = self._role_of(environ)
-        if role is None or not role.startswith(WRITE):
+    def _on_result(self, r: dict) -> None:
+        """openit_link의 감사 훅(0.4.0): 경로가 있는 요청이 끝날 때마다 부른다. 거부·실패한 쓰기 시도(승인·활성화·롤백·접수)를 행위자와 함께 남긴다
+        (추가 전용, 보존 기간 뒤 정리). 유효한 쓰기 토큰의 요청만 남긴다: 토큰이 틀린 요청은 누구인지 알 수 없고 DB를 키울 수 있어 접근 로그에만 남는다."""
+        role = r.get("role")
+        if r["method"] != "POST" or r["status"] < 400 or not (role or "").startswith(WRITE):
             return
-        role = role[2:]
         try:
-            resp = json.loads(body or b"{}")
-        except ValueError:
-            resp = {}
-        try:
-            parsed = json.loads(raw or b"{}")
+            parsed = json.loads(getattr(self._local, "raw", b"") or b"{}")
             parsed = parsed if isinstance(parsed, dict) else {}
         except (ValueError, RecursionError):
             parsed = {}
-        user = environ.get("HTTP_X_OPENIT_USER")
 
         def is_id(v) -> bool:
             try:
@@ -301,11 +292,9 @@ class GateApp:
                 return True
             except BoundaryError:
                 return False
-        details = resp.get("details")
-        rec = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "method": "POST", "path": path[:64], "status": status,
-               "code": str(resp.get("code", ""))[:32],
-               "reason": str(details.get("reason", ""))[:32] if isinstance(details, dict) else "",
-               "role": role, "user": user if user and is_id(user) else None}
+        user = r.get("user")
+        rec = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "method": "POST", "path": r["pattern"][:64], "status": r["status"],
+               "code": str(r.get("code") or "")[:32], "role": role[2:], "user": user if user and is_id(user) else None}
         for k in ("submission_id", "release_id", "request_id"):
             v = parsed.get(k)
             if isinstance(v, str) and is_id(v):
@@ -313,7 +302,7 @@ class GateApp:
                 break
         try:
             self.registry.store.record_attempt(rec)
-        except Exception:      # 기록이 안 돼도 응답은 이미 나갔다. 접근 로그에는 남아 있다
+        except Exception:      # 기록이 안 돼도 응답은 이미 정해졌다. 접근 로그에는 남아 있다
             log.warning("시도 기록 실패")
 
 

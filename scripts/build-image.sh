@@ -2,7 +2,7 @@
 # 영역 빌드 진입점(계약 BuildImageRequest / BuildImageResult, boundary-contracts 2.5.x, OPEN_GAPS U42, docs/adr/0015-build-image-entrypoint.md).
 # 사용: bash scripts/build-image.sh <요청 JSON 파일>   (영역 리포 루트에서)
 # 결과: 표준 출력 마지막 줄에 BuildImageResult JSON 한 줄. 진행 기록은 표준 오류. 종료 0이 성공.
-# 환경 변수: OPENIT_LINK_SRC(통신 기반 라이브러리 openit-link의 고정 태그 소스 트리, 필수. 계약 BuildImageRequest에 link 키가 아직 없어 환경 변수로 받는다: 변경 요청 CR-0012), DOCKER(도커 실행 파일, 기본 docker), PYTHON(boundary-contracts 2.5 이상이 설치된 python, 기본은 setup-env.sh가 만든 이 리포의 .venv, 없으면 python3). 비밀은 받지도 쓰지도 않는다.
+# openit-link(통신 기반, D118)는 requirements.txt의 git+ssh 태그 줄로 호스트에서 받아 wheel로 만든다(이미지 안에서는 ssh를 쓰지 않는다). 환경 변수: DOCKER(도커 실행 파일, 기본 docker), PYTHON(boundary-contracts 2.5 이상이 설치된 python, 기본은 setup-env.sh가 만든 이 리포의 .venv, 없으면 python3). 비밀은 받지도 쓰지도 않는다.
 set -euo pipefail
 log() { echo "build-image: $*" >&2; }
 die() { log "오류: $*"; exit 1; }
@@ -65,8 +65,6 @@ PY
 [ "${#F[@]}" -eq 10 ] || die "요청을 읽지 못했다"
 src="${F[0]}" rev="${F[1]}" tag="${F[2]}" v_bc="${F[3]}" v_mr="${F[4]}" v_ss="${F[5]}" s_bc="${F[6]}" s_mr="${F[7]}" s_ss="${F[8]}" exposure="${F[9]}"
 for d in "$src" "$s_bc" "$s_mr" "$s_ss"; do [ -d "$d" ] || die "디렉터리가 없다: $d"; done
-link_src="${OPENIT_LINK_SRC:-}"
-[ -n "$link_src" ] && [ -d "$link_src" ] || die "OPENIT_LINK_SRC(openit-link 고정 태그 소스 트리)가 필요하다"
 [ -f "$src/Dockerfile" ] || die "source_dir에 Dockerfile이 없다: $src"
 # 왜 실제 값에서 찍는다: 라벨은 이미지에 실제로 들어간 것이어야 한다(U50). 문진 스키마 패키지의 실제 버전은 복사할 소스 트리의 pyproject version이다
 # (정수 계약 버전 CONTRACT_VERSION과는 다른 수다: 패키지 2.0.0에서도 CONTRACT_VERSION은 1일 수 있다). 라벨은 그 주 버전이다.
@@ -82,6 +80,12 @@ ctx="$(mktemp -d)"; trap 'rm -rf "$ctx"' EXIT
 mkdir -p "$ctx/wheels" "$ctx/survey-schema" "$ctx/release-gate"
 # 왜 SOURCE_DATE_EPOCH 고정: wheel 안 파일 시각이 매번 달라 이미지 층이 바뀌는 것을 막는다(같은 요청은 같은 이미지)
 export SOURCE_DATE_EPOCH=315532800
+# 왜 호스트에서 clone: 계약 BuildImageRequest에 link 키가 없고(다른 영역도 같다) deploy가 따로 줄 것이 없게 한다. 고정은 잠금 파일(requirements.txt)이 정본이다
+link_line="$(sed -n 's#^git+\(ssh://[^@ ]*@[^@ ]*\.git\)@\(v[0-9][0-9.]*\)[[:space:]]*$#\1 \2#p' "$src/requirements.txt" | grep openit_link | head -1)"
+[ -n "$link_line" ] || die "requirements.txt에서 openit-link의 git+ssh 태그 줄을 읽지 못했다"
+log "clone: openit-link (${link_line##* })"
+git clone -q --depth 1 --branch "${link_line##* }" "${link_line%% *}" "$ctx/_link-src" >&2 || die "openit-link를 받지 못했다(GitHub SSH 접근 확인): $link_line"
+link_src="$ctx/_link-src"
 for lib in boundary:"$s_bc" model_runtime:"$s_mr" link:"$link_src"; do
   name="${lib%%:*}"; from="${lib#*:}"; work="$ctx/_src-$name"
   log "wheel: $name ($from)"
@@ -99,7 +103,7 @@ act_bc="$(wheel_version boundary_contracts)"; act_mr="$(wheel_version model_runt
 cp -a "$s_ss/CONTRACT_VERSION" "$s_ss/schemas" "$ctx/survey-schema/"
 cp -a "$src/pyproject.toml" "$src/requirements.lock" "$src/release_gate" "$ctx/release-gate/"
 find "$ctx" -name __pycache__ -type d -prune -exec rm -rf {} +
-rm -rf "$ctx"/_src-*
+rm -rf "$ctx"/_src-* "$ctx"/_link-src
 # 왜 컨텍스트 전체 시각 고정: 디렉터리·파일의 수정 시각이 COPY 층에 들어가 만든 시각이 다르면 같은 내용도 다른 이미지가 된다
 find "$ctx" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 

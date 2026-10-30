@@ -48,16 +48,10 @@ def fake_docker(tmp_path):
     return f, marker
 
 
-def _link_src(tmp_path) -> Path:
-    """openit-link 고정 태그의 소스 트리(계약 BuildImageRequest에 link 키가 아직 없어 환경 변수로 준다, CR-0012)."""
-    d = tmp_path / "link-src"
-    return d if d.exists() else _extract("link", PIN_LINK, None, d)
-
-
 def run(tmp_path, req, docker="docker", extra_env=None):
     p = tmp_path / "req.json"
     p.write_text(json.dumps(req))
-    env = {**os.environ, "PYTHON": sys.executable, "DOCKER": str(docker), "OPENIT_LINK_SRC": str(_link_src(tmp_path)), **(extra_env or {})}
+    env = {**os.environ, "PYTHON": sys.executable, "DOCKER": str(docker), **(extra_env or {})}
     return subprocess.run(["bash", str(SCRIPT), str(p)], capture_output=True, text=True, env=env, cwd=ROOT)
 
 
@@ -156,7 +150,8 @@ def test_script_does_not_read_neighbor_repos_or_use_ssh():
     # 왜: 이웃 리포 경로(../model-runtime 등)와 빌드 중 SSH 대신 dependency_sources만 쓴다(계약 BuildImageRequest 설명, U42)
     text = SCRIPT.read_text(encoding="utf-8")
     assert "../model-runtime" not in text and "../boundary-contracts" not in text and "../survey-service" not in text
-    assert "git+ssh" not in text and "git archive" not in text
+    # openit-link는 계약 BuildImageRequest에 키가 없어 스크립트가 requirements.txt의 고정 태그로 호스트에서 clone한다(이미지 안에서는 ssh를 쓰지 않는다). 그 한 곳만 허용한다
+    assert "git archive" not in text and text.count("git clone") == 1 and "openit_link" in text
 
 
 # ---- 실제 빌드(스모크) ----
