@@ -1,0 +1,25 @@
+# 타입 생성 도구(개발 전용, 이미지에 넣지 않는다). 설치: python3 -m venv .venv-tools && .venv-tools/bin/pip install -r requirements-tools.txt
+# 왜 datamodel-code-generator: DESIGN.md 3절이 정한 Python 생성기. 버전은 생성물이 달라지지 않게 고정한다(== 핀, 전이 의존 포함).
+annotated-types==0.8.0
+argcomplete==3.7.2
+black==26.10.1
+click==8.5.0
+datamodel-code-generator==0.25.9
+dnspython==2.9.1
+email-validator==2.3.0
+genson==1.4.0
+idna==3.20
+inflect==5.6.2
+isort==5.13.2
+Jinja2==3.1.6
+MarkupSafe==3.0.4
+mypy_extensions==1.1.0
+packaging==26.3
+pathspec==1.1.1
+platformdirs==4.14.0
+pydantic==2.14.2
+pydantic_core==2.50.2
+pytokens==0.4.1
+PyYAML==6.0.3
+typing-inspection==0.4.4
+typing_extensions==4.16.0

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CheckOutcome",
+  "description": "자동 검사 하나의 결과. 합격 임계치는 어디에도 없다(D53)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "detail": {
+      "type": "string"
+    },
+    "evidence_ref": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "result"
+  ]
+}

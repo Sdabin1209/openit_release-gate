@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReviewReportInput",
+  "description": "승인 요청 보고서 입력: 후보의 평가 보고서와 활성 릴리스의 기준 보고서(역할별 EvaluationReport)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "submission_id": {
+      "type": "string",
+      "pattern": "^sub-"
+    },
+    "subject": {
+      "type": "object",
+      "required": [
+        "question_set",
+        "lora_a",
+        "lora_b"
+      ],
+      "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다"
+    },
+    "generated_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "LORA_A",
+          "LORA_B"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "active_release_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "baseline": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "LORA_A",
+          "LORA_B"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object"
+      }
+    }
+  },
+  "required": [
+    "submission_id",
+    "subject",
+    "generated_at",
+    "checks",
+    "candidate",
+    "active_release_id",
+    "baseline"
+  ]
+}

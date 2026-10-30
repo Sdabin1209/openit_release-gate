@@ -1,0 +1,5 @@
+{
+  "keep_releases": true,
+  "rejected_days": 90,
+  "attempts_days": 365
+}

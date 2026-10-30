@@ -89,7 +89,7 @@ def test_policy_defaults_and_file(tmp_path):
     ('{"gate_policy_version": ""}', "gate_policy_version"),
 ])
 def test_bad_policy_file_rejected_clearly(tmp_path, content, needle):
-    from release_gate.policy import PolicyError
+    from release_gate.components.gate_policy import PolicyError
     f = tmp_path / "p.json"
     f.write_text(content, encoding="utf-8")
     with pytest.raises(PolicyError) as e:
@@ -101,5 +101,5 @@ def test_no_threshold_code_remains():
     """통과 임계치는 코드에도 정책에도 없다(D53)."""
     import pathlib
     import release_gate
-    src = "".join(p.read_text(encoding="utf-8") for p in pathlib.Path(release_gate.__file__).parent.glob("*.py"))
+    src = "".join(p.read_text(encoding="utf-8") for p in pathlib.Path(release_gate.__file__).parent.rglob("*.py"))
     assert "thresholds" not in src and "o11_resolved" not in src

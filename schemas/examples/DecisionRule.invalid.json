@@ -1,0 +1,11 @@
+{
+  "result": "PASS",
+  "checks": [
+    {
+      "kind": "CLINICAL_SAFETY",
+      "result": "PASS"
+    }
+  ],
+  "release_id": "rel-ab",
+  "approval_id": "ap-ab"
+}

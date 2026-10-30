@@ -1,0 +1,24 @@
+{
+  "submission_id": "sub-ab",
+  "subject": {
+    "question_set": {
+      "id": "qs-1",
+      "version": "1",
+      "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "lora_a": {
+      "id": "la-1",
+      "version": "1",
+      "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "lora_b": {
+      "id": "lb-1",
+      "version": "1",
+      "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "generated_at": "2026-10-01T00:00:00Z",
+  "checks": [],
+  "candidate": {},
+  "active_release_id": null
+}

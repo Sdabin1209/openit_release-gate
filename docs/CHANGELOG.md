@@ -1,5 +1,13 @@
 # 변경 이력
 
+## (미배포) 영역 구조 개편 (U400, D117·D118) + 계약 v3.1.1
+
+- 계약 고정 boundary-contracts v3.1.1, 통신 기반 라이브러리 openit-link v0.1.0(requirements.txt). v3.1.0부터 계약 클라이언트가 `activate` 본문(`requested_by_role`은 `operator`만)을 보내기 전에 검사하므로 `tests/test_http_clients.py`의 기대를 INVALID_RECORD로 고쳤다.
+- 코드 배치를 `components/`(컴포넌트마다 파일 하나, 서로 가져오지 않음), `wiring/`(연결·주입), `types/`(`schemas/`에서 생성)로 옮겼다. 표는 `docs/components.md`, 스키마 밖 조건은 `schemas/README.md`. 결정 근거는 ADR-0018.
+- 받는 쪽 HTTP 면을 `openit_link.App/Route` 위에 다시 썼다(401/403, X-Openit-User, 413, 계약 검증, BoundaryError 본문, `/healthz`·`/readyz`는 라이브러리). **와이어가 달라지는 곳 둘**: (1) 405 응답 본문이 BoundaryError가 아니라 `{"message"}`이고 `Allow` 머리글이 없다(라이브러리의 동작), (2) 승인 요청 본문 검증과 권한 확인의 순서를 지켰다(권한 403이 모양 400보다 먼저). 그 밖의 경로·상태 코드·본문은 시험으로 같음을 확인했다.
+- 손 검사를 스키마로 옮겼다(목록 쿼리, 이웃 버전, 보존 정책, 참조 필터, 판정 PASS/REJECT 규칙 등). 옮기지 못한 20건은 `schemas/README.md`.
+- 파일 이동: `store.py`+`postgres_store.py` -> `components/registry_store.py`(합침: PostgresStore가 ReleaseFiles를 SqliteStore와 같이 쓰기 때문), `gate.py` -> `wiring/engine.py`·`wiring/service.py`와 판정·승인·릴리스 컴포넌트, `checks.py` -> 검사 4개 컴포넌트와 `wiring/check_registry.py`, `app.py` -> `components/link_http_server.py`, `factories.py` -> 통신 컴포넌트(공개 이름 `release_gate.factories`는 유지).
+
 ## (미배포) 계약 3.0.0 전환
 
 - 계약 boundary-contracts v3.0.0. `GateConfig.turn_engine_version` -> `action_rules_version`, 릴리스 매니페스트·`/readyz`의 필드도 같다. `GATE_TURN_ENGINE_VERSION` 환경 변수는 없어졌다. 2.x 레코드(pipeline_schema_version 2.x)는 CONTRACT_COMPAT가 MAJOR로 반려한다.

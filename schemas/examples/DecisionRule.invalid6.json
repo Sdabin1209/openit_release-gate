@@ -1,0 +1,11 @@
+{
+  "result": "PASS",
+  "checks": [
+    {
+      "kind": "HUMAN_APPROVAL",
+      "result": "FAIL"
+    }
+  ],
+  "release_id": "rel-ab",
+  "approval_id": "ap-ab"
+}

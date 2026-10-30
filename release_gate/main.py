@@ -22,19 +22,20 @@ import time
 from boundary_contracts import read_secret, validator
 from boundary_contracts.errors import BoundaryError
 
-from .app import DEFAULT_MAX_CONNECTIONS, DEFAULT_REQUEST_TIMEOUT, GateHTTPServer, Loop
-from .checks import CheckRegistry
-from .collector import CandidateCollector
+from .components.gate_policy import GatePolicy, PolicyError
+from .components.link_http_server import DEFAULT_MAX_CONNECTIONS, DEFAULT_REQUEST_TIMEOUT, GateHTTPServer
+from .components.registry_store import DEFAULT_CONNECT_TIMEOUT, DEFAULT_PROBE_TIMEOUT, DEFAULT_STATEMENT_TIMEOUT
+from .components.retention import (DEFAULT_ATTEMPTS_DAYS, DEFAULT_KEEP_RELEASES, DEFAULT_REJECTED_DAYS, RetentionPolicy,
+                                   prune as retention_prune, summary as retention_summary)
 from .config import GateConfig
-from .gate import GateEngine
-from .policy import GatePolicy, PolicyError
-from .postgres_store import DEFAULT_CONNECT_TIMEOUT, DEFAULT_PROBE_TIMEOUT, DEFAULT_STATEMENT_TIMEOUT
-from .registry import open_registry
-from .retention import (DEFAULT_ATTEMPTS_DAYS, DEFAULT_KEEP_RELEASES, DEFAULT_REJECTED_DAYS, RetentionPolicy,
-                        prune as retention_prune, summary as retention_summary)
-from .schemas import SchemaSet, SurveySchema
-from .util import utc_now
-from .store import SqliteStore
+from .wiring.check_registry import CheckRegistry
+from .wiring.collector import CandidateCollector
+from .wiring.engine import GateEngine
+from .wiring.loop import Loop
+from .wiring.registry import open_registry
+from .wiring.schema_set import SchemaSet
+from .wiring.survey import SurveySchema
+from .wiring.util import utc_now
 
 log = logging.getLogger("gate")
 EX_TEMPFAIL = 75

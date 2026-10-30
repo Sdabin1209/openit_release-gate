@@ -15,7 +15,7 @@ from boundary_contracts.clients import HttpReleaseReader
 from boundary_contracts.errors import BoundaryError
 
 from conftest import tamper_decisions
-from release_gate.app import GateHTTPServer
+from release_gate.components.link_http_server import GateHTTPServer
 
 ROOT = Path(__file__).resolve().parent.parent
 EXPOSURE = ROOT / "deploy-exposure.json"
@@ -36,8 +36,8 @@ def test_every_code_route_is_declared_in_the_exposure_table():
     # 왜: 코드에 새 경로를 더하고 노출 표(허용이든 denied든)에 적지 않으면 게이트웨이 설정이 코드와 어긋난다. 정본은 코드다.
     table = json.loads(EXPOSURE.read_text(encoding="utf-8"))
     declared = [p for r in table["routes"] for p in r["paths"]]
-    src = (ROOT / "release_gate" / "app.py").read_text(encoding="utf-8")
-    code_paths = {m for m in re.findall(r'"(/v1/[A-Za-z0-9_/-]*)"', src)}
+    src = (ROOT / "release_gate" / "components" / "link_http_server.py").read_text(encoding="utf-8")
+    code_paths = {m for m in re.findall(r'"(/v1/[A-Za-z0-9_/{}-]*)"', src)}
     assert code_paths, "코드에서 경로를 찾지 못했다"
     for cp in sorted(code_paths):
         probe = cp + "x" if cp.endswith("/") else cp         # startswith 접두사는 그 아래 경로 하나로 본다
@@ -46,7 +46,7 @@ def test_every_code_route_is_declared_in_the_exposure_table():
 
 def test_every_allowed_exposure_path_exists_in_the_code():
     table = json.loads(EXPOSURE.read_text(encoding="utf-8"))
-    src = (ROOT / "release_gate" / "app.py").read_text(encoding="utf-8")
+    src = (ROOT / "release_gate" / "components" / "link_http_server.py").read_text(encoding="utf-8")
     for r in table["routes"]:
         if r["auth"]["kind"] == "denied":
             continue

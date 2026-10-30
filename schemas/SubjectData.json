@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SubjectData",
+  "description": "판정 대상의 내용 전부(문항 쪽 + 모델 쪽 + 문진 스키마 위반 목록). 자동 검사의 공통 입력 재료",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "subject": {
+      "type": "object",
+      "required": [
+        "question_set",
+        "lora_a",
+        "lora_b"
+      ],
+      "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다"
+    },
+    "bank": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "문항 세트(계약 QuestionBank). 읽지 못했으면 null"
+    },
+    "bank_violations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reviews": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "reviews_ok": {
+      "type": "boolean"
+    },
+    "manifests": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "LORA_A",
+          "LORA_B"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "eval_reports": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "LORA_A",
+          "LORA_B"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "report_problems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "subject",
+    "bank",
+    "bank_violations",
+    "reviews",
+    "reviews_ok",
+    "manifests",
+    "eval_reports",
+    "report_problems",
+    "problems"
+  ]
+}

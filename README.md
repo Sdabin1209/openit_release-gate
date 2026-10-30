@@ -22,14 +22,11 @@ HTTP 경로(boundary.md 기준): 쓰기는 `POST /v1/submissions`, `/v1/approval
 
 | 경로 | 역할 |
 | --- | --- |
-| `release_gate/gate.py` | 판정 엔진(GateEngine)과 I5 GateService 구현 |
-| `release_gate/checks.py`, `policy.py` | 자동 검사 4종(CONTRACT_COMPAT, QUESTION_MODEL_COMPAT, ACCEPTANCE_EVAL 형식, CLINICAL_SAFETY)과 정책 파일 |
-| `release_gate/collector.py` | 후보 수집기(I1·I3를 보고 새 조합을 제출) |
-| `release_gate/review.py`, `views.py` | 승인 요청 보고서(후보 대 활성 릴리스 지표 비교), 제출 상태 보기 |
-| `release_gate/store.py`, `postgres_store.py` | 릴리스 레지스트리 저장소: PostgreSQL+파일(운영, `GATE_DATABASE_URL`), SQLite+파일(개발·시험 기본), 메모리(가짜) |
-| `release_gate/reader.py`, `registry.py` | I4 읽기 구현(읽기 전용 연결 가능), 저장소+I4+I5 묶음 도우미 |
-| `release_gate/app.py`, `main.py` | HTTP 면(WSGI 앱 + waitress), 진입점 `serve` / `collect` / `judge` |
-| `release_gate/factories.py`, `schemas.py` | I1·I3 HTTP 클라이언트 팩토리, 쓰기 전 스키마 검증 |
+| `schemas/` | 영역 내부 타입의 JSON Schema(타입 하나에 파일 하나)와 `examples/`(통과·거부 예시). 받아들이는 조건의 정본. 스키마 밖 조건은 `schemas/README.md` |
+| `release_gate/types/` | `schemas/`에서 **생성**한 코드 타입과 검증 함수(`validators.py`). 손으로 고치지 않는다. 생성 명령은 4절 |
+| `release_gate/components/` | 컴포넌트마다 파일 하나(업무 14개, 저장소 1개, 통신 4개). 서로를 가져오지 않는다. 표는 `docs/components.md` |
+| `release_gate/wiring/` | 연결·주입: 어느 출력을 어느 입력에 넘길지(판정 엔진, I5 서비스, 수집기, 자동 검사 등록부), 저장소·시계·이웃 주입 |
+| `release_gate/main.py`, `config.py`, `migrate.py`, `migrations/`, `factories/` | 진입점(`serve` / `collect` / `judge` / `prune`), 설정, DB 마이그레이션, 팩토리 공개 이름(`release_gate.factories:http_question_reader`). 업무 규칙 없음 |
 | `tests/` | 적합성(memory·sqlite·postgres), HTTP, 비밀, 수집·정책, 계약 v2 시험. `fakes.py`가 이웃 대역 |
 | `scripts/` | `build-image.sh`(영역 빌드 진입점, 계약 BuildImageRequest), `smoke.sh`(스모크) |
 | `Dockerfile`, `requirements.txt`, `requirements.lock` | 이미지와 태그 고정 의존 |
@@ -71,6 +68,9 @@ python -m release_gate prune [--dry-run]                # 보존 정책대로 �
 
 ## 4. 현재 상태
 
+타입 생성(손으로 고치지 않는다): 개발 전용 도구 환경 `python3 -m venv .venv-tools && .venv-tools/bin/pip install -r requirements-tools.txt`(핀 고정) 후
+`.venv-tools/bin/python scripts/gen_types.py`(다시 생성) 또는 `--check`(생성 결과가 저장소와 같은지만 본다. `tests/test_structure.py`가 쓴다). 생성기는 datamodel-code-generator(`typing.TypedDict`)다.
+
 확인된 것: `scripts/smoke.sh` 통과와 라벨·`/readyz` 버전 일치는 `docs/STATUS.md`에 있다(당시 기준, 현행 버전은 `deploy/scripts/lib.sh`). 시험 개수는 5절을 본다. 패키지 버전은 0.7.0(pyproject). 변경은 push·태그 전이다(STATUS: 헤드 몫).
 
 DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문장 기본 3초, `/readyz` DB 확인 기본 2초(별도 연결), 수집·판정 잡은 DB 무응답 시 종료 코드 75. 이 PC의 로컬 PostgreSQL 컨테이너(`docker pause`)로 확인했고(`tests/test_pg_timeouts.py`), 상세와 근거는 `docs/boundary.md` "DB 대기 상한". 이 PC 컨테이너 조합에서의 재측정은 deploy E2E 5p에서 헤드가 한다.
@@ -98,6 +98,7 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | `CLAUDE.md` | 이 영역 에이전트 지침과 개발 명령 |
 | `docs/brief.md` | 헤드가 준 영역 브리프(목적, 계약, 수용 기준). 일부는 D53으로 대체됨 |
 | `docs/boundary.md` | 소유 저장소, 제공 SDK·HTTP, 소비 계약과 지원 버전, 장애 영향, 비밀 |
+| `docs/components.md` | 컴포넌트 표(파일, 입력·출력 타입, 하는 일)와 wiring. `schemas/README.md`는 내부 타입과 스키마 밖 조건 |
 | `docs/design.md` | 내부 설계: 구성, 자동 검사, 상태기계, 릴리스 구성, 포인터·롤백 |
 | `docs/runbook.md` | 환경 변수, 승인 절차, 정책, run-once 잡, 이미지, 백업, 비밀 파일화 |
 | `docs/STATUS.md` | 한 일, 남은 일, 확인하지 못한 것 |
@@ -122,6 +123,7 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | [0010](docs/adr/0010-rollback.md) | 롤백 설계 |
 | [0011](docs/adr/0011-turn-engine-reference-string.md) | (대체됨: 0017) turn-engine은 설치하지 않고 기준 문자열만 설정으로 |
 | [0017](docs/adr/0017-action-rules-version.md) | 계보 기준은 action_rules_version(계약 규칙 데이터), 라벨은 실제 설치 버전 |
+| [0018](docs/adr/0018-components-schemas-link.md) | 영역 구조 개편: 컴포넌트·스키마·wiring, 통신은 openit_link 위에 |
 | [0012](docs/adr/0012-job-output-self-check.md) | 잡 출력 자기 검사, /readyz는 시험에서만, 종료 코드 |
 | [0013](docs/adr/0013-wsgi-waitress.md) | HTTP 면은 WSGI 앱 + waitress |
 | [0014](docs/adr/0014-yoyo-migrations.md) | 스키마 버전 관리는 yoyo-migrations |

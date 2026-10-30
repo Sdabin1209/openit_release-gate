@@ -12,7 +12,7 @@ from conftest import tamper_decisions
 
 from boundary_contracts.clients import HttpGateService, HttpReleaseReader
 from boundary_contracts.errors import BoundaryError
-from release_gate.app import GateHTTPServer
+from release_gate.components.link_http_server import GateHTTPServer
 from test_conformance import rollback_req, tamper
 
 

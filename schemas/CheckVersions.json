@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CheckVersions",
+  "description": "검사가 비교하는 기준 버전(읽지 못한 값은 null이고 검사가 불일치로 본다)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "supported_runtime_contract_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "action_rules_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model_runtime_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "survey_contract_version": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "supported_runtime_contract_version",
+    "action_rules_version",
+    "model_runtime_version",
+    "survey_contract_version"
+  ]
+}

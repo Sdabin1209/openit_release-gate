@@ -10,7 +10,7 @@ import urllib.request
 
 import pytest
 
-from release_gate.app import GateHTTPServer
+from release_gate.components.link_http_server import GateHTTPServer
 
 
 def _serve(world, **kw):

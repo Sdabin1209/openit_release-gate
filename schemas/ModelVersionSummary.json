@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ModelVersionSummary",
+  "description": "패키지 한 버전의 요약(I3 매니페스트에서 뽑은 것)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "package_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "role": {
+      "enum": [
+        "LORA_A",
+        "LORA_B"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ref": {
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "content_hash"
+      ],
+      "description": "계약 ArtifactRef(id, version, content_hash). 모양은 계약이 정본이고 경계에서 계약으로 검증된 값이다"
+    }
+  },
+  "required": [
+    "package_id",
+    "role",
+    "created_at",
+    "ref"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "IdString",
+  "description": "ID 문자열(계약 _common의 Id와 같은 패턴). X-Openit-User와 시도 기록의 대상 ID가 쓴다",
+  "type": "string",
+  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+}

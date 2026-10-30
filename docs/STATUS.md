@@ -1,3 +1,9 @@
+# STATUS (U400: 영역 구조 개편, 2026-10-30)
+- 계약 v3.1.1, openit-link v0.1.0로 올림. 코드를 `components/`·`wiring/`·`types/`로 옮기고 `schemas/`(스키마 32개, 예시)를 만들었다. 표는 `docs/components.md`, 근거는 ADR-0018.
+- 구조 검사: `tests/test_structure.py`와 헤드의 `structure-check.py`가 통과. 영역 시험 결과와 이미지 빌드·스모크 결과는 완료 커밋 메시지에 있다.
+- 남은 일: openit_link에 스트리밍·후처리 훅 요청(CR-0011, 헤드 답 대기). 405 응답 본문 형식이 달라짐(CHANGELOG).
+- 확인하지 못한 것: 실제 이웃과의 연동(deploy E2E 몫).
+
 # STATUS (계약 3.0.0 전환, U50)
 - 계약 고정 v3.0.0. `turn_engine_version`을 `action_rules_version`(계약 규칙 데이터의 rules_version)으로, 파이프라인 MAJOR 3. 옛 build_image 스크립트 삭제. build-image.sh는 라벨을 실제 설치 버전에서 찍고 고정과 다르면 실패(ADR-0017).
 

@@ -1,0 +1,32 @@
+{
+  "kind": "PASS",
+  "submission_id": "sub-ab",
+  "sequence": 1,
+  "decided_at": "2026-10-01T00:00:00Z",
+  "gate_policy_version": "human-approval-1",
+  "subject": {
+    "question_set": {
+      "id": "qs-1",
+      "version": "1",
+      "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "lora_a": {
+      "id": "la-1",
+      "version": "1",
+      "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "lora_b": {
+      "id": "lb-1",
+      "version": "1",
+      "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "runtime_contract_version": 1,
+  "checks": [],
+  "gate_role": "gate-service",
+  "approval": {
+    "approval_id": "ap-ab",
+    "approver_role": "release-approver",
+    "approver_id": "kim"
+  }
+}

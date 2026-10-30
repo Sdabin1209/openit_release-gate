@@ -1,0 +1,20 @@
+{
+  "supported_runtime_contract_version": 1,
+  "action_rules_version": "r1",
+  "model_runtime_version": "0.1.0",
+  "submit_roles": [
+    "operator"
+  ],
+  "activate_roles": [
+    "operator"
+  ],
+  "rollback_roles": [
+    "operator"
+  ],
+  "service_roles": [],
+  "max_pending_submissions": 0,
+  "approver_role": "gate-service",
+  "approver_roles": [
+    "release-approver"
+  ]
+}

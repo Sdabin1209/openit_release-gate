@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GateConfig",
+  "description": "게이트 설정(GateConfig.record()). 환경 변수는 main.py만 읽고 이 모양으로 넘긴다. 역할 집합은 배열이다",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "supported_runtime_contract_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "action_rules_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model_runtime_version": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "읽지 못하면 null(승인 때 거부, RuntimeVersions)"
+    },
+    "submit_roles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "activate_roles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "rollback_roles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "service_roles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "approver_roles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "max_pending_submissions": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "approver_role": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "supported_runtime_contract_version",
+    "action_rules_version",
+    "model_runtime_version",
+    "submit_roles",
+    "activate_roles",
+    "rollback_roles",
+    "service_roles",
+    "approver_roles",
+    "max_pending_submissions",
+    "approver_role"
+  ]
+}

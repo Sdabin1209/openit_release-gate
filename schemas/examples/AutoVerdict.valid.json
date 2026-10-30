@@ -1,0 +1,12 @@
+{
+  "records": [
+    {
+      "kind": "CLINICAL_SAFETY",
+      "result": "FAIL",
+      "detail": "x"
+    }
+  ],
+  "reasons": [
+    "CLINICAL_SAFETY: x"
+  ]
+}

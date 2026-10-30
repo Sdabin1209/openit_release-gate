@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AutoVerdict",
+  "description": "자동 검사 종합 출력: 판정 기록의 checks 항목과 반려 사유(사유가 있으면 반려 대상)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "records": {
+      "type": "array",
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "CheckRecordOut",
+        "description": "",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "CONTRACT_COMPAT",
+              "QUESTION_MODEL_COMPAT",
+              "ACCEPTANCE_EVAL",
+              "CLINICAL_SAFETY"
+            ]
+          },
+          "result": {
+            "enum": [
+              "PASS",
+              "FAIL"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "evidence_ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "result"
+        ]
+      }
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "records",
+    "reasons"
+  ]
+}

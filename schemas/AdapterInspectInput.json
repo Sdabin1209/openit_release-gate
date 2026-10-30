@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AdapterInspectInput",
+  "description": "어댑터 점검 입력: 역할, 받아 둔 디렉터리 경로, 그 역할의 매니페스트",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "role": {
+      "enum": [
+        "LORA_A",
+        "LORA_B"
+      ]
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "manifest": {
+      "type": "object",
+      "required": [
+        "adapter_hash",
+        "serving_config",
+        "serving_config_hash",
+        "system_prompt"
+      ],
+      "properties": {
+        "adapter_hash": {
+          "type": "string"
+        },
+        "serving_config": {
+          "type": "object"
+        },
+        "serving_config_hash": {
+          "type": "string"
+        },
+        "system_prompt": {
+          "type": "object",
+          "required": [
+            "path",
+            "sha256"
+          ]
+        }
+      }
+    }
+  },
+  "required": [
+    "role",
+    "path",
+    "manifest"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CheckInput",
+  "description": "자동 검사 하나의 입력: 판정 대상 내용, 그 검사의 정책 인자, 기준 버전",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "$ref": "SubjectData.json"
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "require_lineage_runtime_match": {
+          "type": "boolean"
+        }
+      }
+    },
+    "versions": {
+      "$ref": "CheckVersions.json"
+    }
+  },
+  "required": [
+    "data",
+    "params",
+    "versions"
+  ]
+}

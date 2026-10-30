@@ -27,7 +27,7 @@ def test_collect_judge_bundle_over_http(world, neighbors, tmp_path):
     assert len(subs) == 1
     assert "/v1/question-sets" in neighbors.requests and "/v1/packages" in neighbors.requests
     from release_gate import GateEngine
-    from release_gate.checks import CheckRegistry
+    from release_gate.wiring.check_registry import CheckRegistry
     from release_gate import GatePolicy
     eng = GateEngine(world.reg.store, world.schemas, world.survey, world.config,
                      GatePolicy.default(), qc, mc, CheckRegistry(), clock=world.clock)

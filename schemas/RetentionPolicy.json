@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RetentionPolicy",
+  "description": "보존 정책. 무기한 보존은 허용하지 않는다(유한한 정수만, D88 U4)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "keep_releases": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rejected_days": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "attempts_days": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "keep_releases",
+    "rejected_days",
+    "attempts_days"
+  ]
+}

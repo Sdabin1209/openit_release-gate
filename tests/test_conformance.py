@@ -12,7 +12,7 @@ from boundary_contracts import canonical
 from boundary_contracts.errors import BoundaryError
 from boundary_contracts.sdk import GateService, ReleaseBundle, ReleaseReader
 from release_gate import MemoryStore, SqliteStore
-from release_gate.store import ReleaseParts
+from release_gate.components.registry_store import ReleaseParts
 
 
 def code(fn, *a, **kw):

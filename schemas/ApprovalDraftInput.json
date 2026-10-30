@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ApprovalDraftInput",
+  "description": "승인 기록 만들기 입력: 사람의 결정 본문, 토큰 역할, 인증된 승인자 ID, 시각, (대조를 마친) 현재 보고서 해시",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "type": "object"
+    },
+    "submission_id": {
+      "type": "string",
+      "pattern": "^sub-.",
+      "description": "본문의 submission_id"
+    },
+    "token_role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "approver_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "decided_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "current_report_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "body",
+    "submission_id",
+    "token_role",
+    "approver_id",
+    "decided_at"
+  ]
+}

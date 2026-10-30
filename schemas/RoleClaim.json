@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RoleClaim",
+  "description": "요청자가 주장하는 역할(비어 있지 않은 문자열). 허용 목록 대조는 설정 값이라 스키마 밖이다",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "requested_by_role": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "requested_by_role"
+  ]
+}

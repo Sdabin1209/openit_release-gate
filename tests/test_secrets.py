@@ -11,7 +11,7 @@ import pytest
 
 from release_gate import factories
 from release_gate import main as gate_main
-from release_gate.app import GateHTTPServer
+from release_gate.components.link_http_server import GateHTTPServer
 
 RT, WT = "SECRET-READ-aaa111", "SECRET-WRITE-bbb222"
 I1 = "SECRET-I1-ccc333"

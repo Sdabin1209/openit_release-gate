@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SubjectModels",
+  "description": "I3에서 읽은 판정 대상의 모델 쪽 내용: 역할별 매니페스트와 검증을 통과한 평가 보고서",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "manifests": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "LORA_A",
+          "LORA_B"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "eval_reports": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "LORA_A",
+          "LORA_B"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "report_problems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "manifests",
+    "eval_reports",
+    "report_problems",
+    "problems"
+  ]
+}

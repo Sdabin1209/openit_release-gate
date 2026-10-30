@@ -21,3 +21,8 @@ class GateConfig:
     max_pending_submissions: "int | None" = None
     approver_role: str = "gate-service"   # 자동 반려 판정의 approver.role
     approver_roles: frozenset = frozenset({"release-approver"})   # 출고 결정(POST /v1/approvals) 권한(D53)
+
+    def record(self) -> dict:
+        """스키마 GateConfig 모양(집합은 정렬한 배열). 컴포넌트·wiring은 이 기록을 쓴다."""
+        r = {k: (sorted(v) if isinstance(v, frozenset) else v) for k, v in self.__dict__.items()}
+        return r

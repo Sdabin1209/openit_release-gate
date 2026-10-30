@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from release_gate.checks import CheckRegistry, default_checks
-from release_gate.gate import GateEngine
-from release_gate.policy import GatePolicy
+from release_gate.wiring.check_registry import CheckRegistry, default_checks
+from release_gate.wiring.engine import GateEngine
+from release_gate.components.gate_policy import GatePolicy
 
 
 def _registry_without(kind: str) -> CheckRegistry:

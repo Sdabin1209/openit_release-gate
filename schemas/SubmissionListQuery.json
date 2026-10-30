@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SubmissionListQuery",
+  "description": "제출 목록 조회 조건(GET /v1/submissions). 결정 전 상태 필터와 쪽 나누기",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "enum": [
+        "PENDING_CHECK",
+        "AWAITING_APPROVAL",
+        "REJECTED_AUTO",
+        "REJECTED_HUMAN",
+        "PASSED"
+      ]
+    },
+    "cursor": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "마지막으로 돌려준 접수 순번"
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 100
+    }
+  },
+  "required": []
+}

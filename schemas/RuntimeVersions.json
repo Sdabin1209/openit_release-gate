@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RuntimeVersions",
+  "description": "릴리스 매니페스트에 적을 이웃 버전. 읽지 못했거나 'unset'이면 거짓 값이 계약 필드에 들어가므로 거부한다(fail-closed)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "supported_runtime_contract_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "action_rules_version": {
+      "type": "string",
+      "pattern": "^(?!\\s*$)(?!\\s*unset\\s*$)."
+    },
+    "model_runtime_version": {
+      "type": "string",
+      "pattern": "^(?!\\s*$)(?!\\s*unset\\s*$)."
+    }
+  },
+  "required": [
+    "supported_runtime_contract_version",
+    "action_rules_version",
+    "model_runtime_version"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ResolvedPolicy",
+  "description": "읽어 낸 게이트 정책: 판정 기록에 적는 버전과 검사별 인자(임계치는 없다, D53)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "check_config": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "version",
+    "check_config"
+  ]
+}

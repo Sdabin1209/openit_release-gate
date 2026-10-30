@@ -1,0 +1,11 @@
+{
+  "body": {
+    "submission_id": "sub-ab",
+    "decision": "APPROVE",
+    "report_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "submission_id": "sub-ab",
+  "token_role": "release-approver",
+  "approver_id": "kim",
+  "decided_at": "2026-10-01T00:00:00Z"
+}

@@ -1,5 +1,6 @@
 # 운영·CI 설치: 계약 패키지는 Git 태그로 고정한다(D18). 나머지 의존은 잠금 파일.
 git+ssh://git@github.com/Sdabin1209/openit_boundary-contracts.git@v3.1.1
+git+ssh://git@github.com/Sdabin1209/openit_link.git@v0.1.0
 -r requirements.lock
 # 문진 스키마(정수 버전 1)는 survey-service가 배포하는 패키지로 받는다. 시험이 survey_schema.contract_version_dir(1)에서 읽는다.
 openit-survey-schema @ git+ssh://git@github.com/Sdabin1209/openit_survey-service.git@survey-schema-v2.0.0#subdirectory=schema

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReleaseBuildInput",
+  "description": "릴리스 매니페스트 구성 입력",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "release_id": {
+      "type": "string",
+      "pattern": "^rel-."
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "gate_decision_id": {
+      "type": "string",
+      "pattern": "^gd-."
+    },
+    "subject": {
+      "type": "object",
+      "required": [
+        "question_set",
+        "lora_a",
+        "lora_b"
+      ],
+      "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다"
+    },
+    "versions": {
+      "$ref": "RuntimeVersions.json"
+    },
+    "adapters": {
+      "type": "object",
+      "required": [
+        "LORA_A",
+        "LORA_B"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "LORA_A": {
+          "$ref": "AdapterInfo.json"
+        },
+        "LORA_B": {
+          "$ref": "AdapterInfo.json"
+        }
+      }
+    }
+  },
+  "required": [
+    "release_id",
+    "created_at",
+    "gate_decision_id",
+    "subject",
+    "versions",
+    "adapters"
+  ]
+}

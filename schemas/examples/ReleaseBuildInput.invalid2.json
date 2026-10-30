@@ -1,0 +1,38 @@
+{
+  "release_id": "rel-ab",
+  "created_at": "t",
+  "gate_decision_id": "gd-1",
+  "subject": {
+    "question_set": {
+      "id": "qs-1",
+      "version": "1",
+      "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "lora_a": {
+      "id": "la-1",
+      "version": "1",
+      "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "lora_b": {
+      "id": "lb-1",
+      "version": "1",
+      "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "versions": {
+    "supported_runtime_contract_version": 1,
+    "action_rules_version": "r1",
+    "model_runtime_version": "0.1.0"
+  },
+  "adapters": {
+    "LORA_A": {
+      "adapter_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "serving_config": {},
+      "serving_config_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "system_prompt": {
+        "path": "system_prompt.txt",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  }
+}

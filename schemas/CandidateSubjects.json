@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CandidateSubjects",
+  "description": "후보 선정 출력: 제출할 조합 목록",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "subjects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "question_set",
+          "lora_a",
+          "lora_b"
+        ],
+        "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다"
+      }
+    }
+  },
+  "required": [
+    "subjects"
+  ]
+}

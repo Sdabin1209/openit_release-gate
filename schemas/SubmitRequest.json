@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SubmitRequest",
+  "description": "접수 입력: 판정 대상 조합과 요청 역할(I5 submit_candidate)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "subject": {
+      "type": "object",
+      "required": [
+        "question_set",
+        "lora_a",
+        "lora_b"
+      ],
+      "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다"
+    },
+    "requested_by_role": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "subject",
+    "requested_by_role"
+  ]
+}

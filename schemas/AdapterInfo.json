@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AdapterInfo",
+  "description": "릴리스에 묶는 어댑터 정보(계약 ReleaseManifest.adapters의 값)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "adapter_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "serving_config": {
+      "type": "object"
+    },
+    "serving_config_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "system_prompt": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "PromptRef",
+      "description": "",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ]
+    }
+  },
+  "required": [
+    "adapter_hash",
+    "serving_config",
+    "serving_config_hash",
+    "system_prompt"
+  ]
+}

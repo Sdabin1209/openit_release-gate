@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DecisionDraft",
+  "description": "판정 기록 만들기 입력. kind: AUTO_REJECT(자동 검사 반려), HUMAN_REJECT(승인자 반려), PASS(승인자 APPROVE 뒤)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "enum": [
+        "AUTO_REJECT",
+        "HUMAN_REJECT",
+        "PASS"
+      ]
+    },
+    "submission_id": {
+      "type": "string",
+      "pattern": "^sub-."
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9999
+    },
+    "decided_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "gate_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subject": {
+      "type": "object",
+      "required": [
+        "question_set",
+        "lora_a",
+        "lora_b"
+      ],
+      "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다"
+    },
+    "runtime_contract_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "gate_role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reject_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "subject_unreadable": {
+      "type": "boolean"
+    },
+    "approval": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "ApprovalRefs",
+      "description": "승인 기록 참조",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "approval_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "approver_role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "approver_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        }
+      },
+      "required": [
+        "approval_id",
+        "approver_role",
+        "approver_id"
+      ]
+    }
+  },
+  "required": [
+    "kind",
+    "submission_id",
+    "sequence",
+    "decided_at",
+    "gate_policy_version",
+    "subject",
+    "runtime_contract_version",
+    "checks",
+    "gate_role"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "AUTO_REJECT"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "reject_reasons"
+        ],
+        "not": {
+          "required": [
+            "approval"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "HUMAN_REJECT"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "reject_reasons",
+          "approval"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "PASS"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "approval"
+        ],
+        "not": {
+          "required": [
+            "reject_reasons"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RequestObject",
+  "description": "쓰기 요청 본문은 JSON 객체여야 한다(HTTP 면)",
+  "type": "object"
+}

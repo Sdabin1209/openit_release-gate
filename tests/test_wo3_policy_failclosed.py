@@ -6,7 +6,7 @@ import pytest
 
 from release_gate import GatePolicy
 from release_gate import main as gate_main
-from release_gate.policy import PolicyError
+from release_gate.components.gate_policy import PolicyError
 
 
 def test_configured_policy_path_missing_refuses_start(tmp_path):

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StorePageArgs",
+  "description": "저장소 목록 조회의 쪽 나누기 인자(SDK 직접 호출 포함, 최대 1000)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "cursor": {
+      "type": "string",
+      "pattern": "^-?[0-9]+$"
+    }
+  },
+  "required": [
+    "limit"
+  ]
+}

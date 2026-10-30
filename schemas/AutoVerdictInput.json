@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AutoVerdictInput",
+  "description": "자동 검사 종합 입력: 검사 종류별 결과",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "KindedOutcome",
+        "description": "",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "CONTRACT_COMPAT",
+              "QUESTION_MODEL_COMPAT",
+              "ACCEPTANCE_EVAL",
+              "CLINICAL_SAFETY"
+            ]
+          },
+          "outcome": {
+            "$ref": "CheckOutcome.json"
+          }
+        },
+        "required": [
+          "kind",
+          "outcome"
+        ]
+      }
+    }
+  },
+  "required": [
+    "results"
+  ]
+}

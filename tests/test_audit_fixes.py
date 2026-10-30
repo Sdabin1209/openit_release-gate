@@ -18,11 +18,11 @@ import pytest
 
 from boundary_contracts.errors import BoundaryError
 from release_gate import main as gate_main
-from release_gate import retention
-from release_gate import store as store_mod
-from release_gate.app import GateHTTPServer
-from release_gate.retention import RetentionPolicy
-from release_gate.util import ts
+from release_gate.components import retention
+from release_gate.components import registry_store as store_mod
+from release_gate.components.link_http_server import GateHTTPServer
+from release_gate.components.retention import RetentionPolicy
+from release_gate.wiring.util import ts
 from conftest import SURVEY
 
 
@@ -105,7 +105,7 @@ def test_activation_and_bundle_verify_without_copying_adapters(world, monkeypatc
     monkeypatch.setattr(store_mod, "shutil", _NoCopy())
     assert world.reg.service.activate(rid, requested_by_role="operator")["release_id"] == rid
     import io
-    from release_gate.reader import write_bundle_tar
+    from release_gate.components.release_reader import write_bundle_tar
     buf = io.BytesIO()
     write_bundle_tar(store, rid, buf)
     assert buf.tell() > 0
@@ -464,7 +464,7 @@ def test_deeply_nested_json_is_400_not_500(world):
 
 
 def test_loop_is_joined_before_store_close(world):
-    from release_gate.app import Loop
+    from release_gate.wiring.loop import Loop
     order = []
     started = threading.Event()
 

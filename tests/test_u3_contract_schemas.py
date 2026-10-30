@@ -14,8 +14,8 @@ import pytest
 
 from release_gate import GatePolicy
 from release_gate import main as gate_main
-from release_gate.app import GateHTTPServer
-from release_gate.policy import PolicyError
+from release_gate.components.link_http_server import GateHTTPServer
+from release_gate.components.gate_policy import PolicyError
 from test_jobs import job_env  # noqa: F401  (잡 시험용 fixture)
 
 CONF = Path(conformance.__file__).parent
@@ -120,7 +120,7 @@ def test_own_output_violating_schema_is_not_printed_as_ok(capsys):
 @pytest.fixture
 def readyz_server(world):
     from release_gate.main import make_status
-    from release_gate.main import Loop
+    from release_gate.wiring.loop import Loop
     status = make_status(GatePolicy.default(), "enabled", world.config, world.reg, world.engine(), Loop(60.0, []))
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "survey-service"}, write_tokens={"wt": "operator"},
                          status=status, engine=world.engine())

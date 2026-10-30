@@ -49,5 +49,6 @@ def test_report_hash_is_required(world):
 
 def test_decide_has_no_handwritten_shape_checks_left():
     # 왜: 모양 검사의 정본은 계약 스키마 하나다(R7). 아래 문구는 예전 손 검사의 오류 메시지다.
-    text = (Path(__file__).resolve().parent.parent / "release_gate" / "gate.py").read_text(encoding="utf-8")
+    pkg = Path(__file__).resolve().parent.parent / "release_gate"
+    text = "".join((pkg / f).read_text(encoding="utf-8") for f in ("wiring/engine.py", "components/approval_record.py"))
     assert "는 서버가 채운다" not in text and "submission_id가 없다" not in text and "본문이 객체가 아니다" not in text

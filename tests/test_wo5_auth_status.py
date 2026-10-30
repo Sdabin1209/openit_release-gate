@@ -11,7 +11,7 @@ import urllib.request
 import pytest
 
 from boundary_contracts import validator
-from release_gate.app import GateHTTPServer
+from release_gate.components.link_http_server import GateHTTPServer
 
 
 @pytest.fixture

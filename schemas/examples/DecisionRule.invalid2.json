@@ -1,0 +1,14 @@
+{
+  "result": "PASS",
+  "checks": [
+    {
+      "kind": "CLINICAL_SAFETY",
+      "result": "PASS"
+    },
+    {
+      "kind": "HUMAN_APPROVAL",
+      "result": "PASS"
+    }
+  ],
+  "release_id": "rel-ab"
+}

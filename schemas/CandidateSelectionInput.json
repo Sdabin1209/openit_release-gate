@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CandidateSelectionInput",
+  "description": "후보 선정 입력: 검수 완료 최신 문항 세트들과 감시 중인 패키지의 모든 버전",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "question_sets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "content_hash"
+        ],
+        "description": "계약 ArtifactRef(id, version, content_hash). 모양은 계약이 정본이고 경계에서 계약으로 검증된 값이다"
+      }
+    },
+    "versions": {
+      "type": "array",
+      "items": {
+        "$ref": "ModelVersionSummary.json"
+      }
+    }
+  },
+  "required": [
+    "question_sets",
+    "versions"
+  ]
+}

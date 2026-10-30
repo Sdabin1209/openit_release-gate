@@ -20,7 +20,7 @@ import pytest
 from boundary_contracts.errors import BoundaryError
 from release_gate import main as gate_main
 from release_gate import memory_registry, postgres_registry
-from release_gate.app import GateHTTPServer
+from release_gate.components.link_http_server import GateHTTPServer
 from conftest import SURVEY
 
 psycopg = pytest.importorskip("psycopg")

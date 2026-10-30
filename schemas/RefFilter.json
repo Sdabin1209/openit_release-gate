@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RefFilter",
+  "description": "부분 참조 필터(id 필수, version·content_hash 선택). HTTP 조회는 해시 없이 id·version만 준다",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": [
+        "string",
+        "integer"
+      ]
+    },
+    "content_hash": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ]
+}

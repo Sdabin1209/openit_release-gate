@@ -88,7 +88,7 @@ def test_good_metrics_do_not_matter_and_bad_metrics_do_not_block(world):
 
 def test_no_path_to_pass_without_approval():
     """GateEngine에는 승인 없이 PASS를 만드는 공개 경로가 없고, 판정 규칙이 승인 없는 PASS를 거부한다."""
-    from release_gate.gate import assert_decision_rule
+    from release_gate.components.decision_builder import assert_decision_rule
     d = {"result": "PASS", "release_id": "rel-x", "approval_id": "ap-x",
          "checks": [{"kind": "CONTRACT_COMPAT", "result": "PASS"}]}
     with pytest.raises(BoundaryError):

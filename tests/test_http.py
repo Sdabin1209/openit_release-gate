@@ -9,7 +9,7 @@ import pytest
 
 from conftest import tamper_decisions
 
-from release_gate.app import GateHTTPServer
+from release_gate.components.link_http_server import GateHTTPServer
 
 
 @pytest.fixture

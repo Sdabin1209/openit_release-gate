@@ -18,9 +18,11 @@ from boundary_contracts.clients import HttpModelRegistry, HttpQuestionReader
 from boundary_contracts.errors import BoundaryError
 from release_gate import CandidateCollector, GateEngine, GatePolicy
 from release_gate import main as gate_main
-from release_gate import store as store_mod
-from release_gate.app import GateHTTPServer, Loop
-from release_gate.checks import CheckRegistry, SubjectLoader
+from release_gate.components import registry_store as store_mod
+from release_gate.components.link_http_server import GateHTTPServer
+from release_gate.wiring.loop import Loop
+from release_gate.wiring.check_registry import CheckRegistry
+from release_gate.wiring.subject_loader import SubjectLoader
 from test_conformance import tamper, two_releases
 
 MODES = ["hang", "slow", "http500", "http503", "badjson"]
@@ -341,7 +343,7 @@ def test_orphan_release_directory_never_reads_as_release_and_does_not_block_retr
     store = _file_store(world)
     sid = world.reg.service.submit_candidate(world.subject(), requested_by_role="operator")["submission_id"]
     world.engine().process_pending()
-    rid = "rel-" + __import__("release_gate.gate", fromlist=["_sub_hex"])._sub_hex(sid)
+    rid = "rel-" + __import__("release_gate.wiring.engine", fromlist=["_sub_hex"])._sub_hex(sid)
     orphan = store.root / "releases" / rid                      # 이전 커밋이 실패해 행 없이 남은 반쯤 쓴 디렉터리
     (orphan / "adapters" / "LORA_A").mkdir(parents=True)
     (orphan / "adapters" / "LORA_A" / "adapter.bin").write_bytes(b"half")

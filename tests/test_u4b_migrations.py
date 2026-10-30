@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from release_gate.store import SqliteStore
+from release_gate.components.registry_store import SqliteStore
 
 OLD_SQLITE = """
 CREATE TABLE IF NOT EXISTS submissions(seq INTEGER PRIMARY KEY AUTOINCREMENT, submission_id TEXT UNIQUE NOT NULL,
@@ -92,14 +92,14 @@ def test_read_only_open_does_not_migrate(tmp_path):
 
 
 def test_no_ddl_left_in_store_code():
-    for f in ("store.py", "postgres_store.py"):
+    for f in ("components/registry_store.py",):
         text = (PKG / f).read_text(encoding="utf-8")
         assert not re.search(r"CREATE (TABLE|INDEX)|ALTER TABLE", text), f
 
 
 def test_fresh_postgres_gets_schema_through_yoyo(pg_url, tmp_path):
     import psycopg
-    from release_gate.postgres_store import PostgresStore
+    from release_gate.components.registry_store import PostgresStore
     PostgresStore(pg_url, tmp_path).close()
     with psycopg.connect(pg_url, autocommit=True) as c:
         names = {r[0] for r in c.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()")}
@@ -109,7 +109,7 @@ def test_fresh_postgres_gets_schema_through_yoyo(pg_url, tmp_path):
 
 def test_existing_postgres_database_is_accepted_with_data_intact(pg_url, tmp_path):
     import psycopg
-    from release_gate.postgres_store import PostgresStore
+    from release_gate.components.registry_store import PostgresStore
     with psycopg.connect(pg_url, autocommit=True) as c:
         for ddl in OLD_PG:
             c.execute(ddl)
