@@ -2,7 +2,7 @@
 
 ## (미배포) 의존 고정 올림 (wo-401)
 
-- model-runtime v0.11.2 -> v0.11.4(`requirements-libs.txt`, 배포 기준표를 따른다), openit-link v0.4.0 -> v0.4.1(`requirements.txt`). 코드 변경 없음.
+- model-runtime v0.11.2 -> v0.11.4(`requirements-libs.txt`, 배포 기준표를 따른다), openit-link v0.4.0 -> v0.4.1(`requirements.txt`). 문진 스키마 고정 survey-schema-v2.0.0 -> v3.0.0(`requirements.txt`). 3.0.0의 QuestionBank 거부 조건(칸 data_type 필수, option이면 choices 또는 choice_catalog, 필수 고정 문장 4개)을 게이트가 따르는지 `tests/test_survey_schema_300.py`로 확인하고, 시험 표본(`tests/fakes.py make_bank`)을 3.0.0을 통과하게 고쳤다. 생산 코드 변경 없음.
 
 ## (미배포) 영역 구조 개편 (U400, D117·D118) + 계약 v3.1.1
 

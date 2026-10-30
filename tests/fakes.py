@@ -13,12 +13,12 @@ from boundary_contracts.errors import BoundaryError
 def make_bank(version: int = 1, tag: str = "a") -> dict:
     return {"version": version, "session_settings": {
         "risk_phrases": [], "confirm_limit": 2, "unrecognized_streak_limit": 3, "ask_limit": 3,
-        "fixed_sentences": [], "guide_list": []},
+        "fixed_sentences": [{"key": k, "sentence": f"{k} 안내"} for k in ("RISK_NOTICE", "CALL_STAFF", "RESUME", "SURVEY_STOPPED")], "guide_list": []},
         "questions": [{"question_id": "q1", "name": f"문항-{tag}", "order": 0, "prerequisite": None,
                        "question_sentence": "어디가 불편하세요?", "refusal_explanation": "답이 필요합니다",
                        "guide_sentences": [], "affected_followups": [],
                        "policy": {"question_limit": 3, "unknown_accept_after": 2, "refusal_accept_after": 2},
-                       "repeat_keys": [], "slots": [{"slot_id": "s1", "units": [], "choices": ["a", "b"],
+                       "repeat_keys": [], "slots": [{"slot_id": "s1", "data_type": "option", "units": [], "choices": ["a", "b"],
                                                       "yes_no_map": None, "required": True,
                                                       "reask_sentence": "다시 말씀해 주세요", "risk_rule": None}]}]}
 
