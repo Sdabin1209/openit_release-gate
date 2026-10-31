@@ -120,7 +120,7 @@ def prune(store, policy: RetentionPolicy, *, now: datetime, apply: bool) -> dict
             store.delete_submission(sid)
         out["attempts_purged"] = store.purge_attempts(attempts_cut)
         if hasattr(store, "purge_stale_tmp"):
-            store.purge_stale_tmp(3600.0)
+            store.purge_stale_tmp(now.timestamp(), 3600.0)
     return out
 
 

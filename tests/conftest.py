@@ -22,6 +22,67 @@ except ImportError:
     SURVEY = ROOT / "survey-service" / "schema"
 
 
+# 매달림 감시(hang guard): 시험이 자기 가짜에게서 신호를 기다리는 대기(Event.wait 등)의 마감. 정상이면 수 ms에 끝나고 코드가 진짜로 멈췄을 때만 걸린다.
+# 판정(옳고 그름)이 아니라 시험이 영원히 멈추지 않게 하는 장치이므로 정상 경로의 수만 배로 둔다. 시험마다 숫자를 따로 쓰지 않고 이 상수 하나를 쓴다(U422).
+HANG_GUARD_SECONDS = 300
+
+# 시험의 "지금": 실제 시계를 읽지 않는다. World의 가짜 시계(Clock)가 만드는 기록 시각(2026-10-15T00:00:xx)보다 하루 뒤다.
+from datetime import datetime as _dt, timezone as _tz  # noqa: E402
+NOW = _dt(2026, 10, 16, tzinfo=_tz.utc)
+
+
+class FakeTime:
+    """시험이 쥔 가짜 시계·타이머(ADR-0019). 시간은 시험 코드가 움직일 때만 흐른다. SystemClock과 같은 모양이다.
+    - sleep(초): 가짜 시간만 앞으로 보내고 실제로 기다리지 않는다. on_sleep이 있으면 부른다(그 사이에 일어날 사건을 시험이 일으킨다).
+    - join(스레드, 초): join_times_out이면 시간을 보내고 바로 돌려준다(스레드가 안 끝난 채로 시간 초과). 아니면 스레드가 끝나길 기다린다.
+    - timer(초, 함수, 인자): 예약만 기록하고 스스로 발동하지 않는다. 시험이 fire()로 발동시킨다."""
+
+    def __init__(self, start=1_800_000_000.0, on_sleep=None, join_times_out=False):
+        self.t, self.on_sleep, self.join_times_out = float(start), on_sleep, join_times_out
+        self.timers = []
+
+    def monotonic(self):
+        return self.t
+
+    def epoch(self):
+        return self.t
+
+    def now(self):
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(self.t, timezone.utc)
+
+    def sleep(self, seconds):
+        self.t += seconds
+        if self.on_sleep:
+            self.on_sleep()
+
+    def join(self, thread, timeout):
+        if self.join_times_out:
+            self.t += timeout
+            return
+        thread.join(HANG_GUARD_SECONDS)
+
+    def timer(self, interval, fn, args=()):
+        tm = _FakeTimer(interval, fn, args)
+        self.timers.append(tm)
+        return tm
+
+
+class _FakeTimer:
+    def __init__(self, interval, fn, args):
+        self.interval, self.fn, self.args = interval, fn, args
+        self.started = self.cancelled = False
+
+    def start(self):
+        self.started = True
+
+    def cancel(self):
+        self.cancelled = True
+
+    def fire(self):
+        self.fn(*self.args)
+
+
 class Clock:
     def __init__(self):
         self.t = datetime(2026, 10, 15, 0, 0, 0, tzinfo=timezone.utc)
@@ -131,3 +192,13 @@ class World:
 @pytest.fixture
 def world(tmp_path, schemas, survey, config, reg):
     return World(tmp_path, schemas, survey, config, reg)
+
+
+# 서버를 띄우는 시험은 실제 시계(SystemClock)를 넣은 서버를 쓴다. 시간에 기대는 시험은 clock=FakeTime(...)을 직접 넘긴다.
+from release_gate.components.link_http_server import GateHTTPServer as _GateHTTPServer  # noqa: E402
+from release_gate.wiring.util import SystemClock  # noqa: E402
+
+
+class GateHTTPServer(_GateHTTPServer):
+    def __init__(self, *a, clock=None, **k):
+        super().__init__(*a, clock=clock or SystemClock(), **k)

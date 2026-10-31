@@ -10,7 +10,7 @@ from ..components.release_reader import ReleaseReaderImpl, write_bundle_tar
 from ..config import GateConfig
 from .schema_set import SchemaSet
 from .service import GateServiceImpl
-from .util import Clock, utc_now
+from .util import Clock, SystemClock, utc_now
 
 # 저장소의 정리(prune)가 보호 대상을 정하는 규칙은 retention 컴포넌트의 것이다. 저장소는 retention을 모르고 여기서 주입받는다(규칙 3).
 ReleaseFiles.protection_rule = staticmethod(retention.protected_ids)
@@ -51,7 +51,7 @@ def postgres_registry(url: str, root: str | Path, schemas: SchemaSet, config: Ga
     timeouts: connect_timeout, statement_timeout, probe_timeout(초). 생략하면 registry_store의 기본값."""
     _config_ok(config)
     from ..components.registry_store import PostgresStore
-    s = PostgresStore(url, root, **timeouts)
+    s = PostgresStore(url, root, scheduler=SystemClock(), **timeouts)
     return Registry(s, ReleaseReaderImpl(s), GateServiceImpl(s, schemas, config, clock))
 
 

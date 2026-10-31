@@ -3,6 +3,8 @@
 이 시험은 setup-env.sh를 실제로 돈다(이 리포의 .venv에 멱등 재설치, GitHub 접근이 필요하다)."""
 from __future__ import annotations
 
+from conftest import HANG_GUARD_SECONDS
+
 import json
 import subprocess
 from pathlib import Path
@@ -16,7 +18,7 @@ REMOTE = "git@github.com:Sdabin1209/openit_boundary-contracts.git"
 
 def _network():
     try:
-        return subprocess.run(["git", "ls-remote", "--exit-code", REMOTE, "HEAD"], capture_output=True, timeout=20,
+        return subprocess.run(["git", "ls-remote", "--exit-code", REMOTE, "HEAD"], capture_output=True, timeout=HANG_GUARD_SECONDS,      # 매달림 감시
                               env={"GIT_TERMINAL_PROMPT": "0", "PATH": "/usr/bin:/bin", "HOME": str(Path.home())}).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -28,7 +30,7 @@ def report_run():
         pytest.skip("영역 .venv가 없다")
     if not _network():
         pytest.skip("GitHub에 닿지 않아 setup-env.sh를 돌릴 수 없다")
-    return subprocess.run(["bash", str(ROOT / "scripts" / "setup-env.sh")], capture_output=True, text=True, timeout=600)
+    return subprocess.run(["bash", str(ROOT / "scripts" / "setup-env.sh")], capture_output=True, text=True, timeout=HANG_GUARD_SECONDS)
 
 
 def test_last_stdout_line_is_a_valid_setup_env_report(report_run):

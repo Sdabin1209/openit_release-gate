@@ -9,7 +9,7 @@ import urllib.request
 
 import pytest
 
-from release_gate.components.link_http_server import GateHTTPServer
+from conftest import GateHTTPServer
 from test_conformance import rollback_req
 
 

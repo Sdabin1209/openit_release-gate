@@ -1,6 +1,8 @@
 """I4 ReleaseReader와 I5 GateService의 적합성 시험. 메모리 구현과 SQLite 구현이 같은 시험을 통과한다."""
 from __future__ import annotations
 
+from conftest import HANG_GUARD_SECONDS
+
 import threading
 from copy import deepcopy
 
@@ -227,7 +229,7 @@ def test_pointer_compare_and_swap_is_atomic(reg):
     barrier = threading.Barrier(N)
 
     def go(i):
-        barrier.wait()
+        barrier.wait(HANG_GUARD_SECONDS)      # 매달림 감시
         p = {"pipeline_schema_version": "2.0", "release_id": f"rel-{i}", "pointer_version": 1,
              "activated_at": "2026-10-15T00:00:00Z", "cause": "ACTIVATE"}
         if s.switch_pointer(0, p):
@@ -235,7 +237,7 @@ def test_pointer_compare_and_swap_is_atomic(reg):
 
     ts = [threading.Thread(target=go, args=(i,)) for i in range(N)]
     [t.start() for t in ts]
-    [t.join() for t in ts]
+    [t.join(HANG_GUARD_SECONDS) for t in ts]      # 매달림 감시
     assert len(wins) == 1 and s.get_pointer()["release_id"] == f"rel-{wins[0]}"
     assert not s.switch_pointer(0, dict(s.get_pointer(), pointer_version=1))
     assert not s.switch_pointer(1, dict(s.get_pointer(), pointer_version=3))   # 건너뛰기 금지

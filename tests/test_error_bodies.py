@@ -12,7 +12,7 @@ import urllib.request
 import pytest
 from boundary_contracts import validator
 
-from release_gate.components.link_http_server import GateHTTPServer
+from conftest import GateHTTPServer
 
 
 def _serve(world, **kw):

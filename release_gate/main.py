@@ -35,7 +35,7 @@ from .wiring.loop import Loop
 from .wiring.registry import open_registry
 from .wiring.schema_set import SchemaSet
 from .wiring.survey import SurveySchema
-from .wiring.util import utc_now
+from .wiring.util import SystemClock, utc_now
 
 log = logging.getLogger("gate")
 EX_TEMPFAIL = 75
@@ -317,7 +317,7 @@ def serve() -> None:
     srv = GateHTTPServer(("0.0.0.0", port), reg, read_tokens=read_tokens,
                          write_tokens=_tokens("GATE_WRITE_TOKENS", True), status=status, engine=engine,
                          request_timeout=_seconds("GATE_REQUEST_TIMEOUT_SECONDS", DEFAULT_REQUEST_TIMEOUT),
-                         max_connections=_opt_int("GATE_MAX_CONNECTIONS") or DEFAULT_MAX_CONNECTIONS)
+                         max_connections=_opt_int("GATE_MAX_CONNECTIONS") or DEFAULT_MAX_CONNECTIONS, clock=SystemClock())
     log.info("gate-service 시작: policy=%s judging=%s action-rules=%s model-runtime=%s", policy.version, judging,
              config.action_rules_version, config.model_runtime_version)
     # 종료 유예 20초: 근거 기록 없음(설계 판단, 측정 안 함). deploy의 stop_grace_period가 이보다 길어야 한다(docs/adr/0008)

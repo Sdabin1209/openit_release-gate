@@ -7,10 +7,7 @@ import os
 import shutil
 import signal
 import socket
-import subprocess
-import sys
 import threading
-import time
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
@@ -20,7 +17,7 @@ from boundary_contracts.errors import BoundaryError
 from release_gate import main as gate_main
 from release_gate.components import retention
 from release_gate.components import registry_store as store_mod
-from release_gate.components.link_http_server import GateHTTPServer
+from conftest import HANG_GUARD_SECONDS, NOW, FakeTime, GateHTTPServer
 from release_gate.components.retention import RetentionPolicy
 from release_gate.wiring.util import ts
 from conftest import SURVEY
@@ -39,7 +36,7 @@ def _serve(world, **kw):
     return srv, srv.server_address[1]
 
 
-def _raw(port, data: bytes, read=True, timeout=5):
+def _raw(port, data: bytes, read=True, timeout=HANG_GUARD_SECONDS):      # timeout: 매달림 감시(판정 아님)
     s = socket.create_connection(("127.0.0.1", port), timeout=timeout)
     try:
         s.sendall(data)
@@ -74,14 +71,14 @@ def test_bundle_copy_does_not_hold_the_store_lock(world, monkeypatch):
         @staticmethod
         def move(*a, **k):
             entered.set()
-            gate.wait(120)                             # 시험이 풀어 줄 때까지(시계가 아니라 사건으로 제어한다)
+            gate.wait(HANG_GUARD_SECONDS)                             # 매달림 감시: 시험이 풀어 줄 때까지(시계가 아니라 사건으로 제어한다)
             return real(*a, **k)
     monkeypatch.setattr(store_mod, "shutil", _Slow())
     done = []
     t = threading.Thread(target=lambda: done.append(world.approve(sid)))
     t.start()
     try:
-        assert entered.wait(60)                         # 승인이 복사 중이다
+        assert entered.wait(HANG_GUARD_SECONDS)                        # 승인이 복사 중이다. 매달림 감시
         reads_done = threading.Event()
 
         def reads():
@@ -90,8 +87,8 @@ def test_bundle_copy_does_not_hold_the_store_lock(world, monkeypatch):
             reads_done.set()
         threading.Thread(target=reads, daemon=True).start()
         # 읽기가 잠금에 막혔다면 복사가 끝나기(gate)까지 끝나지 않는다. 복사가 멈춘 채로 읽기가 끝나면 잠금을 쥐고 있지 않은 것이다.
-        # 120초는 바깥 마감이다(부하로 느려도 통과하고, 막혔다면 gate가 풀리지 않아 실패한다)
-        assert reads_done.wait(60), "복사 중 읽기가 막혔다"
+        # 300초는 매달림 감시다(정상 경로는 수 ms). 막혔다면 gate가 풀리지 않으므로 이 마감에서 실패한다
+        assert reads_done.wait(HANG_GUARD_SECONDS), "복사 중 읽기가 막혔다"
     finally:
         gate.set()
         t.join()
@@ -193,7 +190,7 @@ def test_prune_removes_old_rejected_keeps_approved_and_prunes_unused_bundles(wor
     world.engine().process_pending()
     assert world.reg.store.latest_decision(old)["result"] == "REJECT"
     fresh = world.reg.service.submit_candidate(world.subject(qs=world.q.add("qs-main", 9)), requested_by_role="operator")["submission_id"]
-    now = datetime.now(timezone.utc) + timedelta(days=100)       # 100일 뒤 시점으로 판단
+    now = NOW + timedelta(days=100)       # 100일 뒤 시점으로 판단
     pol = RetentionPolicy(keep_releases=1)
     dry = retention.prune(store, pol, now=now, apply=False)
     assert old in dry["submission_ids"] and dry["freed_bytes"] is None
@@ -221,8 +218,8 @@ def test_prune_removes_old_rejected_keeps_approved_and_prunes_unused_bundles(wor
 def test_prune_purges_old_attempts(world):
     store = _file_store(world)
     store.record_attempt({"at": "2020-01-01T00:00:00Z", "status": 403, "role": "operator"})
-    store.record_attempt({"at": ts(datetime.now(timezone.utc)), "status": 401, "role": "operator"})
-    out = retention.prune(store, RetentionPolicy(), now=datetime.now(timezone.utc), apply=True)
+    store.record_attempt({"at": ts(NOW), "status": 401, "role": "operator"})
+    out = retention.prune(store, RetentionPolicy(), now=NOW, apply=True)
     assert out["attempts_purged"] == 1 and len(store.list_attempts()) == 1
 
 
@@ -241,29 +238,8 @@ def test_negative_content_length_and_non_ascii_authorization(world):
         srv.shutdown()
 
 
-def test_slow_client_is_cut_by_request_timeout(world):
-    srv, port = _serve(world, request_timeout=0.5)
-    try:
-        t = time.monotonic()
-        s = socket.create_connection(("127.0.0.1", port), timeout=5)
-        s.sendall(b"POST /v1/submissions HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer wt\r\nContent-Length: 50\r\n\r\n{")   # 본문을 보내다 멈춤
-        s.settimeout(60)
-        data = b""
-        try:
-            while True:
-                c = s.recv(4096)
-                if not c:
-                    break
-                data += c
-        except socket.timeout:
-            pytest.fail("서버가 느린 연결을 끊지 않았다")      # 읽기 시간 초과를 '끊김'으로 착각하지 않는다
-        except OSError:
-            pass                                              # 연결 재설정도 끊긴 것이다
-        # 서버 요청 시간 상한은 0.5초이고 기본값은 30초다. 25초 안에 끊겼으면 설정이 적용된 것이다(부하 여유 50배, 측정값 아님)
-        assert time.monotonic() - t < 25 and (not data or b" 400 " in data.split(b"\r\n")[0])      # 스레드를 영구히 붙잡지 않는다
-        s.close()
-    finally:
-        srv.shutdown()
+# (이전 시험 test_slow_client_is_cut_by_request_timeout은 지웠다: 느린 연결을 끊는 것은 waitress의 일이다. 넘기는 값은
+#  tests/test_u4a_waitress.py::test_waitress_gets_the_configured_request_timeout가 확인한다.)
 
 
 # (이전 시험 test_connection_cap_returns_503는 waitress 전환으로 대체됐다: 상한 초과는 503이 아니라 대기. tests/test_u4a_waitress.py 참고)
@@ -286,78 +262,87 @@ def test_access_log_neutralizes_control_characters_and_names_actor(world, caplog
 # ---- A4: 우아한 종료 ----
 
 def test_graceful_stop_waits_for_inflight_and_refuses_new(world):
+    """우리 코드의 시간(유예 마감)을 가짜 시계로: 첫 sleep에서 (1) 새 연결이 거절되는지 보고 (2) 처리 중인 요청을 풀어 준다. 실제로 기다리지 않는다."""
     started, release = threading.Event(), threading.Event()
+    refused = []
+
+    def at_first_sleep():
+        if not refused:
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=HANG_GUARD_SECONDS).close()
+                refused.append(False)
+            except OSError:
+                refused.append(True)                         # 새 연결은 받지 않는다
+        release.set()
 
     def slow_status():
         started.set()
-        release.wait(60)
+        release.wait(HANG_GUARD_SECONDS)      # 매달림 감시: 시험이 release.set()으로 풀어 준다
         return {}
-    srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "r"}, write_tokens={"wt": "operator"}, status=slow_status)
+    srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "r"}, write_tokens={"wt": "operator"}, status=slow_status,
+                         clock=FakeTime(on_sleep=at_first_sleep))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     port = srv.server_address[1]
     result = []
-    t = threading.Thread(target=lambda: result.append(_raw(port, b"GET /readyz HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", timeout=10)))
+    t = threading.Thread(target=lambda: result.append(_raw(port, b"GET /readyz HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")))
     t.start()
-    assert started.wait(30)
-    stopper = threading.Thread(target=lambda: result.append(("left", srv.graceful_stop(60))))
-    stopper.start()
-    refused = False
-    for _ in range(300):          # 수신 소켓이 닫히는 시점은 부하에 따라 다르다: 닫힐 때까지 기다린다(사건 대기, 바깥 마감 30초)
-        assert stopper.is_alive()                            # 처리 중인 요청이 끝나길 기다린다
-        try:
-            socket.create_connection(("127.0.0.1", port), timeout=1).close()
-        except OSError:
-            refused = True                                   # 새 연결은 받지 않는다
-            break
-        time.sleep(0.1)
-    assert refused
-    release.set()
-    t.join(60); stopper.join(60)
-    body = [r for r in result if isinstance(r, bytes)][0]
-    assert b" 200 " in body.split(b"\r\n")[0]                # 이미 시작한 요청은 정상 완료
-    assert ("left", 0) in result
+    assert started.wait(HANG_GUARD_SECONDS)
+    left = srv.graceful_stop(10 ** 9)           # 유예는 가짜 시간으로 사실상 무한: 처리 중인 요청이 끝나야만 돌려준다
+    t.join(HANG_GUARD_SECONDS)
+    assert refused == [True] and left == 0
+    assert b" 200 " in result[0].split(b"\r\n")[0]                # 이미 시작한 요청은 정상 완료
 
 
 def test_graceful_stop_returns_remaining_after_grace(world):
+    """유예(가짜 시간 0.5초)가 지나도 끝나지 않는 요청 수를 돌려준다. 요청은 release까지 붙잡혀 있으니 부하와 무관하게 1이다."""
     release, started = threading.Event(), threading.Event()
+    fake = FakeTime()
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "r"}, write_tokens={"wt": "operator"},
-                         status=lambda: (started.set(), release.wait(60), {})[2])
+                         status=lambda: (started.set(), release.wait(HANG_GUARD_SECONDS), {})[2], clock=fake)      # 매달림 감시: release.set()으로 풀어 준다
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     port = srv.server_address[1]
-    threading.Thread(target=lambda: _raw(port, b"GET /readyz HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", timeout=70), daemon=True).start()
-    assert started.wait(30)                                   # 요청이 처리 중이 된 뒤에 멈춘다(시간이 아니라 사건)
-    assert srv.graceful_stop(0.5) == 1                        # 유예가 지나도 끝나지 않은 요청 수를 돌려준다
+    threading.Thread(target=lambda: _raw(port, b"GET /readyz HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"), daemon=True).start()
+    assert started.wait(HANG_GUARD_SECONDS)
+    t0 = fake.t
+    assert srv.graceful_stop(0.5) == 1
+    assert fake.t - t0 >= 0.5                                 # 유예만큼 가짜 시간이 흘렀다(아래쪽 경계, 실제로는 기다리지 않았다)
     release.set()
 
 
-def test_serve_exits_cleanly_on_sigterm(tmp_path):
-    s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GATE_") and k != "PORT"}
-    env.update({"GATE_DATA_DIR": str(tmp_path / "d"), "GATE_SURVEY_SCHEMA_DIR": str(SURVEY), "GATE_ALLOW_TEST": "1",
-                "GATE_MODEL_RUNTIME_VERSION": "0.1.0", "GATE_READ_TOKENS": "survey-service=rt",
-                "GATE_WRITE_TOKENS": "operator=wt", "PORT": str(port)})
-    p = subprocess.Popen([sys.executable, "-m", "release_gate", "serve"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    try:
-        for _ in range(600):      # 부하에서 프로세스가 뜨는 시간을 넉넉히(최대 약 60초)
-            try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=2):
-                    break
-            except OSError:
-                time.sleep(0.1)
-        else:
-            pytest.fail("서버가 뜨지 않았다")
-        t0 = time.monotonic()
-        p.send_signal(signal.SIGTERM)
-        rc = p.wait(timeout=90)
-        out = p.stdout.read().decode()
-        # 처리 중인 요청이 없으니 유예(기본 20초)를 다 쓰지 않고 끝나야 한다. 바깥 마감 60초는 매달리지 않음만 본다(부하 여유)
-        assert rc == 0 and time.monotonic() - t0 < 60, (rc, out[-500:])
-        assert "종료" in out
-        with pytest.raises(OSError):
-            socket.create_connection(("127.0.0.1", port), timeout=1).close()
-    finally:
-        if p.poll() is None:
-            p.kill()
+def _run_with_sigterm(monkeypatch, loop, store, grace):
+    """run_until_signal에 SIGTERM이 온 것으로 친다. 실제 신호·프로세스·시계에 기대지 않는다: 등록된 핸들러를 직접 부른다.
+    (신호가 오는지, 프로세스가 끝나는지는 OS의 몫이고 deploy smoke가 본다. 여기는 우리 종료 절차의 순서와 인자를 본다.)"""
+    handlers, calls, stop_called = {}, [], threading.Event()
+    monkeypatch.setattr(gate_main.signal, "signal", lambda sig, h: handlers.__setitem__(sig, h))
+
+    class _Srv:
+        def serve_forever(self):
+            handlers[signal.SIGTERM](signal.SIGTERM, None)
+            assert stop_called.wait(HANG_GUARD_SECONDS)      # 신호 핸들러가 띄운 정지 스레드가 graceful_stop을 부를 때까지(매달림 감시)
+
+        def graceful_stop(self, g):
+            calls.append(g)
+            stop_called.set()
+            return 0
+    gate_main.run_until_signal(_Srv(), loop, store, grace)
+    return handlers, calls
+
+
+def test_serve_shutdown_sequence_on_sigterm(monkeypatch, caplog):
+    import logging
+    from release_gate.wiring.loop import Loop
+    caplog.set_level(logging.INFO, logger="gate")
+    closed = []
+
+    class _Store:
+        def close(self):
+            closed.append(True)
+    loop = Loop(3600, [])
+    handlers, calls = _run_with_sigterm(monkeypatch, loop, _Store(), 30.0)
+    assert set(handlers) == {signal.SIGTERM, signal.SIGINT}      # 두 신호 모두에 우아한 종료를 건다
+    assert calls == [30.0]                                       # 설정한 유예를 그대로 서버에 넘긴다
+    assert loop.stop_event.is_set() and closed == [True]
+    assert "종료" in caplog.text
 
 
 # ---- 정리와 활성화의 경쟁 (재점검 M1) ----
@@ -372,7 +357,7 @@ def test_plan_then_activate_then_apply_never_prunes_the_active_release(world):
     rels = _releases(world, 4)
     world.reg.service.activate(rels[3], requested_by_role="operator", requested_by="u1")
     pol = RetentionPolicy(keep_releases=0)
-    now = datetime.now(timezone.utc)
+    now = NOW
     plan = retention.prune(store, pol, now=now, apply=False)
     assert rels[1] in plan["bundle_release_ids"]                       # 계획 시점에는 정리 대상
     world.reg.service.activate(rels[1], requested_by_role="operator", requested_by="u1")      # 계획 뒤 활성화
@@ -390,14 +375,14 @@ def test_keep_zero_still_protects_active_previous_and_unactivated_newest(world):
     world.reg.service.activate(rels[2], requested_by_role="operator", requested_by="u1")
     prot = retention.protected_ids(store, 0)
     assert {rels[2], rels[0], rels[3], rels[4]} <= prot and rels[1] not in prot      # 활성, 직전, 활성화 전의 더 새 승인 릴리스
-    out = retention.prune(store, RetentionPolicy(keep_releases=0), now=datetime.now(timezone.utc), apply=True)
+    out = retention.prune(store, RetentionPolicy(keep_releases=0), now=NOW, apply=True)
     assert out["bundle_release_ids"] == [rels[1]]
 
 
 def test_no_pointer_yet_protects_every_approved_release(world):
     store = _file_store(world)
     rels = _releases(world, 3)
-    out = retention.prune(store, RetentionPolicy(keep_releases=0), now=datetime.now(timezone.utc), apply=True)
+    out = retention.prune(store, RetentionPolicy(keep_releases=0), now=NOW, apply=True)
     assert out["bundle_release_ids"] == [] and not any(store.is_pruned(r) for r in rels)
 
 
@@ -418,8 +403,9 @@ def test_concurrent_prune_and_activate_never_leave_pointer_on_pruned_release(wor
     rels = _releases(world, 6)
     world.reg.service.activate(rels[5], requested_by_role="operator", requested_by="u1")
     pol = RetentionPolicy(keep_releases=0)
-    now = datetime.now(timezone.utc)
+    now = NOW
     bad, stop = [], threading.Event()
+    tick = threading.Semaphore(0)
 
     def activator():
         i = 0
@@ -437,16 +423,17 @@ def test_concurrent_prune_and_activate_never_leave_pointer_on_pruned_release(wor
             if store.is_pruned(ptr["release_id"]) and store.get_pointer()["pointer_version"] == ptr["pointer_version"]:
                 bad.append("POINTER_ON_PRUNED")
             i += 1
+            tick.release()          # 한 바퀴 돌았음을 알린다(정리와 활성화가 번갈아 일어나게 하는 사건)
 
     def pruner():
         for _ in range(6):
+            assert tick.acquire(timeout=HANG_GUARD_SECONDS)      # 활성화가 최소 한 바퀴 돈 뒤에 정리한다. 300: 매달림 감시
             retention.prune(store, pol, now=now, apply=True)
-            time.sleep(0.02)
 
     ts_ = [threading.Thread(target=activator) for _ in range(2)]
     [t.start() for t in ts_]
-    p = threading.Thread(target=pruner); p.start(); p.join(180)
-    stop.set(); [t.join(60) for t in ts_]
+    p = threading.Thread(target=pruner); p.start(); p.join(HANG_GUARD_SECONDS)      # 매달림 감시
+    stop.set(); [t.join(HANG_GUARD_SECONDS) for t in ts_]
     assert bad == [], bad
     ptr = store.get_pointer()
     assert not store.is_pruned(ptr["release_id"])
@@ -462,11 +449,13 @@ def test_purge_stale_tmp_keeps_dirs_with_recent_writes_inside(world):
     for d in (busy, dead):
         (d / "adapters" / "LORA_A").mkdir(parents=True)
         (d / "adapters" / "LORA_A" / "adapter.bin").write_bytes(b"x")
-    old = time.time() - 7200
+    now_epoch = 1_800_000_000.0      # 주입한 "지금"(실제 시계를 읽지 않는다). 파일 시각은 모두 이것을 기준으로 직접 정한다
+    old = now_epoch - 7200
     for p in (busy, busy / "adapters", busy / "adapters" / "LORA_A", dead, dead / "adapters", dead / "adapters" / "LORA_A", dead / "adapters" / "LORA_A" / "adapter.bin"):
         os.utime(p, (old, old))
     # busy: 디렉터리 mtime은 오래됐지만 안의 파일은 방금 쓰였다(큰 복사 진행 중)
-    assert store.purge_stale_tmp(3600) == 1
+    os.utime(busy / "adapters" / "LORA_A" / "adapter.bin", (now_epoch, now_epoch))
+    assert store.purge_stale_tmp(now_epoch, 3600) == 1
     assert busy.exists() and not dead.exists()
 
 
@@ -480,27 +469,22 @@ def test_deeply_nested_json_is_400_not_500(world):
         srv.shutdown()
 
 
-def test_loop_is_joined_before_store_close(world):
+def test_loop_is_joined_before_store_close(monkeypatch):
     from release_gate.wiring.loop import Loop
     order = []
     started = threading.Event()
 
     def task():
         started.set()
-        time.sleep(0.3)
+        loop.stop_event.wait(HANG_GUARD_SECONDS)        # 매달림 감시: 종료 절차가 정지를 요청할 때까지 '진행 중인 주기 작업'이다(시계가 아니라 사건)
         order.append("task-done")
-    loop = Loop(60, [task])
+    loop = Loop(3600, [task])
     loop.start()
-    assert started.wait(60)
+    assert started.wait(HANG_GUARD_SECONDS)             # 매달림 감시
 
-    class _Srv:
-        shutting_down = False
-        def serve_forever(self): order.append("served")
-        def graceful_stop(self, g): return 0
-        def inflight(self): return 0
     class _Store:
         def close(self): order.append("closed")
-    gate_main.run_until_signal(_Srv(), loop, _Store(), 6.0)      # loop.join(min(grace, 10)): 작업(0.3초)이 부하로 늦어도 기다려 준다
+    _run_with_sigterm(monkeypatch, loop, _Store(), 30.0)
     assert order.index("task-done") < order.index("closed")        # 진행 중인 주기 작업이 끝난 뒤에 저장소를 닫는다
 
 
@@ -539,7 +523,7 @@ def test_prune_failing_midway_leaves_pruning_and_next_prune_finishes(world, monk
     assert store.is_pruned(rid) and store.prune_pending(rid)
     _switch_attempt(store, rid)                         # PRUNING도 전환 거부
     monkeypatch.undo()
-    out = retention.prune(store, RetentionPolicy(keep_releases=0), now=datetime.now(timezone.utc), apply=True)
+    out = retention.prune(store, RetentionPolicy(keep_releases=0), now=NOW, apply=True)
     assert rid in out["bundle_release_ids"]
     assert (base / "PRUNED").exists() and not (base / "PRUNING").exists() and not (base / "adapters").exists()
     _switch_attempt(store, rid)                         # PRUNED도 거부

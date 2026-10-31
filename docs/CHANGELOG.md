@@ -1,5 +1,10 @@
 # 변경 이력
 
+## (미배포) 시계 주입 (U422, ADR-0019)
+
+- 컴포넌트가 시간을 직접 읽지 않는다: `GateApp`/`GateHTTPServer`는 `clock`(필수), `PostgresStore`는 `scheduler`, `purge_stale_tmp`는 `now`를 받는다. 실제 시계는 `wiring/util.py SystemClock`이 넣는다. 와이어 형식·응답·잡 출력은 그대로다.
+- 시험: 실제 시간을 기다리거나 재던 시험을 가짜 시계·넘긴 값 확인·즉시 실패하는 가짜 의존으로 바꾸거나 지웠다(`tests/TIMING.md`). 대기 마감은 `HANG_GUARD_SECONDS` 하나.
+
 ## (미배포) 의존 고정 올림 (wo-401)
 
 - model-runtime v0.11.2 -> v0.11.4(`requirements-libs.txt`, 배포 기준표를 따른다), openit-link v0.4.0 -> v0.4.1(`requirements.txt`). 문진 스키마 고정 survey-schema-v2.0.0 -> v3.0.0(`requirements.txt`). 3.0.0의 QuestionBank 거부 조건(칸 data_type 필수, option이면 choices 또는 choice_catalog, 필수 고정 문장 4개)을 게이트가 따르는지 `tests/test_survey_schema_300.py`로 확인하고, 시험 표본(`tests/fakes.py make_bank`)을 3.0.0을 통과하게 고쳤다. 생산 코드 변경 없음.

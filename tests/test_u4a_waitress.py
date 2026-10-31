@@ -5,12 +5,11 @@ from __future__ import annotations
 
 import socket
 import threading
-import time
 import urllib.request
 
 import pytest
 
-from release_gate.components.link_http_server import GateHTTPServer
+from conftest import HANG_GUARD_SECONDS, FakeTime, GateHTTPServer
 
 
 def _serve(world, **kw):
@@ -20,14 +19,14 @@ def _serve(world, **kw):
     return srv, srv.server_address[1]
 
 
-def _health(port, timeout=3):
+def _health(port, timeout=HANG_GUARD_SECONDS):      # 매달림 감시(판정 아님)
     with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=timeout) as r:
         return r.status
 
 
-def _status_line(port, data: bytes, timeout=30):
+def _status_line(port, data: bytes, timeout=HANG_GUARD_SECONDS):
     """data를 보내고 상태 줄을 읽는다. 서버가 다 받기 전에 응답하고 닫아 보내다 끊겨도(ConnectionReset/BrokenPipe) 이미 도착한 응답을 읽는다.
-    timeout은 바깥 마감이다(부하 여유)."""
+    timeout은 매달림 감시다(판정이 아니라 시험이 멈추지 않게 하는 마감)."""
     s = socket.create_connection(("127.0.0.1", port), timeout=timeout)
     try:
         try:
@@ -48,68 +47,49 @@ def _status_line(port, data: bytes, timeout=30):
         s.close()
 
 
-def test_slow_client_does_not_block_other_requests(world):
-    srv, port = _serve(world, request_timeout=30)
-    slow = [socket.create_connection(("127.0.0.1", port)) for _ in range(5)]
-    try:
-        for s in slow:       # 본문을 보내다 멈춘 연결들
-            s.sendall(b"POST /v1/submissions HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer wt\r\nContent-Length: 50\r\n\r\n{")
-        assert _health(port, timeout=30) == 200      # 느린 연결 5개가 붙잡혀 있어도 다른 요청이 처리된다(응답이 오면 된다, 바깥 마감 30초)
-    finally:
-        for s in slow:
-            s.close()
-        srv.shutdown()
+class _FakeWaitressServer:
+    effective_host, effective_port = "127.0.0.1", 0
 
 
-def test_idle_connection_is_closed_by_timeout(world):
-    srv, port = _serve(world, request_timeout=1)
-    try:
-        s = socket.create_connection(("127.0.0.1", port), timeout=60)
-        t = time.monotonic()
-        try:
-            data = s.recv(4096)       # 아무것도 보내지 않았다: 서버가 끊어야 한다(빈 읽기 또는 연결 재설정)
-        except socket.timeout:
-            pytest.fail("서버가 유휴 연결을 끊지 않았다")      # 읽기 시간 초과를 '끊김'으로 착각하지 않는다
-        except OSError:
-            data = b""
-        assert data in (b"",) or b" 408 " in data.split(b"\r\n")[0] or b" 400 " in data.split(b"\r\n")[0]
-        # 설정한 상한은 1초이고 기본값은 30초다. 25초 안에 끊겼으면 설정이 적용된 것이다(부하 여유 25배, 측정값 아님)
-        assert time.monotonic() - t < 25
-        s.close()
-    finally:
-        srv.shutdown()
+def _make(monkeypatch, world, **kw):
+    import release_gate.components.link_http_server as mod
+    seen = {}
+
+    def fake_create_server(app, **k):
+        seen.update(k)
+        return _FakeWaitressServer()
+    monkeypatch.setattr(mod.waitress, "create_server", fake_create_server)
+    GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "survey-service"}, write_tokens={"wt": "operator"}, status=lambda: {}, **kw)
+    return seen
 
 
-def test_server_recovers_after_connections_exceed_the_cap(world):
-    srv, port = _serve(world, request_timeout=5, max_connections=2)
-    held = [socket.create_connection(("127.0.0.1", port)) for _ in range(6)]       # 상한(2)보다 많이 붙잡는다
-    try:
-        pass
-    finally:
-        for h in held:
-            h.close()
-    try:
-        deadline = time.monotonic() + 60      # 바깥 마감(부하 여유)
-        while True:
-            try:
-                assert _health(port, timeout=3) == 200
-                break
-            except OSError:
-                assert time.monotonic() < deadline, "상한을 넘은 연결을 놓은 뒤에도 서버가 회복하지 않았다"
-                time.sleep(0.2)
-    finally:
-        srv.shutdown()
+# 아래 네 시험은 waitress가 (느린 연결을 끊는가, 연결 수를 막는가, 큰 본문을 413으로 거절하는가, 느린 연결이 다른 요청을 막지 않는가)를 시험하던 옛
+# 시험을 대체한다. 그런 동작은 의존(waitress)의 몫이라 영역 시험에서 시간·소켓으로 재지 않는다. 우리 책임은 올바른 값을 넘기는 것이다.
+
+def test_waitress_gets_the_configured_request_timeout(monkeypatch, world):
+    seen = _make(monkeypatch, world, request_timeout=7)
+    assert seen["channel_timeout"] == 7 and seen["cleanup_interval"] == 7       # 짧은 timeout이 정리 주기 때문에 늦게 적용되지 않게 같이 맞춘다
+    seen = _make(monkeypatch, world, request_timeout=0.4)
+    assert seen["channel_timeout"] == 1                                         # waitress는 정수 초만 받는다: 1 미만은 1
+    from release_gate.components.link_http_server import DEFAULT_REQUEST_TIMEOUT
+    seen = _make(monkeypatch, world)
+    assert seen["channel_timeout"] == DEFAULT_REQUEST_TIMEOUT == 30 and seen["cleanup_interval"] == 30
 
 
-def test_oversized_body_is_refused_with_4xx(world):
-    srv, port = _serve(world)
-    try:
-        # 머리글의 큰 Content-Length만 보낸다. waitress가 본문을 읽기 전에 413을 내고 닫으므로, 본문을 보내다 연결이 끊기는 경쟁이 없다
-        n = (1 << 20) + 16
-        line = _status_line(port, b"POST /v1/submissions HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer wt\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % n)
-        assert line.split(b" ")[1] == b"413", line      # waitress가 앱 전에 낸다(ADR-0013). 계약 클라이언트는 413을 INVALID_RECORD로 읽는다(CONVENTIONS 9절, v2.2.2)
-    finally:
-        srv.shutdown()
+def test_waitress_gets_the_connection_cap_threads_and_body_limit(monkeypatch, world):
+    seen = _make(monkeypatch, world, max_connections=2, threads=3)
+    assert seen["connection_limit"] == 4         # 상한 + 2: waitress는 수신 소켓과 trigger 채널도 센다
+    assert seen["threads"] == 3
+    seen = _make(monkeypatch, world)
+    assert seen["threads"] == 8 and seen["connection_limit"] == 64 + 2
+    assert seen["max_request_body_size"] == 1 << 20      # 본문 상한 1MiB(ADR-0008). 초과는 waitress가 앱 전에 413으로 거절한다(openit_link도 같은 상한)
+    assert seen["expose_tracebacks"] is False
+
+
+def test_link_library_body_limit_matches_the_waitress_limit():
+    from openit_link.server import DEFAULT_MAX_BODY
+    from release_gate.components.link_http_server import MAX_BODY_BYTES
+    assert MAX_BODY_BYTES == DEFAULT_MAX_BODY == 1 << 20
 
 
 def test_unsupported_method_is_refused_without_killing_the_server(world):
@@ -123,26 +103,23 @@ def test_unsupported_method_is_refused_without_killing_the_server(world):
 
 
 def test_graceful_stop_lets_the_inflight_request_finish_and_returns(world):
+    """우리 코드의 시간(유예 마감): 가짜 시계를 넣어 시간을 직접 흘린다. 처리 중인 요청은 가짜 시계가 첫 sleep을 부를 때 풀려난다(실제로 기다리지 않는다)."""
     started, release = threading.Event(), threading.Event()
 
     def slow():
         started.set()
-        release.wait(60)
+        release.wait(HANG_GUARD_SECONDS)      # 매달림 감시: 시험이 release.set()으로 풀어 준다
         return {}
-    srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "r"}, write_tokens={"wt": "operator"}, status=slow)
+    srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "r"}, write_tokens={"wt": "operator"}, status=slow,
+                         clock=FakeTime(on_sleep=lambda: release.set()))
     th = threading.Thread(target=srv.serve_forever, daemon=True)
     th.start()
     port = srv.server_address[1]
     got = []
-    c = threading.Thread(target=lambda: got.append(_status_line(port, b"GET /readyz HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", timeout=70)))
+    c = threading.Thread(target=lambda: got.append(_status_line(port, b"GET /readyz HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")))
     c.start()
-    assert started.wait(30)
-    left = []
-    stopper = threading.Thread(target=lambda: left.append(srv.graceful_stop(60)))
-    stopper.start()
-    stopper.join(0.5)
-    assert stopper.is_alive()          # 처리 중인 요청(release 전까지 끝나지 않는다)이 있는 동안 종료는 기다린다
-    release.set()
-    c.join(70); stopper.join(70); th.join(70)
-    assert got and b" 200 " in got[0] and left == [0]
+    assert started.wait(HANG_GUARD_SECONDS)
+    left = srv.graceful_stop(10 ** 9)      # 유예는 가짜 시간으로 사실상 무한: 요청이 끝나야만 돌려준다
+    c.join(HANG_GUARD_SECONDS); th.join(HANG_GUARD_SECONDS)
+    assert got and b" 200 " in got[0] and left == 0
     assert not th.is_alive()          # 종료 뒤 수신 루프가 끝난다(serve_forever가 돌려준다)

@@ -14,7 +14,6 @@ import json
 import os
 import socket
 import shutil
-import time
 import uuid
 import sqlite3
 import threading
@@ -407,9 +406,9 @@ class ReleaseFiles:
         except OSError as e:
             raise BoundaryError("UNAVAILABLE", f"릴리스 묶음을 옮길 수 없다: {type(e).__name__}") from None
 
-    def purge_stale_tmp(self, max_age_seconds: float = 3600.0) -> int:
+    def purge_stale_tmp(self, now: float, max_age_seconds: float = 3600.0) -> int:
         """오래된 임시 디렉터리(.tmp-*, .bundle-*)를 지운다(비정상 종료의 찌꺼기). 새 것은 다른 프로세스가 쓰는 중일 수 있어 둔다."""
-        n, now = 0, time.time()
+        n = 0      # now(에포크 초)는 호출자가 넣는다: 컴포넌트는 시간을 직접 읽지 않는다(ADR-0019)
         base = self.root / "releases"
         if not base.is_dir():
             return 0
@@ -832,6 +831,18 @@ def _safe(e: Exception) -> str:
     return f"{type(e).__name__}" + (f" sqlstate={getattr(e, 'sqlstate', None)}" if getattr(e, "sqlstate", None) else "")
 
 
+class _StdlibScheduler:
+    """타이머와 스레드 합류만 하는 기본 구현(시간을 읽지 않는다). wiring이 SystemClock을 넣으면 그것을 쓴다."""
+
+    def timer(self, interval, fn, args=()):
+        t = threading.Timer(interval, fn, args=args)
+        t.daemon = True
+        return t
+
+    def join(self, thread, timeout):
+        thread.join(timeout)
+
+
 def _abort(conn) -> None:
     """서버가 얼어 응답이 없으면(예: docker pause) 서버 쪽 statement_timeout은 들리지 않는다. 소켓을 닫아 막힌 읽기를 끝낸다."""
     try:
@@ -847,9 +858,8 @@ def _abort(conn) -> None:
 class _Armed:
     """문장 하나(또는 BEGIN/COMMIT 하나) 동안만 켜 두는 감시. 상한+1초 안에 안 끝나면 연결을 끊는다."""
 
-    def __init__(self, conn, limit: float):
-        self._t = threading.Timer(limit + 1.0, _abort, args=(conn,))
-        self._t.daemon = True
+    def __init__(self, conn, limit: float, scheduler):
+        self._t = scheduler.timer(limit + 1.0, _abort, (conn,))
 
     def __enter__(self):
         self._t.start()
@@ -860,30 +870,30 @@ class _Armed:
 
 
 class _GuardedTxn:
-    def __init__(self, conn, cm, limit):
-        self._conn, self._cm, self._limit = conn, cm, limit
+    def __init__(self, conn, cm, limit, scheduler):
+        self._conn, self._cm, self._limit, self._sch = conn, cm, limit, scheduler
 
     def __enter__(self):
-        with _Armed(self._conn, self._limit):
+        with _Armed(self._conn, self._limit, self._sch):
             return self._cm.__enter__()
 
     def __exit__(self, et, ev, tb):
-        with _Armed(self._conn, self._limit):
+        with _Armed(self._conn, self._limit, self._sch):
             return self._cm.__exit__(et, ev, tb)
 
 
 class _Guarded:
     """psycopg 연결을 감싸 모든 문장·트랜잭션 경계에 상한을 건다. 나머지 속성(closed, broken, close...)은 그대로 넘긴다."""
 
-    def __init__(self, conn, limit: float):
-        self._conn, self._limit = conn, limit
+    def __init__(self, conn, limit: float, scheduler):
+        self._conn, self._limit, self._sch = conn, limit, scheduler
 
     def execute(self, *a, **k):
-        with _Armed(self._conn, self._limit):
+        with _Armed(self._conn, self._limit, self._sch):
             return self._conn.execute(*a, **k)
 
     def transaction(self, *a, **k):
-        return _GuardedTxn(self._conn, self._conn.transaction(*a, **k), self._limit)
+        return _GuardedTxn(self._conn, self._conn.transaction(*a, **k), self._limit, self._sch)
 
     def __getattr__(self, name):
         return getattr(self._conn, name)
@@ -893,12 +903,14 @@ class PostgresStore(ReleaseFiles, Store):
     kind = "postgresql"
 
     def __init__(self, url: str, root: str | Path, *, connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
-                 statement_timeout: float = DEFAULT_STATEMENT_TIMEOUT, probe_timeout: float = DEFAULT_PROBE_TIMEOUT):
+                 statement_timeout: float = DEFAULT_STATEMENT_TIMEOUT, probe_timeout: float = DEFAULT_PROBE_TIMEOUT,
+                 scheduler=None):
         if psycopg is None:
             raise BoundaryError("UNAVAILABLE", "PostgreSQL 드라이버(psycopg)가 설치되어 있지 않다")
         self.root = Path(root)
         self._url = url                      # 어디에도 출력하지 않는다
         self.connect_timeout, self.statement_timeout, self.probe_timeout = connect_timeout, statement_timeout, probe_timeout
+        self._sch = scheduler or _StdlibScheduler()      # 타이머·스레드 합류. 시험은 가짜를 넣는다(ADR-0019)
         self._lock = threading.RLock()
         self._c = None
         try:
@@ -924,7 +936,7 @@ class PostgresStore(ReleaseFiles, Store):
         if self._c is None or self._c.closed or self._c.broken:
             try:
                 self._c = _Guarded(psycopg.connect(autocommit=True, **self._params(self.connect_timeout, self.statement_timeout)),
-                                   self.statement_timeout)
+                                   self.statement_timeout, self._sch)
             except psycopg.Error as e:
                 self._c = None
                 raise BoundaryError("UNAVAILABLE", f"PostgreSQL에 연결할 수 없다: {_safe(e)}") from None
@@ -1002,7 +1014,7 @@ class PostgresStore(ReleaseFiles, Store):
                 box.append(e)
                 return
             try:
-                with _Armed(c, self.probe_timeout):
+                with _Armed(c, self.probe_timeout, self._sch):
                     c.execute("SELECT 1 FROM pointer_history LIMIT 1").fetchall()
                 box.append(None)
             except Exception as e:
@@ -1015,7 +1027,7 @@ class PostgresStore(ReleaseFiles, Store):
 
         t = threading.Thread(target=run, daemon=True)
         t.start()
-        t.join(self.probe_timeout)
+        self._sch.join(t, self.probe_timeout)
         if not box:
             raise BoundaryError("UNAVAILABLE", "PostgreSQL 확인이 제한 시간 안에 끝나지 않았다")
         if box[0] is not None:

@@ -124,6 +124,7 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | [0011](docs/adr/0011-turn-engine-reference-string.md) | (대체됨: 0017) turn-engine은 설치하지 않고 기준 문자열만 설정으로 |
 | [0017](docs/adr/0017-action-rules-version.md) | 계보 기준은 action_rules_version(계약 규칙 데이터), 라벨은 실제 설치 버전 |
 | [0018](docs/adr/0018-components-schemas-link.md) | 영역 구조 개편: 컴포넌트·스키마·wiring, 통신은 openit_link 위에 |
+| [0019](docs/adr/0019-injected-clock.md) | 시간은 주입한다: 컴포넌트는 시계를 읽지 않고 시험은 가짜 시계로 시간을 흘린다 |
 | [0012](docs/adr/0012-job-output-self-check.md) | 잡 출력 자기 검사, /readyz는 시험에서만, 종료 코드 |
 | [0013](docs/adr/0013-wsgi-waitress.md) | HTTP 면은 WSGI 앱 + waitress |
 | [0014](docs/adr/0014-yoyo-migrations.md) | 스키마 버전 관리는 yoyo-migrations |

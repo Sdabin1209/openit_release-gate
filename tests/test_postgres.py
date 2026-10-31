@@ -2,6 +2,8 @@
 PostgreSQL 서버가 필요한 시험은 TEST_DATABASE_URL이 없으면 SKIP(PASS로 세지 않는다)."""
 from __future__ import annotations
 
+from conftest import HANG_GUARD_SECONDS
+
 import json
 import logging
 import threading
@@ -13,7 +15,7 @@ import pytest
 from boundary_contracts.errors import BoundaryError
 from release_gate import PostgresStore, SqliteStore, open_registry, postgres_registry
 from release_gate import main as gate_main
-from release_gate.components.link_http_server import GateHTTPServer
+from conftest import GateHTTPServer
 from conftest import SURVEY
 
 PW = "PGSECRET-zzz999"
@@ -22,7 +24,7 @@ BAD_URL = f"postgresql://gateuser:{PW}@127.0.0.1:1/gatedb"   # 닿지 않는 서
 
 def _get(base, path):
     try:
-        with urllib.request.urlopen(base + path, timeout=5) as r:
+        with urllib.request.urlopen(base + path, timeout=HANG_GUARD_SECONDS) as r:
             return r.status, r.read().decode()
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode()
@@ -108,7 +110,7 @@ def test_postgres_pointer_race_has_one_winner(world):
         if s.switch_pointer(0, {"pointer_version": 1, "release_id": f"rel-{i}"}, (f"req-{i}", "h", {"i": i})):
             wins.append(i)
     ts = [threading.Thread(target=go, args=(i,)) for i in range(8)]
-    [t.start() for t in ts]; [t.join() for t in ts]
+    [t.start() for t in ts]; [t.join(HANG_GUARD_SECONDS) for t in ts]      # 매달림 감시
     assert len(wins) == 1 and s.get_pointer()["release_id"] == f"rel-{wins[0]}"
     assert len(s.pointer_history()) == 1
     # 같은 요청 ID(영수증)로는 다시 못 바꾼다

@@ -2,6 +2,8 @@
 클라이언트는 content_hash와 번들의 모든 해시를 다시 계산하므로 서버가 낸 레코드의 해시가 정확해야 통과한다."""
 from __future__ import annotations
 
+from conftest import HANG_GUARD_SECONDS
+
 import threading
 
 import pytest
@@ -12,7 +14,7 @@ from conftest import tamper_decisions
 
 from boundary_contracts.clients import HttpGateService, HttpReleaseReader
 from boundary_contracts.errors import BoundaryError
-from release_gate.components.link_http_server import GateHTTPServer
+from conftest import GateHTTPServer
 from test_conformance import rollback_req, tamper
 
 
@@ -36,7 +38,7 @@ def code(fn, *a, **kw):
 
 
 def test_reader_over_http(world, srv, tmp_path):
-    rd = HttpReleaseReader(srv, "r-surv", timeout=10)
+    rd = HttpReleaseReader(srv, "r-surv", timeout=HANG_GUARD_SECONDS)      # 매달림 감시
     assert rd.get_active_pointer() is None
     r1 = world.make_release()
     r2 = world.make_release(world.subject(qs=world.q.add("qs-main", 2)))
@@ -123,4 +125,4 @@ def test_role_mismatch_and_read_token_cannot_write(world, srv):
 def test_invalid_submission_and_unreachable_server(world, srv):
     gs = HttpGateService(srv, "w-op")
     assert code(gs.submit_candidate, {"question_set": {}}, requested_by_role="operator") == "INVALID_RECORD"
-    assert code(HttpReleaseReader("http://127.0.0.1:1", "x", timeout=1).get_active_pointer) == "UNAVAILABLE"
+    assert code(HttpReleaseReader("http://127.0.0.1:1", "x", timeout=HANG_GUARD_SECONDS).get_active_pointer) == "UNAVAILABLE"

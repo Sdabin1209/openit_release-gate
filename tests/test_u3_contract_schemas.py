@@ -14,7 +14,7 @@ import pytest
 
 from release_gate import GatePolicy
 from release_gate import main as gate_main
-from release_gate.components.link_http_server import GateHTTPServer
+from conftest import GateHTTPServer
 from release_gate.components.gate_policy import PolicyError
 from test_jobs import job_env  # noqa: F401  (잡 시험용 fixture)
 

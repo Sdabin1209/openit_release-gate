@@ -5,11 +5,12 @@
 """
 from __future__ import annotations
 
+from conftest import HANG_GUARD_SECONDS
+
 import errno
 import shutil
 import json
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -19,25 +20,36 @@ from boundary_contracts.errors import BoundaryError
 from release_gate import CandidateCollector, GateEngine, GatePolicy
 from release_gate import main as gate_main
 from release_gate.components import registry_store as store_mod
-from release_gate.components.link_http_server import GateHTTPServer
+from conftest import GateHTTPServer
 from release_gate.wiring.loop import Loop
 from release_gate.wiring.check_registry import CheckRegistry
 from release_gate.wiring.subject_loader import SubjectLoader
 from test_conformance import tamper, two_releases
 
 MODES = ["hang", "slow", "http500", "http503", "badjson"]
-TIMEOUT = 1.0
-# 바깥 마감(초): 클라이언트 읽기 시간 상한은 1초다. 상류가 120초 붙잡으니 이 값 안에 끝났으면 상한이 적용된 것이다(부하 여유 30배)
-OUTER = 30
+TIMEOUT = 1.0     # 클라이언트에 넘기는 읽기 시간 상한 값(시험은 이 값만큼 실제로 기다리지 않는다: hang/slow는 가짜 의존이 즉시 시간 초과를 던진다)
+
+
+class _TimeoutClient:
+    """읽기 시간 초과가 난 이웃 클라이언트의 가짜. 어떤 호출이든 즉시 UNAVAILABLE(재시도 가능)을 던지고 호출 수를 센다."""
+
+    def __init__(self, outer):
+        self._outer = outer
+
+    def __getattr__(self, name):
+        def call(*a, **k):
+            self._outer.hits += 1
+            raise BoundaryError("UNAVAILABLE", "읽기 시간 초과(가짜 의존)")
+        return call
 
 
 class FaultServer:
-    """어떤 경로로 와도 mode대로 응답하는 상류. hang은 응답을 보내지 않고 붙잡는다."""
+    """어떤 경로로 와도 mode대로 응답하는 상류. hang·slow(시간 초과)는 실제로 붙잡지 않는다: clients()가 즉시 시간 초과를 던지는 가짜 의존을 준다
+    (시간 초과가 실제로 나는지는 HTTP 클라이언트 라이브러리의 몫이고, 여기는 우리 코드가 그 오류를 맞게 다루는지만 본다)."""
 
     def __init__(self):
         self.mode = "hang"
         self.hits = 0
-        self.release = threading.Event()
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -49,12 +61,6 @@ class FaultServer:
             def do_GET(self):
                 outer.hits += 1
                 m = outer.mode
-                if m == "hang":
-                    outer.release.wait(120)
-                    return
-                if m == "slow":
-                    outer.release.wait(TIMEOUT * 3)
-                    return self._send(200, b"{}")
                 if m == "http500":
                     return self._send(500, b"boom")
                 if m == "http503":
@@ -83,11 +89,12 @@ class FaultServer:
         return "http://127.0.0.1:%d" % self._srv.server_address[1]
 
     def close(self):
-        self.release.set()
         self._srv.shutdown()
         self._srv.server_close()
 
     def clients(self):
+        if self.mode in ("hang", "slow"):
+            return _TimeoutClient(self), _TimeoutClient(self)
         return HttpQuestionReader(self.url, "t", timeout=TIMEOUT), HttpModelRegistry(self.url, "t", timeout=TIMEOUT)
 
 
@@ -164,7 +171,7 @@ def test_loop_survives_failures_and_exposes_them_in_readyz(world, fault, schemas
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
         import urllib.request
-        with urllib.request.urlopen(f"http://127.0.0.1:{srv.server_address[1]}/readyz", timeout=5) as r:
+        with urllib.request.urlopen(f"http://127.0.0.1:{srv.server_address[1]}/readyz", timeout=HANG_GUARD_SECONDS) as r:      # 매달림 감시
             body = json.loads(r.read())
         assert r.status == 200 and body["judging_loop"]["upstream_auth_failed"] is True
         assert body["judging_loop"]["last_error"]["code"] == "PERMISSION_DENIED"
@@ -211,10 +218,9 @@ def test_approval_with_upstream_fault_records_nothing_and_can_be_retried(world, 
     world.engine().process_pending()
     fault.mode = mode
     body = {"submission_id": sid, "decision": "APPROVE", "approver_role": "release-approver", "report_hash": world.report_hash(sid)}
-    t = time.monotonic()
     with pytest.raises(BoundaryError) as e:
         engine_on(world, fault).decide(body, token_role="release-approver", approver_id="a1")
-    assert e.value.code == "UNAVAILABLE" and time.monotonic() - t < OUTER      # 매달리지 않음(상류 hang은 120초)
+    assert e.value.code == "UNAVAILABLE"
     assert world.reg.store.get_approval(sid) is None and world.reg.store.latest_decision(sid) is None
     assert world.reg.store.get_work(sid)["state"] == "AWAITING_APPROVAL"
     ap, created = world.engine().decide(body, token_role="release-approver", approver_id="a1")      # 같은 요청을 다시 보내면 된다
@@ -246,9 +252,8 @@ def gate_main_survey():
 def test_collect_job_defers_on_upstream_fault(world, fault, monkeypatch, capsys, mode):
     fault.mode = mode
     cfg = _job(world, monkeypatch, fault.clients())
-    t = time.monotonic()
     rc = gate_main.collect(cfg)
-    assert rc == gate_main.EX_TEMPFAIL and time.monotonic() - t < OUTER      # 매달리지 않음(상류 hang은 120초)
+    assert rc == gate_main.EX_TEMPFAIL
     assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["status"] == "deferred"
     assert world.reg.store.submission_ids() == []
 
@@ -418,7 +423,37 @@ def test_concurrent_activations_end_in_one_consistent_pointer(world):
         except BoundaryError as e:
             errs.append(e.code)
     ts = [threading.Thread(target=go, args=(r,)) for r in (r1, r2, r1, r2)]
-    [t.start() for t in ts]; [t.join() for t in ts]
+    [t.start() for t in ts]; [t.join(HANG_GUARD_SECONDS) for t in ts]      # 매달림 감시
     hist = world.reg.store.pointer_history()
     assert [h["pointer_version"] for h in hist] == list(range(1, len(hist) + 1))              # 빈 번호·중복 없음
     assert world.reg.reader.get_active_pointer()["release_id"] == hist[-1]["release_id"] and set(errs) <= {"UNAVAILABLE"}
+
+
+# ---- 시한 값은 맞게 넘겼는가 (시간을 재지 않는다) ----
+
+def test_factories_pass_the_read_timeout_to_the_clients(monkeypatch):
+    """읽기 시간 상한이 실제로 걸리는지는 HTTP 클라이언트 라이브러리의 몫이다. 우리 책임은 설정 값을 맞게 넘기는 것이다(기본 10초, GATE_I1_TIMEOUT·GATE_I3_TIMEOUT)."""
+    import openit_link.clients as oc
+    from release_gate import factories
+    seen = {}
+
+    def rec(name):
+        class Rec:
+            def __init__(self, **kw):
+                seen[name] = kw
+        return Rec
+    monkeypatch.setattr(oc, "HttpQuestionReader", rec("q"))
+    monkeypatch.setattr(oc, "HttpModelRegistry", rec("m"))
+    for env in ("GATE_I1_TIMEOUT", "GATE_I3_TIMEOUT"):
+        monkeypatch.delenv(env, raising=False)
+    factories.http_question_reader(base_url="http://x", token="t")
+    factories.http_model_registry(base_url="http://x", token="t")
+    assert seen["q"]["timeout"] == 10.0 and seen["m"]["timeout"] == 10.0          # 기본값(docs/adr/0008)
+    PASSED = 7      # 넘기는 값(실제로 기다리지 않는다)
+    factories.http_question_reader(base_url="http://x", token="t", timeout=PASSED)
+    assert seen["q"]["timeout"] == float(PASSED)
+    monkeypatch.setenv("GATE_I1_TIMEOUT", "4")
+    monkeypatch.setenv("GATE_I3_TIMEOUT", "6")
+    factories.http_question_reader(base_url="http://x", token="t")
+    factories.http_model_registry(base_url="http://x", token="t")
+    assert seen["q"]["timeout"] == 4.0 and seen["m"]["timeout"] == 6.0

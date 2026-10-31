@@ -3,6 +3,8 @@
 (PASS가 아니면 412, 없으면 404, 클라이언트 HttpReleaseReader.get_release_question_bank가 content_hash를 검증)."""
 from __future__ import annotations
 
+from conftest import HANG_GUARD_SECONDS
+
 import dataclasses
 import json
 import re
@@ -15,7 +17,7 @@ from boundary_contracts.clients import HttpReleaseReader
 from boundary_contracts.errors import BoundaryError
 
 from conftest import tamper_decisions
-from release_gate.components.link_http_server import GateHTTPServer
+from conftest import GateHTTPServer
 
 ROOT = Path(__file__).resolve().parent.parent
 EXPOSURE = ROOT / "deploy-exposure.json"
@@ -122,14 +124,14 @@ def srv(world):
 
 def test_question_bank_over_http_roundtrips_with_the_contract_client(world, srv):
     rid = world.make_release()
-    body = HttpReleaseReader(srv, "r-surv", timeout=10).get_release_question_bank(rid)
+    body = HttpReleaseReader(srv, "r-surv", timeout=HANG_GUARD_SECONDS).get_release_question_bank(rid)      # 매달림 감시
     validator("SurveyQuestionBankRead").validate(body)
     bank = world.q.banks[("qs-main", "1")]
     assert body["release_id"] == rid and body["question_bank"] == bank and body["content_hash"] == canonical.sha256_hash(bank)
 
 
 def test_question_bank_of_unknown_release_is_404_and_non_pass_is_412(world, srv):
-    rd = HttpReleaseReader(srv, "r-surv", timeout=10)
+    rd = HttpReleaseReader(srv, "r-surv", timeout=HANG_GUARD_SECONDS)      # 매달림 감시
     with pytest.raises(BoundaryError) as e:
         rd.get_release_question_bank("rel-none")
     assert e.value.code == "NOT_FOUND"

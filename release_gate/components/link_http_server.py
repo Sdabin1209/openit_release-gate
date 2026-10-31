@@ -17,8 +17,6 @@ import logging
 import re
 import tempfile
 import threading
-import time
-from datetime import datetime, timezone
 from typing import Callable, Optional
 
 import waitress
@@ -173,7 +171,9 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
 class GateApp:
     """WSGI 앱. openit_link.App 위에 서버별 방어만 씌운다: 접근 로그, 예기치 못한 예외의 JSON 본문, 시도 기록용 본문 보관."""
 
-    def __init__(self, registry, *, read_tokens: dict, write_tokens: dict, status: Callable[[], dict], engine=None):
+    def __init__(self, registry, *, read_tokens: dict, write_tokens: dict, status: Callable[[], dict], engine=None, clock):
+        """clock: monotonic()/sleep()/now()/join() 모양의 객체(wiring이 SystemClock을 넣는다, ADR-0019). 필수다: 기본값으로 실제 시계를 읽지 않는다."""
+        self.clock = clock
         self.shutting_down = False
         self.engine = engine  # 승인 결정(decide)에 필요하다. I1·I3가 연결되지 않으면 None
         self.registry, self.status = registry, status
@@ -208,7 +208,7 @@ class GateApp:
 
         t = threading.Thread(target=run, daemon=True)
         t.start()
-        t.join(getattr(self.registry.store, "probe_timeout", 2.0))
+        self.clock.join(t, getattr(self.registry.store, "probe_timeout", 2.0))
         if not box:
             return {**self._last_status, "db_stats_stale": True}
         ok, v = box[0]
@@ -293,7 +293,7 @@ class GateApp:
             except BoundaryError:
                 return False
         user = r.get("user")
-        rec = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "method": "POST", "path": r["pattern"][:64], "status": r["status"],
+        rec = {"at": self.clock.now().strftime("%Y-%m-%dT%H:%M:%SZ"), "method": "POST", "path": r["pattern"][:64], "status": r["status"],
                "code": str(r.get("code") or "")[:32], "role": role[2:], "user": user if user and is_id(user) else None}
         for k in ("submission_id", "release_id", "request_id"):
             v = parsed.get(k)
@@ -320,8 +320,8 @@ class GateHTTPServer(GateApp):
 
     def __init__(self, addr, registry, *, read_tokens: dict, write_tokens: dict,
                  status: Callable[[], dict], engine=None, request_timeout: int = DEFAULT_REQUEST_TIMEOUT,
-                 max_connections: int = DEFAULT_MAX_CONNECTIONS, threads: int = DEFAULT_THREADS):
-        super().__init__(registry, read_tokens=read_tokens, write_tokens=write_tokens, status=status, engine=engine)
+                 max_connections: int = DEFAULT_MAX_CONNECTIONS, threads: int = DEFAULT_THREADS, clock):
+        super().__init__(registry, read_tokens=read_tokens, write_tokens=write_tokens, status=status, engine=engine, clock=clock)
         timeout = max(1, int(request_timeout))
         self._srv = waitress.create_server(
             self, host=addr[0], port=addr[1], threads=threads, connection_limit=max_connections + 2,    # 왜 +2: waitress는 수신 소켓과 trigger 채널도 센다(server.py readable)
@@ -346,9 +346,9 @@ class GateHTTPServer(GateApp):
         self.shutting_down = True
         wasyncore.dispatcher.close(self._srv)         # 수신 소켓만 닫는다(trigger는 응답을 보내려면 필요하다)
         self._srv.trigger.pull_trigger()
-        deadline = time.monotonic() + grace
-        while time.monotonic() < deadline and (self._tasks() or self._flushing()):
-            time.sleep(0.05)
+        deadline = self.clock.monotonic() + grace
+        while self.clock.monotonic() < deadline and (self._tasks() or self._flushing()):
+            self.clock.sleep(0.05)
         left = self._tasks()
         self._stop_loop()
         return left

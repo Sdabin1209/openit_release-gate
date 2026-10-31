@@ -1,6 +1,8 @@
 """수집기·판정 엔진이 I1·I3를 HTTP(boundary_contracts.clients)로 읽어 후보 수집 -> 판정 -> 번들 구성까지 도는지 시험한다."""
 from __future__ import annotations
 
+from conftest import HANG_GUARD_SECONDS
+
 import pytest
 
 from boundary_contracts.clients import HttpModelRegistry, HttpQuestionReader
@@ -18,7 +20,7 @@ def neighbors(world):
 
 
 def clients(srv):
-    return (HttpQuestionReader(srv.url, "n-token", timeout=5), HttpModelRegistry(srv.url, "n-token", timeout=5))
+    return (HttpQuestionReader(srv.url, "n-token", timeout=HANG_GUARD_SECONDS), HttpModelRegistry(srv.url, "n-token", timeout=HANG_GUARD_SECONDS))      # 매달림 감시
 
 
 def test_collect_judge_bundle_over_http(world, neighbors, tmp_path):
@@ -53,8 +55,8 @@ def test_collect_with_configured_ids_over_http(world, neighbors):
 
 
 def test_wrong_token_is_permission_denied_not_deferred(world, neighbors):
-    qc = HttpQuestionReader(neighbors.url, "bad", timeout=5)
-    mc = HttpModelRegistry(neighbors.url, "bad", timeout=5)
+    qc = HttpQuestionReader(neighbors.url, "bad", timeout=HANG_GUARD_SECONDS)      # 매달림 감시
+    mc = HttpModelRegistry(neighbors.url, "bad", timeout=HANG_GUARD_SECONDS)
     from boundary_contracts.errors import BoundaryError
     with pytest.raises(BoundaryError) as e:
         CandidateCollector(qc, mc, world.reg.service).run_once()
@@ -72,7 +74,7 @@ def test_neighbor_down_defers(world, neighbors):
 
 def test_factories_build_real_clients(neighbors, monkeypatch):
     q = factories.http_question_reader(base_url=neighbors.url, token="n-token")
-    m = factories.http_model_registry(base_url=neighbors.url, token="n-token", timeout=3)
+    m = factories.http_model_registry(base_url=neighbors.url, token="n-token", timeout=HANG_GUARD_SECONDS)      # 매달림 감시
     assert isinstance(q, HttpQuestionReader) and isinstance(m, HttpModelRegistry)
     assert q.latest("qs-main", reviewed_only=True)["id"] == "qs-main"
     monkeypatch.setenv("GATE_I1_URL", neighbors.url)
