@@ -181,7 +181,8 @@ class GateEngine:
             adapters, infos = {}, {}
             for role, key in (("LORA_A", "lora_a"), ("LORA_B", "lora_b")):
                 p = self.models.open_adapter(subject[key], Path(tmp) / role)  # 실패는 그대로 올린다
-                infos[role] = adapter_intake.inspect({"role": role, "path": str(p), "manifest": data["manifests"][role]})
+                infos[role] = adapter_intake.inspect({"role": role, "path": str(p), "manifest": data["manifests"][role]},
+                                                 getattr(self.store, "deadline_source", None))
                 adapters[role] = Path(p)
             man = release_builder.build({"release_id": d["release_id"], "created_at": d["decided_at"],
                                          "gate_decision_id": d["decision_id"], "subject": subject,

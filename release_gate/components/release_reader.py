@@ -1,6 +1,7 @@
 """릴리스 읽기·검증(I4 ReleaseReader). 입력 ReleaseId(+저장소 포트), 출력 ReleaseBundle·계약 ReleaseManifest·GateDecision. 저장소를 읽기만 한다(읽기 전용 저장소로도 동작: 게이트 서비스가 멈춰도 읽힌다)."""
 from __future__ import annotations
 
+import hashlib
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -8,6 +9,52 @@ from typing import Optional
 from boundary_contracts import canonical
 from boundary_contracts.errors import BoundaryError
 from boundary_contracts.sdk import ReleaseBundle
+
+
+# 해시를 읽는 조각 크기. 계약 canonical.file_hash와 같은 1 MiB다(결과는 같고, 조각마다 요청 마감을 확인할 수 있게 직접 읽는다: D120, ADR-0020).
+HASH_CHUNK = 1 << 20
+
+
+def _expired(deadline_source) -> bool:
+    d = deadline_source() if deadline_source is not None else None
+    return d is not None and d.remaining() <= 0
+
+
+def _file_hash_bounded(path, deadline_source) -> str:
+    """계약 canonical.file_hash와 같은 값을 조각 단위로 읽어 구한다. 조각마다 요청 마감을 확인하고, 넘기면 503 UNAVAILABLE로 끝낸다(수백 MB~GB 읽기 하나가 gateway 여유를 넘기지 않게)."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            if _expired(deadline_source):
+                raise BoundaryError("UNAVAILABLE", "요청 마감을 넘겼다(D120): 같은 요청을 다시 보내면 된다")
+            chunk = f.read(HASH_CHUNK)
+            if not chunk:
+                break
+            h.update(chunk)
+    return "sha256:" + h.hexdigest()
+
+
+def _tree_hashes_bounded(root: Path, deadline_source) -> tuple:
+    """(파일별 해시 {상대경로: sha256}, 계약 canonical.directory_hash와 같은 디렉터리 해시). 한 번만 읽는다. 링크는 계약과 같이 INTEGRITY_ERROR다."""
+    members = sorted(root.rglob("*"), key=lambda q: q.relative_to(root).as_posix())
+    for p in members:
+        if p.is_symlink():
+            raise BoundaryError("INTEGRITY_ERROR", f"심볼릭 링크는 허용하지 않는다: {p.relative_to(root).as_posix()}")
+    files = {p.relative_to(root).as_posix(): _file_hash_bounded(p, deadline_source) for p in members if p.is_file()}
+    entries = [{"path": rel, "sha256": h} for rel, h in files.items()]
+    return files, canonical.sha256_hash(entries)
+
+
+class _DeadlineReader:
+    """tar에 파일을 담을 때 읽기마다 요청 마감을 확인하는 파일 대리 객체(수 GB 어댑터를 담다 마감을 넘기면 503 UNAVAILABLE)."""
+
+    def __init__(self, f, deadline_source):
+        self._f, self._dl = f, deadline_source
+
+    def read(self, n=-1):
+        if _expired(self._dl):
+            raise BoundaryError("UNAVAILABLE", "요청 마감을 넘겼다(D120): 같은 요청을 다시 보내면 된다")
+        return self._f.read(n)
 
 
 ROLES = ("LORA_A", "LORA_B")   # 릴리스에 묶는 어댑터 역할(계약 ReleaseManifest.adapters의 키)
@@ -48,15 +95,20 @@ def _verify_release(store, release_id: str, dest: Optional[Path]) -> ReleaseBund
     if canonical.sha256_hash(bank) != manifest["question_set"]["content_hash"]:
         raise BoundaryError("INTEGRITY_ERROR", f"묶음의 문항 세트 해시가 매니페스트와 다르다: {release_id}")
     expected = manifest.get("adapters", {})
+    deadline = getattr(store, "deadline_source", None)      # 현재 요청의 마감을 돌려주는 함수(D120)
     for role in ROLES:
         if role not in adapters or role not in expected:
             raise BoundaryError("INTEGRITY_ERROR", f"묶음에 {role} 어댑터가 없다: {release_id}")
-        # 링크 거부는 계약 directory_hash가 한다(CONVENTIONS 8절, 2.2.0)
-        if canonical.directory_hash(adapters[role]) != expected[role]["adapter_hash"]:
+        # 한 번만 읽는다: 디렉터리 해시(계약 directory_hash와 같은 값, 링크는 INTEGRITY_ERROR)와 시스템 프롬프트 해시가 같은 파일별 해시를 쓴다.
+        # 조각마다 요청 마감을 확인한다(D120): 큰 어댑터를 읽다 마감을 넘기면 503 UNAVAILABLE로 끝난다(저장소 변경 없음).
+        files, dir_hash = _tree_hashes_bounded(Path(adapters[role]), deadline)
+        if dir_hash != expected[role]["adapter_hash"]:
             raise BoundaryError("INTEGRITY_ERROR", f"묶음의 {role} 어댑터 해시가 다르다: {release_id}")
         sp = expected[role].get("system_prompt") or {}
-        f = Path(adapters[role]) / sp.get("path", "")
-        if not sp or not f.is_file() or canonical.file_hash(f) != sp.get("sha256"):
+        sp_path = sp.get("path", "")
+        f = Path(adapters[role]) / sp_path
+        have = files.get(sp_path) if sp_path in files else (_file_hash_bounded(f, deadline) if f.is_file() else None)
+        if not sp or have != sp.get("sha256"):
             raise BoundaryError("INTEGRITY_ERROR", f"묶음의 {role} 시스템 프롬프트 파일이 없거나 해시가 다르다: {release_id}")
     return ReleaseBundle(manifest, bank, adapters)
 
@@ -144,4 +196,6 @@ def write_bundle_tar(store, release_id: str, out) -> None:
                 root = Path(b.adapters[role])
                 for p in sorted(root.rglob("*")):
                     if p.is_file() and not p.is_symlink():
-                        tar.add(p, arcname=f"adapters/{role}/{p.relative_to(root).as_posix()}", recursive=False)
+                        info = tar.gettarinfo(str(p), arcname=f"adapters/{role}/{p.relative_to(root).as_posix()}")
+                        with open(p, "rb") as fh:
+                            tar.addfile(info, _DeadlineReader(fh, getattr(store, "deadline_source", None)))      # 조각마다 요청 마감 확인(D120)
