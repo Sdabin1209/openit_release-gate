@@ -35,7 +35,7 @@ from .wiring.loop import Loop
 from .wiring.registry import open_registry
 from .wiring.schema_set import SchemaSet
 from .wiring.survey import SurveySchema
-from .wiring.util import SystemClock, utc_now
+from .wiring.util import DEFAULT_REQUEST_DEADLINE_SECONDS, RequestDeadlines, SystemClock, utc_now
 
 log = logging.getLogger("gate")
 EX_TEMPFAIL = 75
@@ -292,12 +292,15 @@ def serve() -> None:
     schemas, survey, config, reg = _build(cfg)
     policy = GatePolicy.from_file(os.environ.get("GATE_POLICY_FILE"))
     questions, models = _neighbors(cfg)
+    # D120: 사람용 요청마다 서버 쪽 요청 전체 마감(기본 12초 = gateway 상한 1초+13초 - 여유, ADR-0020). 저장소와 이웃 읽기가 남은 시간을 상한으로 쓴다
+    deadlines = RequestDeadlines(SystemClock(), _seconds("GATE_REQUEST_DEADLINE_SECONDS", DEFAULT_REQUEST_DEADLINE_SECONDS))
+    reg.store.deadline_source = deadlines.current
     tasks, judging, engine = [], "disabled (I1/I3 미연결: 자동 검사와 승인 결정 불가)", None
     if questions is not None and models is not None:
         if not config.model_runtime_version:
             # 왜: 승인(릴리스 매니페스트 생성)이 되는 서비스는 이웃 버전을 모른 채 뜨지 않는다(결정표 2절). 환경 변수로 덮어쓸 수 있다
             raise SystemExit("model-runtime 버전을 읽지 못했다(설치되지 않음). GATE_MODEL_RUNTIME_VERSION을 주거나 설치한다")
-        engine = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry())
+        engine = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry(), deadline_source=deadlines.current)
         tasks.append(engine.process_pending)
         judging = "enabled"
     # 60초: 최초 구현의 기본값, 근거 기록 없음, 측정 안 함(docs/adr/0006)
@@ -317,7 +320,7 @@ def serve() -> None:
     srv = GateHTTPServer(("0.0.0.0", port), reg, read_tokens=read_tokens,
                          write_tokens=_tokens("GATE_WRITE_TOKENS", True), status=status, engine=engine,
                          request_timeout=_seconds("GATE_REQUEST_TIMEOUT_SECONDS", DEFAULT_REQUEST_TIMEOUT),
-                         max_connections=_opt_int("GATE_MAX_CONNECTIONS") or DEFAULT_MAX_CONNECTIONS, clock=SystemClock())
+                         max_connections=_opt_int("GATE_MAX_CONNECTIONS") or DEFAULT_MAX_CONNECTIONS, clock=SystemClock(), deadlines=deadlines)
     log.info("gate-service 시작: policy=%s judging=%s action-rules=%s model-runtime=%s", policy.version, judging,
              config.action_rules_version, config.model_runtime_version)
     # 종료 유예 20초: 근거 기록 없음(설계 판단, 측정 안 함). deploy의 stop_grace_period가 이보다 길어야 한다(docs/adr/0008)

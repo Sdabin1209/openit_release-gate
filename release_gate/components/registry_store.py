@@ -69,6 +69,10 @@ def _same(a: dict, b: dict, what: str) -> None:
 
 
 class Store:
+    deadline_source = None      # 현재 요청의 마감을 돌려주는 함수. wiring이 넣는다(D120). 문장·트랜잭션 시작 전에 확인한다
+
+    def _check_deadline(self) -> None:
+        _deadline_check(self.deadline_source)
     """저장소 인터페이스. 구현은 모든 메서드를 원자적으로 처리한다."""
 
     kind = "memory"   # /readyz에 보이는 DB 종류: memory, sqlite, postgresql (접속 정보는 싣지 않는다)
@@ -163,6 +167,7 @@ class MemoryStore(Store):
             return True
 
     def put_submission(self, record, subject_key):
+        self._check_deadline()
         with self._lock:
             sid = self._sub_by_key.get(subject_key)
             if sid:
@@ -216,6 +221,7 @@ class MemoryStore(Store):
             return json.loads(json.dumps(self._work[submission_id]))
 
     def update_work(self, submission_id, fn):
+        self._check_deadline()
         with self._lock:
             cur = self.get_work(submission_id)
             new = fn(json.loads(json.dumps(cur)))
@@ -234,6 +240,7 @@ class MemoryStore(Store):
             return json.loads(json.dumps(self._release_reports.get(release_id, {})))
 
     def commit_decision(self, decision, work, release=None, approval=None):
+        self._check_deadline()
         with self._lock:
             did = decision["decision_id"]
             if did in self._decision_by_id:
@@ -339,6 +346,7 @@ class MemoryStore(Store):
             return json.loads(json.dumps(self._pointers))
 
     def switch_pointer(self, expected_version, new_pointer, receipt=None):
+        self._check_deadline()
         with self._lock:
             cur = self._pointers[-1]["pointer_version"] if self._pointers else 0
             if cur != expected_version or new_pointer["pointer_version"] != cur + 1:
@@ -358,6 +366,7 @@ class MemoryStore(Store):
             return (r[0], json.loads(json.dumps(r[1]))) if r else None
 
     def put_receipt(self, request_id, request_hash, receipt):
+        self._check_deadline()
         with self._lock:
             if request_id not in self._receipts:
                 self._receipts[request_id] = (request_hash, json.loads(json.dumps(receipt)))
@@ -365,6 +374,13 @@ class MemoryStore(Store):
 
 
 # --------------------------------------------------------------------------- SQLite
+
+def _deadline_check(source) -> None:
+    """요청 마감(D120)을 넘겼으면 더 진행하지 않는다. 마감이 없으면(주기 작업, 잡) 제한이 없다. source: 현재 요청의 마감을 돌려주는 함수."""
+    d = source() if source is not None else None
+    if d is not None and d.remaining() <= 0:
+        raise BoundaryError("UNAVAILABLE", "요청 마감을 넘겼다(D120): 같은 요청을 다시 보내면 된다")
+
 
 class ReleaseFiles:
     protection_rule = None   # (store, keep) -> 보호할 release_id 집합. wiring이 retention.protected_ids를 넣는다
@@ -576,6 +592,7 @@ class SqliteStore(ReleaseFiles, Store):
             self.s = s
 
         def __enter__(self):
+            self.s._check_deadline()
             self.s._lock.acquire()
             try:
                 self.s._c.execute("BEGIN IMMEDIATE")
@@ -592,6 +609,7 @@ class SqliteStore(ReleaseFiles, Store):
             return False
 
     def _q(self, sql, args=()):
+        self._check_deadline()
         try:
             with self._lock:
                 return self._c.execute(sql, args).fetchall()
@@ -831,6 +849,12 @@ def _safe(e: Exception) -> str:
     return f"{type(e).__name__}" + (f" sqlstate={getattr(e, 'sqlstate', None)}" if getattr(e, "sqlstate", None) else "")
 
 
+def _cap(source):
+    """요청 마감까지 남은 시간(없으면 None)."""
+    d = source() if source is not None else None
+    return None if d is None else d.remaining()
+
+
 class _StdlibScheduler:
     """타이머와 스레드 합류만 하는 기본 구현(시간을 읽지 않는다). wiring이 SystemClock을 넣으면 그것을 쓴다."""
 
@@ -858,8 +882,9 @@ def _abort(conn) -> None:
 class _Armed:
     """문장 하나(또는 BEGIN/COMMIT 하나) 동안만 켜 두는 감시. 상한+1초 안에 안 끝나면 연결을 끊는다."""
 
-    def __init__(self, conn, limit: float, scheduler):
-        self._t = scheduler.timer(limit + 1.0, _abort, (conn,))
+    def __init__(self, conn, limit: float, scheduler, cap=None):
+        # cap: 요청 마감까지 남은 시간(D120). 있으면 그보다 늦게 연결을 끊지 않는다(남은 시간이 고정 상한보다 짧으면 남은 시간)
+        self._t = scheduler.timer(limit + 1.0 if cap is None else min(limit + 1.0, cap), _abort, (conn,))
 
     def __enter__(self):
         self._t.start()
@@ -870,30 +895,32 @@ class _Armed:
 
 
 class _GuardedTxn:
-    def __init__(self, conn, cm, limit, scheduler):
-        self._conn, self._cm, self._limit, self._sch = conn, cm, limit, scheduler
+    def __init__(self, conn, cm, limit, scheduler, deadline_source=None):
+        self._conn, self._cm, self._limit, self._sch, self._dl = conn, cm, limit, scheduler, deadline_source
 
     def __enter__(self):
-        with _Armed(self._conn, self._limit, self._sch):
+        _deadline_check(self._dl)
+        with _Armed(self._conn, self._limit, self._sch, _cap(self._dl)):
             return self._cm.__enter__()
 
     def __exit__(self, et, ev, tb):
-        with _Armed(self._conn, self._limit, self._sch):
+        with _Armed(self._conn, self._limit, self._sch, _cap(self._dl)):
             return self._cm.__exit__(et, ev, tb)
 
 
 class _Guarded:
     """psycopg 연결을 감싸 모든 문장·트랜잭션 경계에 상한을 건다. 나머지 속성(closed, broken, close...)은 그대로 넘긴다."""
 
-    def __init__(self, conn, limit: float, scheduler):
-        self._conn, self._limit, self._sch = conn, limit, scheduler
+    def __init__(self, conn, limit: float, scheduler, deadline_source=None):
+        self._conn, self._limit, self._sch, self._dl = conn, limit, scheduler, deadline_source
 
     def execute(self, *a, **k):
-        with _Armed(self._conn, self._limit, self._sch):
+        _deadline_check(self._dl)
+        with _Armed(self._conn, self._limit, self._sch, _cap(self._dl)):
             return self._conn.execute(*a, **k)
 
     def transaction(self, *a, **k):
-        return _GuardedTxn(self._conn, self._conn.transaction(*a, **k), self._limit, self._sch)
+        return _GuardedTxn(self._conn, self._conn.transaction(*a, **k), self._limit, self._sch, self._dl)
 
     def __getattr__(self, name):
         return getattr(self._conn, name)
@@ -936,7 +963,7 @@ class PostgresStore(ReleaseFiles, Store):
         if self._c is None or self._c.closed or self._c.broken:
             try:
                 self._c = _Guarded(psycopg.connect(autocommit=True, **self._params(self.connect_timeout, self.statement_timeout)),
-                                   self.statement_timeout, self._sch)
+                                   self.statement_timeout, self._sch, lambda: self.deadline_source() if self.deadline_source else None)
             except psycopg.Error as e:
                 self._c = None
                 raise BoundaryError("UNAVAILABLE", f"PostgreSQL에 연결할 수 없다: {_safe(e)}") from None
@@ -947,6 +974,7 @@ class PostgresStore(ReleaseFiles, Store):
             self.s, self.lock_id = s, lock_id
 
         def __enter__(self):
+            self.s._check_deadline()
             self.s._lock.acquire()
             try:
                 self.cm = self.s._conn().transaction()
@@ -970,6 +998,7 @@ class PostgresStore(ReleaseFiles, Store):
                 self.s._lock.release()
 
     def _q(self, sql, args=()):
+        self._check_deadline()
         try:
             with self._lock:
                 return self._conn().execute(sql, args).fetchall()

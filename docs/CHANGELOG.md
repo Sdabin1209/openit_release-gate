@@ -4,7 +4,8 @@
 
 - model-runtime 고정 v0.11.4 -> v0.11.7(`requirements-libs.txt`). 코드는 model-runtime을 가져다 쓰지 않아 변경 없음.
 - `deploy-exposure.json`의 사람용 경로 시한을 gateway 시간 사슬(D119, deploy ADR 0048)에 맞춰 `{"dial": 1000, "response_header": 13000}`으로.
-- 서버가 머리글을 내기까지의 최악 시간(설정 값의 합)을 `tests/test_exposure_budget.py`로 고정했다. 읽기 경로(3~6초)는 13초 안이고, **활성화 27초, 롤백 36초, 승인 128초(DB 문장 16개 x 3초 + 이웃 호출 8개 x 10초)는 넘는다** — 헤드가 사슬을 다시 정한다(docs/boundary.md).
+- **요청 전체 마감 12.0초(D120, ADR-0020)**: 사람용 `/v1/*` 요청마다 주입한 시계로 마감을 정하고, DB 문장·이웃 호출은 남은 시간을 상한으로 쓰며 넘기면 503 UNAVAILABLE(retryable)·되돌림이다. 설정 `GATE_REQUEST_DEADLINE_SECONDS`. 와이어 형식은 그대로다.
+- 서버가 머리글을 내기까지의 최악 시간(설정 값의 합)을 `tests/test_exposure_budget.py`로 고정했다. 읽기 경로(3~6초)는 13초 안이고, 호출별 합은 활성화 27초, 롤백 36초, 승인 128초(DB 문장 16개 x 3초 + 이웃 호출 8개 x 10초)로 13초를 넘지만 요청 전체 마감 12초가 자른다(docs/boundary.md).
 
 ## (미배포) 만드는 쪽 검증 보강 (U424, R7)
 

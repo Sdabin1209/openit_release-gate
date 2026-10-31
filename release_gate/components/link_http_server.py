@@ -195,9 +195,11 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
 class GateApp:
     """WSGI 앱. openit_link.App 위에 서버별 방어만 씌운다: 접근 로그, 예기치 못한 예외의 JSON 본문, 시도 기록용 본문 보관."""
 
-    def __init__(self, registry, *, read_tokens: dict, write_tokens: dict, status: Callable[[], dict], engine=None, clock):
-        """clock: monotonic()/sleep()/now()/join() 모양의 객체(wiring이 SystemClock을 넣는다, ADR-0019). 필수다: 기본값으로 실제 시계를 읽지 않는다."""
+    def __init__(self, registry, *, read_tokens: dict, write_tokens: dict, status: Callable[[], dict], engine=None, clock, deadlines=None):
+        """deadlines: 사람용(/v1/*) 요청마다 서버 쪽 요청 전체 마감(D120)을 정하고 거두는 보관소(wiring/util.py RequestDeadlines). 없으면 마감이 없다.
+        clock: monotonic()/sleep()/now()/join() 모양의 객체(wiring이 SystemClock을 넣는다, ADR-0019). 필수다: 기본값으로 실제 시계를 읽지 않는다."""
         self.clock = clock
+        self.deadlines = deadlines
         self.shutting_down = False
         self.engine = engine  # 승인 결정(decide)에 필요하다. I1·I3가 연결되지 않으면 None
         self.registry, self.status = registry, status
@@ -279,7 +281,14 @@ class GateApp:
             environ["wsgi.input"] = io.BytesIO(raw)
         self._local.raw = raw
         try:
-            status, headers, body = self._app.handle(environ)
+            # D120: 요청 시작에 마감을 정한다. 저장소·이웃 읽기가 current()로 보고 남은 시간을 상한으로 쓴다. 요청이 끝나면 거둔다
+            if self.deadlines is not None and path.startswith("/v1/"):
+                self.deadlines.begin()
+            try:
+                status, headers, body = self._app.handle(environ)
+            finally:
+                if self.deadlines is not None:
+                    self.deadlines.end()
         except Exception:  # 서비스는 죽지 않는다. 원인은 로그에 남긴다.
             log.exception("처리 중 예외")
             # 왜: BoundaryError 코드 열거에 내부 오류가 없다(CONVENTIONS 3절). 클라이언트는 5xx를 UNAVAILABLE로 읽으므로(HTTP.md 12행) 같은 코드로 맞춘다.
@@ -349,8 +358,8 @@ class GateHTTPServer(GateApp):
 
     def __init__(self, addr, registry, *, read_tokens: dict, write_tokens: dict,
                  status: Callable[[], dict], engine=None, request_timeout: int = DEFAULT_REQUEST_TIMEOUT,
-                 max_connections: int = DEFAULT_MAX_CONNECTIONS, threads: int = DEFAULT_THREADS, clock):
-        super().__init__(registry, read_tokens=read_tokens, write_tokens=write_tokens, status=status, engine=engine, clock=clock)
+                 max_connections: int = DEFAULT_MAX_CONNECTIONS, threads: int = DEFAULT_THREADS, clock, deadlines=None):
+        super().__init__(registry, read_tokens=read_tokens, write_tokens=write_tokens, status=status, engine=engine, clock=clock, deadlines=deadlines)
         timeout = max(1, int(request_timeout))
         self._srv = waitress.create_server(
             self, host=addr[0], port=addr[1], threads=threads, connection_limit=max_connections + 2,    # 왜 +2: waitress는 수신 소켓과 trigger 채널도 센다(server.py readable)

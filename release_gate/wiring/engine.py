@@ -35,16 +35,16 @@ def _sub_hex(sid: str) -> str:
 
 class GateEngine:
     def __init__(self, store, schemas: SchemaSet, survey: SurveySchema, config: GateConfig, policy: GatePolicy,
-                 questions, models, checks: Optional[CheckRegistry] = None, clock: Clock = utc_now):
+                 questions, models, checks: Optional[CheckRegistry] = None, clock: Clock = utc_now, deadline_source=None):
         self.store, self.schemas, self.survey, self.config = store, schemas, survey, config
         self.policy, self.clock = policy, clock
-        self.models = models if isinstance(models, ModelsLink) else ModelsLink(models)
+        self.models = models if isinstance(models, ModelsLink) else ModelsLink(models, deadline_source)      # deadline_source: 현재 요청의 마감(D120)
         self.checks = checks or CheckRegistry()
         # 왜: 안전 관문이므로 필수 검사가 없는 구성은 시작 때 거부한다(fail-closed). INTERFACES I5 "필수 검사는 gate_policy_version이 정한다", D53, RG-16
         missing = [k for k in policy.required_checks if not self.checks.get(k)]
         if missing:
             raise ValueError("필수 자동 검사가 등록되지 않았다: " + ", ".join(missing))
-        self.loader = SubjectLoader(questions, self.models, schemas, survey)
+        self.loader = SubjectLoader(questions, self.models, schemas, survey, deadline_source)
         self.last_error: Optional[dict] = None   # 직전 process_pending의 문제(/readyz가 보여 준다). 없으면 None
 
     def _versions(self) -> dict:

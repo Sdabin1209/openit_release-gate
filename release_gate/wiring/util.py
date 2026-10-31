@@ -34,6 +34,39 @@ class SystemClock:
         return t
 
 
+# 사람용(gateway를 지나는) 요청 하나의 서버 쪽 전체 마감(초). 값의 근거: D120, gateway 상한(dial 1초 + response_header 13초) 안에 서버가 끝나게 하는 마감 - 여유 2초(ADR-0020).
+# 측정 값이 아니라 사슬 설계 값이다(화면 대기 > gateway > 서버). 설정: GATE_REQUEST_DEADLINE_SECONDS.
+DEFAULT_REQUEST_DEADLINE_SECONDS = 12.0
+
+
+class Deadline:
+    """요청 하나의 마감. 주입한 시계로 잰다(ADR-0019). 각 DB 문장·이웃 호출은 남은 시간을 상한으로 쓰고, 0 이하이면 더 진행하지 않는다."""
+
+    def __init__(self, clock, seconds: float):
+        self._clock, self._end = clock, clock.monotonic() + seconds
+
+    def remaining(self) -> float:
+        return self._end - self._clock.monotonic()
+
+
+class RequestDeadlines:
+    """스레드마다 현재 요청의 마감을 쥐는 보관소. HTTP 면이 요청 시작에 begin(), 끝에 end()를 부르고, 저장소·이웃 읽기는 current()로 마감을 본다
+    (마감이 없는 곳 - 주기 작업, 잡 - 에서는 None이라 제한이 없다)."""
+
+    def __init__(self, clock, seconds: float = DEFAULT_REQUEST_DEADLINE_SECONDS):
+        self._clock, self.seconds, self._local = clock, seconds, threading.local()
+
+    def begin(self) -> Deadline:
+        d = self._local.deadline = Deadline(self._clock, self.seconds)
+        return d
+
+    def end(self) -> None:
+        self._local.deadline = None
+
+    def current(self):
+        return getattr(self._local, "deadline", None)
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 

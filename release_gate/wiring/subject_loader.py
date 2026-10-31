@@ -8,9 +8,9 @@ from ..components.link_questions import QuestionsLink
 class SubjectLoader:
     """UNAVAILABLE은 그대로 올려 나중에 다시 시도하게 한다. survey는 문진 스키마 포트(없으면 적합 검사를 건너뛴다)."""
 
-    def __init__(self, questions, models, schemas=None, survey=None):
-        self.q = questions if isinstance(questions, QuestionsLink) else QuestionsLink(questions)
-        self.m = models if isinstance(models, ModelsLink) else ModelsLink(models)
+    def __init__(self, questions, models, schemas=None, survey=None, deadline_source=None):
+        self.q = questions if isinstance(questions, QuestionsLink) else QuestionsLink(questions, deadline_source)
+        self.m = models if isinstance(models, ModelsLink) else ModelsLink(models, deadline_source)
         self.survey = survey
 
     def load(self, subject: dict) -> dict:

@@ -1,5 +1,5 @@
 """노출 선언(deploy-exposure.json)의 response_header 상한과 이 서버가 머리글을 내기까지의 최악 시간(D119, deploy ADR 0048).
-시간을 재지 않는다. 최악 시간 = (요청이 쓰는 DB 문장 수 x 문장 시한) + (이웃 호출 수 x 읽기 시한)을 **설정 값**으로 계산한다:
+시간을 재지 않는다. D120 이후 요청 전체 마감이 이 합을 자른다(위 assert). 호출별 합(마감 없을 때)의 최악 시간 = (요청이 쓰는 DB 문장 수 x 문장 시한) + (이웃 호출 수 x 읽기 시한)을 **설정 값**으로 계산한다:
 문장 수는 SQLite 추적 콜백으로, 이웃 호출 수는 호출을 세는 대리 객체로 센다(둘 다 사건 수이고 시계가 아니다).
 '느리지만 성공'하는 호출이 시한 직전까지 이어지는 경우의 합이다(첫 실패에서는 오류로 곧 끝나므로 더 짧다)."""
 import json
@@ -10,6 +10,7 @@ import pytest
 from conftest import World
 from release_gate import factories, sqlite_registry
 from release_gate.components import registry_store
+from release_gate.wiring.util import DEFAULT_REQUEST_DEADLINE_SECONDS
 
 ROOT = Path(__file__).resolve().parents[1]
 DECLARED_HUMAN = {"dial": 1000, "response_header": 13000}
@@ -101,8 +102,8 @@ def test_worst_case_header_time_vs_declared_response_header(w, monkeypatch):
     upstream = {"POST /v1/approvals": len(calls)}
 
     table = {p: n * STATEMENT_S + upstream.get(p, 0) * up_s for p, n in stmts.items()}
-    fits = {p for p, t in table.items() if t < limit_s}
-    # 읽기 경로는 상한(13초) 안에 든다. 활성화·롤백·승인은 '느리지만 성공'하는 호출이 시한 직전까지 이어지는 최악의 합이 상한을 넘는다(U427 보고:
-    # 헤드가 사슬을 다시 정한다). 숫자(문장 수 x 3초 + 이웃 호출 수 x 10초)가 바뀌면 이 시험이 알려 준다.
-    assert fits == {"GET /v1/submissions", "GET /v1/submissions/{id}", "GET /v1/active-pointer", "GET /v1/releases"}, table
-    assert (stmts["POST /v1/activate"], stmts["POST /v1/rollback"], stmts["POST /v1/approvals"], upstream["POST /v1/approvals"]) == (9, 12, 16, 8), (stmts, upstream)
+    # D120: 사람용 요청마다 서버 쪽 요청 전체 마감이 있고 각 문장·이웃 호출은 남은 시간을 상한으로 쓴다. 그래서 어느 경로든 응답 머리글까지의 최악은
+    # min(호출별 시한의 합, 요청 전체 마감)이다. 읽기 경로는 합 자체가 상한 안이고, 활성화·롤백·승인은 합이 길어도 마감이 자른다.
+    assert DEFAULT_REQUEST_DEADLINE_SECONDS < limit_s, (DEFAULT_REQUEST_DEADLINE_SECONDS, limit_s)
+    for path, t in table.items():
+        assert min(t, DEFAULT_REQUEST_DEADLINE_SECONDS) < limit_s, (path, t)

@@ -7,6 +7,7 @@ UNAVAILABLE과 인증 실패는 그대로 올린다(인증 실패는 내용의 �
 """
 from __future__ import annotations
 
+import copy
 import os
 from typing import Iterator, Optional
 
@@ -31,15 +32,48 @@ def item_failure(e: BoundaryError) -> bool:
     return e.code in ("INTEGRITY_ERROR", "UNSUPPORTED_VERSION", "INVALID_RECORD")
 
 
+
+def _bounded(client, deadline):
+    """요청 마감(D120)이 있으면 이 호출의 읽기 시한을 min(고정 시한, 남은 시간)으로 한 클라이언트를 돌려준다. 남은 시간이 0 이하이면 호출하지 않는다.
+    클라이언트가 with_timeout을 지원하지 않으면(시험용 대역) 그대로 쓴다."""
+    if deadline is None:
+        return client
+    rem = deadline.remaining()
+    if rem <= 0:
+        raise BoundaryError("UNAVAILABLE", "요청 마감을 넘겼다(D120): 같은 요청을 다시 보내면 된다")
+    with_timeout, fixed = getattr(client, "with_timeout", None), getattr(client, "read_timeout", None)
+    return client if with_timeout is None or fixed is None else with_timeout(min(fixed, rem))
+
+
+def _bounded_class(cls):
+    """계약 HTTP 클라이언트에 호출별 읽기 시한(with_timeout)을 더한 하위 클래스. 고정 시한은 read_timeout에 둔다."""
+    class Bounded(cls):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            self.read_timeout = kw.get("timeout")
+
+        def with_timeout(self, seconds):
+            c = copy.copy(self)
+            c._timeout = seconds        # 계약 클라이언트의 읽기 시한 필드(시험이 값이 걸리는지 확인한다)
+            return c
+    return Bounded
+
+
 class QuestionsLink:
-    def __init__(self, client):
+    def __init__(self, client, deadline_source=None):
         self.client = client
+        self._deadline = deadline_source      # 현재 요청의 마감을 돌려주는 함수(D120). 없으면 제한이 없다
+
+    @property
+    def _c(self):
+        """호출에 쓸 클라이언트. 요청 마감이 있으면 남은 시간이 고정 읽기 시한보다 짧을 때 남은 시간을 시한으로 쓴다. 남은 시간이 0 이하이면 더 진행하지 않는다."""
+        return _bounded(self.client, self._deadline() if self._deadline else None)
 
     def latest_reviewed(self, ids: Optional[list] = None) -> dict:
         refs, skipped = [], []
-        for qid in (ids if ids is not None else list(_all_ids(self.client.list_ids))):
+        for qid in (ids if ids is not None else list(_all_ids(self._c.list_ids))):
             try:
-                refs.append(self.client.latest(qid, reviewed_only=True))
+                refs.append(self._c.latest(qid, reviewed_only=True))
             except BoundaryError as e:
                 if e.code == "NOT_FOUND":
                     continue
@@ -53,7 +87,7 @@ class QuestionsLink:
     def read_subject(self, qref: dict) -> dict:
         out = {"bank": None, "reviews": [], "reviews_ok": False, "problems": []}
         try:
-            bank = self.client.get_question_bank(qref)
+            bank = self._c.get_question_bank(qref)
             if canonical.sha256_hash(bank) != qref["content_hash"]:
                 out["problems"].append("문항 세트 내용의 해시가 참조와 다르다")
             else:
@@ -63,7 +97,7 @@ class QuestionsLink:
                 raise
             out["problems"].append(f"문항 세트를 읽지 못했다: {e.code}")
         try:
-            out["reviews"] = list(self.client.get_reviews(qref))
+            out["reviews"] = list(self._c.get_reviews(qref))
             out["reviews_ok"] = True
         except BoundaryError as e:
             if e.retryable or e.code == "PERMISSION_DENIED":
@@ -84,4 +118,4 @@ def http_question_reader(base_url=None, token=None, timeout=None):
     tok = token or read_secret("GATE_I1_TOKEN")
     if not url or not tok:
         raise SystemExit("GATE_I1_URL과 GATE_I1_TOKEN이 필요하다")
-    return HttpQuestionReader(base_url=url, token=tok, timeout=float(timeout or os.environ.get("GATE_I1_TIMEOUT", "10")))
+    return _bounded_class(HttpQuestionReader)(base_url=url, token=tok, timeout=float(timeout or os.environ.get("GATE_I1_TIMEOUT", "10")))
