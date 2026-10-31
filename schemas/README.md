@@ -3,7 +3,7 @@
 타입 하나에 파일 하나이고 파일 이름이 타입 이름이다. `examples/<타입>.valid*.json`은 통과해야 하고 `<타입>.invalid*.json`은 거부되어야 한다
 (`tests/test_structure.py`가 모두 확인한다). 코드 타입과 검증 함수는 여기서 **생성**한다(`release_gate/types/`, 명령은 README 4절). 컴포넌트는 입력을 받으면 `validate(타입, 값)` 하나로 검사한다.
 
-영역 사이 타입(GateSubmission, GateDecision, ReleaseManifest, ReviewReport, ActivePointer 등)은 복사하지 않고 `boundary-contracts v3.1.1`을 쓴다(`validate_contract`).
+영역 사이 타입(GateSubmission, GateDecision, ReleaseManifest, ReviewReport, ActivePointer 등)은 복사하지 않고 `boundary-contracts v3.1.2`을 쓴다(`validate_contract`).
 내부 스키마 안에서 계약 타입이 필요한 자리(예: 참조 3개)는 "계약 ArtifactRef" 같은 설명과 최소 모양만 두고 값은 경계에서 계약으로 검증된 것으로 본다.
 
 ## 타입 목록

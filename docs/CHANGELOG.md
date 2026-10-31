@@ -1,5 +1,9 @@
 # 변경 이력
 
+## (미배포) 최종 고정 (U430)
+
+- boundary-contracts v3.1.1 -> v3.1.2, openit-link v0.4.1 -> v0.4.3, model-runtime v0.11.7 -> v0.11.8. 코드 변경 없음.
+
 ## (미배포) 생산자 검증 3건 (U429 중 헤드 대조, R7)
 
 - 후보 수집기(`wiring/collector.py`)는 제출 요청을 보내기 전에 계약 `GateSubmissionRequest`로 검증한다.
