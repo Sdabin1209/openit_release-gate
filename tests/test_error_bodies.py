@@ -60,7 +60,7 @@ def test_401_activate_without_user_header(world):
 # (이전 시험 test_503_connection_cap는 waitress 전환으로 대체됐다: 상한 초과는 503이 아니라 대기. tests/test_u4a_waitress.py 참고)
 
 
-def test_500_unexpected_exception(world, monkeypatch):
+def test_unexpected_exception_is_503_unavailable(world, monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("boom")
     monkeypatch.setattr(world.reg.reader, "get_active_pointer", boom)
@@ -69,7 +69,7 @@ def test_500_unexpected_exception(world, monkeypatch):
         req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/active-pointer", headers={"Authorization": "Bearer rt"})
         with pytest.raises(urllib.error.HTTPError) as ei:
             urllib.request.urlopen(req)
-        assert ei.value.code == 500
+        assert ei.value.code == 503      # link 0.4.3이 예기치 못한 예외를 BoundaryError(UNAVAILABLE) 503으로 낸다(이전 500, CR-0010)
         _check(json.loads(ei.value.read()))
     finally:
         srv.shutdown()

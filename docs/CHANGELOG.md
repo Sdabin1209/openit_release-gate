@@ -2,7 +2,7 @@
 
 ## (미배포) 최종 고정 (U430)
 
-- boundary-contracts v3.1.1 -> v3.1.2, openit-link v0.4.1 -> v0.4.3, model-runtime v0.11.7 -> v0.11.8. 코드 변경 없음.
+- boundary-contracts v3.1.1 -> v3.1.2, openit-link v0.4.1 -> v0.4.3, model-runtime v0.11.7 -> v0.11.8. 코드 변경 없음. **동작 차이 하나**: link 0.4.3은 처리 중 예기치 못한 예외를 500이 아니라 503 UNAVAILABLE(BoundaryError 본문)으로 낸다(시험 `test_unexpected_exception_is_503_unavailable`).
 
 ## (미배포) 생산자 검증 3건 (U429 중 헤드 대조, R7)
 
