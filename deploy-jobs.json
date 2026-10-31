@@ -1,0 +1,18 @@
+{
+  "jobs": [
+    {"name": "collect", "argv": ["python", "-m", "release_gate", "collect", "--config", "/config/collect.json"], "idempotent": true,
+     "secret_files": ["GATE_DATABASE_URL_FILE", "GATE_I1_TOKEN_FILE", "GATE_I3_TOKEN_FILE"],
+     "config": {"container_path": "/config/collect.json", "schema": "GateJobConfig"},
+     "needs": ["postgres", "gate-data", "release-network", "authoring-network"],
+     "env": ["GATE_I1_URL", "GATE_I3_URL", "GATE_I1_FACTORY", "GATE_I3_FACTORY"]},
+    {"name": "judge", "argv": ["python", "-m", "release_gate", "judge", "--config", "/config/judge.json"], "idempotent": true,
+     "secret_files": ["GATE_DATABASE_URL_FILE", "GATE_I1_TOKEN_FILE", "GATE_I3_TOKEN_FILE"],
+     "config": {"container_path": "/config/judge.json", "schema": "GateJobConfig"},
+     "needs": ["postgres", "gate-data", "release-network", "authoring-network"],
+     "env": ["GATE_I1_URL", "GATE_I3_URL", "GATE_I1_FACTORY", "GATE_I3_FACTORY"]},
+    {"name": "prune", "argv": ["python", "-m", "release_gate", "prune"], "idempotent": true,
+     "secret_files": ["GATE_DATABASE_URL_FILE"],
+     "needs": ["postgres", "gate-data"],
+     "env": ["GATE_RETAIN_KEEP_RELEASES", "GATE_RETAIN_REJECTED_DAYS", "GATE_RETAIN_ATTEMPTS_DAYS"]}
+  ]
+}

@@ -127,6 +127,12 @@ def test_missing_or_invalid_exposure_file_fails_the_build(tmp_path, fake_docker)
     (src / "deploy-exposure.json").write_text('{"service": "release-gate", "routes": []}')
     r = run(tmp_path, req, docker)
     assert r.returncode != 0 and "Exposure를 어긴다" in r.stderr and not marker.exists()
+    (src / "deploy-exposure.json").write_text((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
+    r = run(tmp_path, req, docker)
+    assert r.returncode != 0 and "deploy-jobs.json" in r.stderr         # 잡 선언 파일이 없다
+    (src / "deploy-jobs.json").write_text('{"jobs": []}')
+    r = run(tmp_path, req, docker)
+    assert r.returncode != 0 and "JobsDeclaration을 어긴다" in r.stderr and not marker.exists()
 
 
 def test_missing_request_file_fails(tmp_path):
@@ -214,6 +220,10 @@ def test_real_build_emits_build_image_result_with_labels_from_request(tmp_path):
         exposure = json.loads(res["labels"]["io.openit.exposure"])
         validator("Exposure").validate(exposure)
         assert exposure == json.loads((ROOT / "deploy-exposure.json").read_text(encoding="utf-8"))
+        # 잡 선언 라벨(io.openit.jobs)이 붙고 계약 JobsDeclaration을 통과하며 리포의 deploy-jobs.json과 같다
+        jobs = json.loads(res["labels"]["io.openit.jobs"])
+        validator("JobsDeclaration").validate(jobs)
+        assert jobs == json.loads((ROOT / "deploy-jobs.json").read_text(encoding="utf-8"))
         # 같은 요청은 같은 이미지 내용(멱등). 이미지 ID는 설정의 생성 시각이 들어가 달라질 수 있어 층(내용)으로 비교한다(ADR-0015)
         assert layers[0] == layers[1], (ids, layers)
     finally:

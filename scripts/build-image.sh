@@ -45,6 +45,14 @@ except (OSError, ValueError) as e:
     sys.exit(f"build-image: 오류: source_dir/deploy-exposure.json을 읽지 못했다: {type(e).__name__}")
 except Exception as e:
     sys.exit("build-image: 오류: deploy-exposure.json이 Exposure를 어긴다: " + str(getattr(e, "message", e))[:300])
+# 잡 선언(R7): 리포 안의 deploy-jobs.json이 정본이다. 계약 JobsDeclaration으로 검증해 이미지 라벨 io.openit.jobs(JSON 문자열)로 단다.
+try:
+    jobs = json.load(open(r["source_dir"] + "/deploy-jobs.json", encoding="utf-8"))
+    validator("JobsDeclaration").validate(jobs)
+except (OSError, ValueError) as e:
+    sys.exit(f"build-image: 오류: source_dir/deploy-jobs.json을 읽지 못했다: {type(e).__name__}")
+except Exception as e:
+    sys.exit("build-image: 오류: deploy-jobs.json이 JobsDeclaration을 어긴다: " + str(getattr(e, "message", e))[:300])
 # U50(라벨 정직성): 요청 versions가 이 리포의 고정과 다르면 라벨을 찍지 않고 멈춘다. 라벨은 아래에서 실제로 만든 wheel·문진 스키마에서 찍는다.
 import re
 def pin(fname, pattern):
@@ -58,12 +66,13 @@ for key, got, want in (("boundary", v["boundary"], pin("requirements.txt", r"bou
     if got != want:
         sys.exit(f"build-image: 오류: 요청 versions.{key}({got})가 이 리포의 고정({want})과 다르다. 라벨이 거짓이 되므로 빌드하지 않는다")
 exposure = json.dumps(ex, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+jobs_label = json.dumps(jobs, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 print(r["source_dir"], r["revision"], r["image_tag"], v["boundary"], v["model_runtime"], v["survey_schema"],
-      d["boundary"], d["model_runtime"], d["survey_schema"], exposure, sep="\n")
+      d["boundary"], d["model_runtime"], d["survey_schema"], exposure, jobs_label, sep="\n")
 PY
 ) || exit 1
-[ "${#F[@]}" -eq 10 ] || die "요청을 읽지 못했다"
-src="${F[0]}" rev="${F[1]}" tag="${F[2]}" v_bc="${F[3]}" v_mr="${F[4]}" v_ss="${F[5]}" s_bc="${F[6]}" s_mr="${F[7]}" s_ss="${F[8]}" exposure="${F[9]}"
+[ "${#F[@]}" -eq 11 ] || die "요청을 읽지 못했다"
+src="${F[0]}" rev="${F[1]}" tag="${F[2]}" v_bc="${F[3]}" v_mr="${F[4]}" v_ss="${F[5]}" s_bc="${F[6]}" s_mr="${F[7]}" s_ss="${F[8]}" exposure="${F[9]}" jobs="${F[10]}"
 for d in "$src" "$s_bc" "$s_mr" "$s_ss"; do [ -d "$d" ] || die "디렉터리가 없다: $d"; done
 [ -f "$src/Dockerfile" ] || die "source_dir에 Dockerfile이 없다: $src"
 # 왜 실제 값에서 찍는다: 라벨은 이미지에 실제로 들어간 것이어야 한다(U50). 문진 스키마 패키지의 실제 버전은 복사할 소스 트리의 pyproject version이다
@@ -109,7 +118,7 @@ find "$ctx" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 # 3) 빌드. 라벨 값은 실제로 만든 wheel·문진 스키마 소스에서 온다(요청과 같음을 위에서 확인했다, U50).
 log "docker build: $tag"
-"$DOCKER" build -q -t "$tag" -f "$src/Dockerfile" --label "io.openit.exposure=$exposure" \
+"$DOCKER" build -q -t "$tag" -f "$src/Dockerfile" --label "io.openit.exposure=$exposure" --label "io.openit.jobs=$jobs" \
   --build-arg COMMIT="$rev" --build-arg BOUNDARY_VERSION="$act_bc" --build-arg SURVEY_SCHEMA_VERSION="$ss_actual" \
   --build-arg MODEL_RUNTIME_VERSION="$act_mr" "$ctx" >&2
 
@@ -121,6 +130,7 @@ import json, sys
 from boundary_contracts import validator
 tag, image_id, labels = sys.argv[1], sys.argv[2], json.loads(sys.argv[3] or "{}")
 out = {"image": tag, "image_id": image_id, "labels": {k: v for k, v in labels.items() if k.startswith("io.openit.")}}
+validator("ImageLabels").validate(out["labels"])        # 만드는 쪽 검증(R7): 이미지에 실제로 붙은 라벨이 계약 ImageLabels를 따른다
 validator("BuildImageResult").validate(out)
 print(json.dumps(out, ensure_ascii=False))
 PY

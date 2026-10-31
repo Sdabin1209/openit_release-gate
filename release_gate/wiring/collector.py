@@ -12,6 +12,7 @@ from boundary_contracts.errors import BoundaryError
 from ..components import candidate_selection
 from ..components.link_models import ModelsLink
 from ..components.link_questions import QuestionsLink
+from ..types.validators import validate_contract
 
 ROLE = "release-gate-collector"
 
@@ -33,6 +34,9 @@ class CandidateCollector:
             mi = self.m.list_versions(self.pkg_ids)
             self.skipped = qi["skipped"] + mi["skipped"]
             subjects = candidate_selection.select({"question_sets": qi["question_sets"], "versions": mi["versions"]})["subjects"]
+            # 만드는 쪽 검증(R7): 제출 요청을 보내기 전에 계약 GateSubmissionRequest로 확인한다
+            for s in subjects:
+                validate_contract("GateSubmissionRequest", {"subject": s, "requested_by_role": ROLE})
             return [self.gate.submit_candidate(s, requested_by_role=ROLE) for s in subjects]
         except BoundaryError as e:
             if e.retryable and not raise_unavailable:
