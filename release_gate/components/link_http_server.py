@@ -282,7 +282,7 @@ class GateApp:
         self._local.raw = raw
         try:
             # D120: 요청 시작에 마감을 정한다. 저장소·이웃 읽기가 current()로 보고 남은 시간을 상한으로 쓴다. 요청이 끝나면 거둔다
-            if self.deadlines is not None and path.startswith("/v1/"):
+            if self.deadlines is not None and path.split("/")[1:2] == ["v1"]:      # 사람용 API 경로만(상태 확인은 제외)
                 self.deadlines.begin()
             try:
                 status, headers, body = self._app.handle(environ)
