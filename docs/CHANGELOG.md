@@ -1,5 +1,11 @@
 # 변경 이력
 
+## (미배포) model-runtime v0.11.7, 노출 선언 시한 (U427)
+
+- model-runtime 고정 v0.11.4 -> v0.11.7(`requirements-libs.txt`). 코드는 model-runtime을 가져다 쓰지 않아 변경 없음.
+- `deploy-exposure.json`의 사람용 경로 시한을 gateway 시간 사슬(D119, deploy ADR 0048)에 맞춰 `{"dial": 1000, "response_header": 13000}`으로.
+- 서버가 머리글을 내기까지의 최악 시간(설정 값의 합)을 `tests/test_exposure_budget.py`로 고정했다. 읽기 경로(3~6초)는 13초 안이고, **활성화 27초, 롤백 36초, 승인 128초(DB 문장 16개 x 3초 + 이웃 호출 8개 x 10초)는 넘는다** — 헤드가 사슬을 다시 정한다(docs/boundary.md).
+
 ## (미배포) 만드는 쪽 검증 보강 (U424, R7)
 
 - 목록 응답(`GET /v1/releases`, `/v1/submissions`, `/v1/decisions`)은 봉투(계약 ListEnvelope, Route response_schema)와 원소(ReleaseManifest, SubmissionView, GateDecision)를 내보내기 전에 모두 검증한다. 단건 응답과 쓰기 응답(`/v1/releases/{id}`, question-bank, `/v1/submissions/{id}`, review-report, `/v1/decisions/{id}`, activate, rollback, 접수)에도 response_schema를 걸었고, active-pointer는 안의 포인터를 검증한다. 어기면 틀린 값을 내보내지 않고 503(UNAVAILABLE, "서버 결함")이다. 정상 응답의 모양은 그대로다.

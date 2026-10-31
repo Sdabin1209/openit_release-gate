@@ -97,3 +97,19 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 서비스 토큰(`GATE_READ_TOKENS`, `GATE_WRITE_TOKENS`)과 이웃 호출 토큰(`GATE_I1_TOKEN`, `GATE_I3_TOKEN`)은 `boundary_contracts.read_secret(NAME)`으로 읽는다. `NAME_FILE`(파일 경로)이 우선이고 없으면 `NAME` 환경 변수(개발용)다. 값은 로그, `/readyz`, 오류 본문, 예외 메시지에 싣지 않는다. 운영 방법은 `docs/runbook.md`의 "비밀은 NAME_FILE로" 절.
 
 설정 파일(JSON)은 비밀 값을 직접 받지 않는다. 직접 적으면 시작을 거부하고, `{"secret": "NAME"}`(또는 `{"env": "NAME"}`)만 `read_secret(NAME)`으로 푼다.
+
+
+## 노출 선언의 시한과 서버의 최악 시간 (U427)
+
+`deploy-exposure.json`의 사람용 경로는 `{"dial": 1000, "response_header": 13000}`이다(gateway 시간 사슬 D119, deploy ADR 0048). 서버가 응답 머리글을 내기까지의 최악 시간은 **측정하지 않고 설정 값으로 계산**한다:
+요청이 쓰는 DB 문장 수 x 문장 시한(3초, ADR-0008) + 이웃(I1·I3) 호출 수 x 읽기 시한(10초). '느리지만 성공'하는 호출이 시한 직전까지 이어지는 경우의 합이고, 첫 실패에서는 오류로 곧 끝난다. 문장 수는 SQLite 추적으로 센 값이다(PostgreSQL은 BEGIN/COMMIT 왕복이 달라 다를 수 있다. 확인하지 못했다).
+
+| 경로 | DB 문장 | 이웃 호출 | 최악(초) | 13초 안 |
+| --- | --- | --- | --- | --- |
+| GET /v1/submissions, /v1/active-pointer, /v1/releases | 1 | 0 | 3 | 예 |
+| GET /v1/submissions/{id} | 2 | 0 | 6 | 예 |
+| POST /v1/activate | 9 | 0 | 27 | **아니오** |
+| POST /v1/rollback | 12 | 0 | 36 | **아니오** |
+| POST /v1/approvals | 16 | 8 | 128 | **아니오** |
+
+활성화·롤백·승인은 정상일 때 수십 ms~수 초이고(측정 안 함), 위 값은 모든 호출이 시한 직전까지 느린 최악이다. 어댑터 해시 검증(활성화·롤백·승인)의 파일 읽기 시간은 시한이 없어 위 합에 들어 있지 않다. 헤드가 사슬을 다시 정한다. 고정 시험: `tests/test_exposure_budget.py`.

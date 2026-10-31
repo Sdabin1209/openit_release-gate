@@ -3,16 +3,16 @@
   "routes": [
     {"paths": ["/v1/submissions", "/v1/submissions/*"], "methods": ["GET"],
      "auth": {"kind": "account", "roles": ["release-approver"]}, "upstream_token": "gate-read-release-approver", "user_header": "set",
-     "timeouts_ms": {"dial": 2000, "response_header": 15000}},
+     "timeouts_ms": {"dial": 1000, "response_header": 13000}},
     {"paths": ["/v1/approvals"], "methods": ["POST"],
      "auth": {"kind": "account", "roles": ["release-approver"]}, "upstream_token": "gate-write-release-approver", "user_header": "set",
-     "timeouts_ms": {"dial": 2000, "response_header": 15000}},
+     "timeouts_ms": {"dial": 1000, "response_header": 13000}},
     {"paths": ["/v1/active-pointer", "/v1/releases"], "methods": ["GET"],
      "auth": {"kind": "account", "roles": ["operator"]}, "upstream_token": "gate-read-operator", "user_header": "set",
-     "timeouts_ms": {"dial": 2000, "response_header": 15000}},
+     "timeouts_ms": {"dial": 1000, "response_header": 13000}},
     {"paths": ["/v1/activate", "/v1/rollback"], "methods": ["POST"],
      "auth": {"kind": "account", "roles": ["operator"]}, "upstream_token": "gate-write-operator", "user_header": "set",
-     "timeouts_ms": {"dial": 2000, "response_header": 15000}},
+     "timeouts_ms": {"dial": 1000, "response_header": 13000}},
     {"paths": ["/v1/submissions"], "methods": ["POST"], "auth": {"kind": "denied"}},
     {"paths": ["/v1/releases/*", "/v1/decisions", "/v1/decisions/*"], "auth": {"kind": "denied"}}
   ]
