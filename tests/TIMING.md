@@ -10,7 +10,7 @@
 | --- | --- | --- | --- | --- |
 | test_audit_fixes.py | test_bundle_copy_does_not_hold_the_store_lock | 큰 복사 중에도 읽기가 저장소 잠금에 막히지 않는다 | 매달림 감시 | test_bundle_copy_does_not_hold_the_store_lock (sleep과 지연 상한 단언 대신, 복사를 Event로 멈춰 둔 채 읽기가 끝나는지 본다) |
 | test_audit_fixes.py | test_slow_client_is_cut_by_request_timeout | 느린 연결을 요청 시한에 끊는다(waitress의 일) | 지움 (2) | test_waitress_gets_the_configured_request_timeout (test_u4a_waitress.py) |
-| test_audit_fixes.py | test_graceful_stop_waits_for_inflight_and_refuses_new | 우아한 종료는 처리 중인 요청을 기다리고 새 연결을 거절한다 | 1 | test_graceful_stop_waits_for_inflight_and_refuses_new (가짜 시계, 첫 sleep에서 새 연결 거절 확인과 요청 해제) |
+| test_audit_fixes.py | test_graceful_stop_waits_for_inflight_and_refuses_new | 우아한 종료는 처리 중인 요청을 기다리고 새 연결을 거절한다 | 1 | test_graceful_stop_waits_for_inflight_and_refuses_new (가짜 시계, 첫 sleep에서 수신 중단 상태 확인과 요청 해제. 실제 연결 시도는 OS 타이밍에 달려 하지 않는다) |
 | test_audit_fixes.py | test_graceful_stop_returns_remaining_after_grace | 유예가 지나도 끝나지 않은 요청 수를 돌려준다 | 1 | test_graceful_stop_returns_remaining_after_grace (가짜 시간이 유예만큼 흘렀는지 아래쪽 경계) |
 | test_audit_fixes.py | test_serve_exits_cleanly_on_sigterm | SIGTERM에 우아하게 끝난다(실제 프로세스·신호·시계) | 지움 (2: OS 신호) | test_serve_shutdown_sequence_on_sigterm (등록된 핸들러를 직접 불러 종료 절차의 순서와 인자를 확인) |
 | test_audit_fixes.py | test_loop_is_joined_before_store_close | 진행 중인 주기 작업이 끝난 뒤에 저장소를 닫는다 | 매달림 감시 | test_loop_is_joined_before_store_close (작업이 종료 요청을 기다리는 Event로 순서를 만든다) |

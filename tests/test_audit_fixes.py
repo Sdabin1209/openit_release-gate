@@ -262,17 +262,15 @@ def test_access_log_neutralizes_control_characters_and_names_actor(world, caplog
 # ---- A4: 우아한 종료 ----
 
 def test_graceful_stop_waits_for_inflight_and_refuses_new(world):
-    """우리 코드의 시간(유예 마감)을 가짜 시계로: 첫 sleep에서 (1) 새 연결이 거절되는지 보고 (2) 처리 중인 요청을 풀어 준다. 실제로 기다리지 않는다."""
+    """우리 코드의 시간(유예 마감)을 가짜 시계로: 첫 sleep에서 (1) 수신을 멈췄는지(shutting_down, 수신 소켓 닫힘) 보고 (2) 처리 중인 요청을 풀어 준다. 실제로 기다리지 않는다."""
     started, release = threading.Event(), threading.Event()
     refused = []
 
     def at_first_sleep():
         if not refused:
-            try:
-                socket.create_connection(("127.0.0.1", port), timeout=HANG_GUARD_SECONDS).close()
-                refused.append(False)
-            except OSError:
-                refused.append(True)                         # 새 연결은 받지 않는다
+            # 새 연결을 받지 않는다: 우리 코드가 수신 소켓을 닫고 /readyz를 shutting_down으로 돌렸는지 본다. 실제로 연결을 시도하지 않는다
+            # (다른 스레드가 select로 소켓을 쥐고 있는 동안은 OS가 연결을 계속 받아 시도 결과가 타이밍에 달린다)
+            refused.append(srv.shutting_down and not srv._srv.accepting and srv._srv.socket is None)
         release.set()
 
     def slow_status():
