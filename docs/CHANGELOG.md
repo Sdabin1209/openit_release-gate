@@ -1,5 +1,11 @@
 # 변경 이력
 
+## (미배포) 생산자 검증 3건 (U429 중 헤드 대조, R7)
+
+- 후보 수집기(`wiring/collector.py`)는 제출 요청을 보내기 전에 계약 `GateSubmissionRequest`로 검증한다.
+- 이미지의 잡 선언 `deploy-jobs.json`(collect, judge, prune)을 새로 두고, `scripts/build-image.sh`가 계약 `JobsDeclaration`으로 검증해 라벨 `io.openit.jobs`로 단다. 잡 설정 파일 경로(`/config/<잡>.json`)와 `needs`(postgres, gate-data, release-network, authoring-network)는 이 영역이 선언한 값이며 deploy가 읽기 전까지 소비자가 없다(deploy 쪽 확인 필요).
+- build-image는 이미지에 실제로 붙은 라벨을 `ImageLabels`로 먼저 검증한 뒤 `BuildImageResult`를 낸다.
+
 ## (미배포) model-runtime v0.11.7, 노출 선언 시한 (U427)
 
 - model-runtime 고정 v0.11.4 -> v0.11.7(`requirements-libs.txt`). 코드는 model-runtime을 가져다 쓰지 않아 변경 없음.

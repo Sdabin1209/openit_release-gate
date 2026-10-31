@@ -26,6 +26,7 @@ HTTP 경로(boundary.md 기준): 쓰기는 `POST /v1/submissions`, `/v1/approval
 | `release_gate/types/` | `schemas/`에서 **생성**한 코드 타입과 검증 함수(`validators.py`). 손으로 고치지 않는다. 생성 명령은 4절 |
 | `release_gate/components/` | 컴포넌트마다 파일 하나(업무 14개, 저장소 1개, 통신 4개). 서로를 가져오지 않는다. 표는 `docs/components.md` |
 | `release_gate/wiring/` | 연결·주입: 어느 출력을 어느 입력에 넘길지(판정 엔진, I5 서비스, 수집기, 자동 검사 등록부), 저장소·시계·이웃 주입 |
+| `deploy-exposure.json`, `deploy-jobs.json` | 이미지가 선언하는 노출(라벨 `io.openit.exposure`)과 잡(라벨 `io.openit.jobs`). build-image가 계약으로 검증해 단다 |
 | `release_gate/main.py`, `config.py`, `migrate.py`, `migrations/`, `factories/` | 진입점(`serve` / `collect` / `judge` / `prune`), 설정, DB 마이그레이션, 팩토리 공개 이름(`release_gate.factories:http_question_reader`). 업무 규칙 없음 |
 | `tests/` | 적합성(memory·sqlite·postgres), HTTP, 비밀, 수집·정책, 계약 v2 시험. `fakes.py`가 이웃 대역 |
 | `scripts/` | `build-image.sh`(영역 빌드 진입점, 계약 BuildImageRequest), `smoke.sh`(스모크) |
