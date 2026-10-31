@@ -31,6 +31,11 @@ from datetime import datetime as _dt, timezone as _tz  # noqa: E402
 NOW = _dt(2026, 10, 16, tzinfo=_tz.utc)
 
 
+# /readyz 본문에 들어가는 상태 수치의 시험용 표본: 계약 GateReadyz의 필수 항목을 채운다. 만드는 쪽이 계약을 검증하므로(R7) 비어 있으면 /readyz는 503이다.
+READY_STATUS = {"gate_policy_version": "human-approval-1", "judging": "enabled", "awaiting_approval": 0,
+                "action_rules_version": "r", "model_runtime_version": "0"}
+
+
 class FakeTime:
     """시험이 쥔 가짜 시계·타이머(ADR-0019). 시간은 시험 코드가 움직일 때만 흐른다. SystemClock과 같은 모양이다.
     - sleep(초): 가짜 시간만 앞으로 보내고 실제로 기다리지 않는다. on_sleep이 있으면 부른다(그 사이에 일어날 사건을 시험이 일으킨다).

@@ -2,7 +2,7 @@
 클라이언트는 content_hash와 번들의 모든 해시를 다시 계산하므로 서버가 낸 레코드의 해시가 정확해야 통과한다."""
 from __future__ import annotations
 
-from conftest import HANG_GUARD_SECONDS
+from conftest import READY_STATUS, HANG_GUARD_SECONDS
 
 import threading
 
@@ -25,7 +25,7 @@ def srv(world):
                                                    service_roles=frozenset({"ops-feedback", "operator"}))
     s = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"r-surv": "survey-service", "r-ops": "ops-feedback"},
                        write_tokens={"w-op": "operator", "w-ops": "ops-feedback"},
-                       status=lambda: {"gate_policy_version": "EMPTY", "can_pass": False})
+                       status=lambda: dict(READY_STATUS))
     threading.Thread(target=s.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{s.server_address[1]}"
     s.shutdown()

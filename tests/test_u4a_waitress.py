@@ -9,12 +9,12 @@ import urllib.request
 
 import pytest
 
-from conftest import HANG_GUARD_SECONDS, FakeTime, GateHTTPServer
+from conftest import READY_STATUS, HANG_GUARD_SECONDS, FakeTime, GateHTTPServer
 
 
 def _serve(world, **kw):
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "survey-service"}, write_tokens={"wt": "operator"},
-                         status=lambda: {}, **kw)
+                         status=lambda: dict(READY_STATUS), **kw)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, srv.server_address[1]
 
@@ -59,7 +59,7 @@ def _make(monkeypatch, world, **kw):
         seen.update(k)
         return _FakeWaitressServer()
     monkeypatch.setattr(mod.waitress, "create_server", fake_create_server)
-    GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "survey-service"}, write_tokens={"wt": "operator"}, status=lambda: {}, **kw)
+    GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "survey-service"}, write_tokens={"wt": "operator"}, status=lambda: dict(READY_STATUS), **kw)
     return seen
 
 
@@ -109,7 +109,7 @@ def test_graceful_stop_lets_the_inflight_request_finish_and_returns(world):
     def slow():
         started.set()
         release.wait(HANG_GUARD_SECONDS)      # 매달림 감시: 시험이 release.set()으로 풀어 준다
-        return {}
+        return dict(READY_STATUS)
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "r"}, write_tokens={"wt": "operator"}, status=slow,
                          clock=FakeTime(on_sleep=lambda: release.set()))
     th = threading.Thread(target=srv.serve_forever, daemon=True)

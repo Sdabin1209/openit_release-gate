@@ -11,7 +11,7 @@ import pytest
 
 from release_gate import factories
 from release_gate import main as gate_main
-from conftest import GateHTTPServer
+from conftest import READY_STATUS, GateHTTPServer
 
 RT, WT = "SECRET-READ-aaa111", "SECRET-WRITE-bbb222"
 I1 = "SECRET-I1-ccc333"
@@ -66,7 +66,7 @@ def test_missing_secret_errors_do_not_leak(monkeypatch, tmp_path):
 def test_server_never_echoes_secrets(world, caplog):
     caplog.set_level(logging.DEBUG)
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={RT: "survey-service"}, write_tokens={WT: "operator"},
-                         status=lambda: {"gate_policy_version": "p"}, engine=world.engine())
+                         status=lambda: dict(READY_STATUS), engine=world.engine())
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
     bodies = []

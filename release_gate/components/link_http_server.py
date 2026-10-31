@@ -27,7 +27,7 @@ from boundary_contracts.errors import BoundaryError
 from openit_link import App, Request, Response, Route
 from openit_link.server import REASON
 
-from ..types.validators import validate
+from ..types.validators import validate, validate_contract
 
 log = logging.getLogger("gate")
 
@@ -49,6 +49,22 @@ def _user(req: Request) -> Optional[str]:
     if req.user is not None:
         validate("IdString", req.user)
     return req.user
+
+
+def _produced(name: str, rec):
+    """만드는 쪽이 내보내기 전에 계약으로 검증한다(R7). 어기면 우리 출력이 틀린 것이므로 틀린 값을 내보내지 않고 서버 결함(503)으로 낸다(openit_link의 response_schema와 같은 처리)."""
+    try:
+        validate_contract(name, rec)
+    except BoundaryError:
+        raise BoundaryError("UNAVAILABLE", f"응답이 {name}을 어긴다(서버 결함)") from None
+    return rec
+
+
+def _list_body(item_schema: str, items, next_cursor) -> dict:
+    """목록 응답 봉투 {items, next_cursor}(계약 ListEnvelope, 라이브러리가 Route.response_schema로 검증)와 원소(item_schema)를 모두 검증한다."""
+    for it in items:
+        _produced(item_schema, it)
+    return {"items": items, "next_cursor": next_cursor}
 
 
 def _ref_filter(q: dict, prefix: str):
@@ -92,12 +108,12 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
     def releases(req):
         cursor, limit = _page(req.query)
         items, nxt = r.reader.list_releases(cursor=cursor, limit=limit)
-        return ok({"items": items, "next_cursor": nxt})
+        return ok(_list_body("ReleaseManifest", items, nxt))
 
     def submissions(req):
         cursor, limit = _page(req.query)
         items, nxt = r.service.list_submissions(status=req.query.get("status"), cursor=cursor, limit=limit)
-        return ok({"items": items, "next_cursor": nxt})
+        return ok(_list_body("SubmissionView", items, nxt))
 
     def decisions(req):
         q = req.query
@@ -105,7 +121,7 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
         items, nxt = r.reader.find_decisions(
             question_set=_ref_filter(q, "question_set"), lora_a=_ref_filter(q, "lora_a"), lora_b=_ref_filter(q, "lora_b"),
             submission_id=q.get("submission_id"), cursor=cursor, limit=limit)
-        return ok({"items": items, "next_cursor": nxt})
+        return ok(_list_body("GateDecision", items, nxt))
 
     def approvals(req):
         user = _user(req)
@@ -150,21 +166,29 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
     R = frozenset(READ + x for x in read_roles)
     W = frozenset(WRITE + x for x in write_roles)
     only = lambda allowed: frozenset(WRITE + x for x in allowed) & W      # 권한 있는 역할만: 나머지는 헤더 확인 전에 403
+    def active_pointer(req):
+        item = r.reader.get_active_pointer()
+        if item is not None:
+            _produced("ActivePointer", item)          # {"item": 포인터|null}은 HTTP.md의 감싸기라 계약 스키마가 없다: 안의 포인터를 검증한다
+        return ok({"item": item})
+
+    # response_schema: 라이브러리가 2xx 응답을 내보내기 전에 계약으로 검증한다(R7). 목록은 봉투(ListEnvelope)를 여기서, 원소는 _list_body에서 검증한다.
     return [
-        Route("GET", "/v1/active-pointer", lambda q: ok({"item": r.reader.get_active_pointer()}), roles=R),
-        Route("GET", "/v1/releases", releases, roles=R),
-        Route("GET", "/v1/releases/{rid}", lambda q: ok(r.reader.get_release(q.params["rid"])), roles=R),
+        Route("GET", "/v1/active-pointer", active_pointer, roles=R),
+        Route("GET", "/v1/releases", releases, roles=R, response_schema="ListEnvelope"),
+        Route("GET", "/v1/releases/{rid}", lambda q: ok(r.reader.get_release(q.params["rid"])), roles=R, response_schema="ReleaseManifest"),
         Route("GET", "/v1/releases/{rid}/bundle", bundle, roles=R),
-        Route("GET", "/v1/releases/{rid}/question-bank", lambda q: ok(r.reader.get_release_question_bank(q.params["rid"])), roles=R),
-        Route("GET", "/v1/submissions", submissions, roles=R),
-        Route("GET", "/v1/submissions/{sid}", lambda q: ok(r.service.get_submission(q.params["sid"])), roles=R),
-        Route("GET", "/v1/submissions/{sid}/review-report", review_report, roles=R),
-        Route("GET", "/v1/decisions", decisions, roles=R),
-        Route("GET", "/v1/decisions/{did}", lambda q: ok(r.reader.get_decision(q.params["did"])), roles=R),
+        Route("GET", "/v1/releases/{rid}/question-bank", lambda q: ok(r.reader.get_release_question_bank(q.params["rid"])), roles=R,
+              response_schema="SurveyQuestionBankRead"),
+        Route("GET", "/v1/submissions", submissions, roles=R, response_schema="ListEnvelope"),
+        Route("GET", "/v1/submissions/{sid}", lambda q: ok(r.service.get_submission(q.params["sid"])), roles=R, response_schema="SubmissionView"),
+        Route("GET", "/v1/submissions/{sid}/review-report", review_report, roles=R, response_schema="ReviewReport"),
+        Route("GET", "/v1/decisions", decisions, roles=R, response_schema="ListEnvelope"),
+        Route("GET", "/v1/decisions/{did}", lambda q: ok(r.reader.get_decision(q.params["did"])), roles=R, response_schema="GateDecision"),
         Route("POST", "/v1/approvals", approvals, roles=only(cfg.approver_roles), response_schema="GateApproval", require_user=True),
-        Route("POST", "/v1/activate", activate, roles=only(cfg.activate_roles)),
-        Route("POST", "/v1/rollback", rollback, roles=only(cfg.rollback_roles)),
-        Route("POST", "/v1/submissions", submit, roles=W),
+        Route("POST", "/v1/activate", activate, roles=only(cfg.activate_roles), response_schema="ActivePointer"),
+        Route("POST", "/v1/rollback", rollback, roles=only(cfg.rollback_roles), response_schema="RollbackReceipt"),
+        Route("POST", "/v1/submissions", submit, roles=W, response_schema="GateSubmission"),
     ]
 
 
@@ -193,7 +217,12 @@ class GateApp:
             st = self.readyz_status()
         except BoundaryError as e:
             return False, {"status": "not ready", "reason": e.message}
-        return True, {"status": "ready", "database": getattr(r.store, "kind", "unknown"), **st}
+        body = {"status": "ready", "database": getattr(r.store, "kind", "unknown"), **st}
+        try:
+            validate_contract("GateReadyz", body)      # 만드는 쪽 검증(R7): 계약을 어기는 본문은 내보내지 않는다
+        except BoundaryError:
+            return False, {"status": "not ready", "reason": "readyz 본문이 계약 GateReadyz를 어긴다(서버 결함)"}
+        return True, body
 
     def readyz_status(self) -> dict:
         """/readyz의 보조 수치(승인 대기 건수 등). 주 연결로 읽으므로 주 연결이 막혀 있으면 기다리지 않고 마지막 값을 낸다(`db_stats_stale`).

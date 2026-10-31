@@ -12,12 +12,12 @@ import urllib.request
 import pytest
 from boundary_contracts import validator
 
-from conftest import GateHTTPServer
+from conftest import READY_STATUS, GateHTTPServer
 
 
 def _serve(world, **kw):
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "survey-service"},
-                         write_tokens={"wa": "release-approver", "wo": "operator"}, status=lambda: {}, **kw)
+                         write_tokens={"wa": "release-approver", "wo": "operator"}, status=lambda: dict(READY_STATUS), **kw)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, srv.server_address[1]
 

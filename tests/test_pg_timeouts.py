@@ -18,7 +18,7 @@ import urllib.request
 import pytest
 
 from boundary_contracts.errors import BoundaryError
-from conftest import HANG_GUARD_SECONDS, FakeTime
+from conftest import READY_STATUS, HANG_GUARD_SECONDS, FakeTime
 from release_gate import main as gate_main
 from release_gate import memory_registry, postgres_registry
 from release_gate.components import registry_store
@@ -40,7 +40,7 @@ def _get(base, path):
         return e.code, e.read().decode()
 
 
-def _serve(reg, status=lambda: {}, **kw):
+def _serve(reg, status=lambda: dict(READY_STATUS), **kw):
     from conftest import GateHTTPServer
     srv = GateHTTPServer(("127.0.0.1", 0), reg, read_tokens={"r": "survey-service"}, write_tokens={"w": "operator"}, status=status, **kw)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -239,15 +239,41 @@ def test_store_hands_its_scheduler_to_every_statement_guard(pg_url, schemas, con
 # ---- /readyz ----
 
 def test_readyz_does_not_wait_for_a_stuck_status_read(schemas, config):
-    """보조 수치를 주 연결로 읽다 막혀도 /readyz는 마지막 값(stale)으로 답한다. 읽기를 영원히 막아 두고(set하지 않는다) 결과만 본다."""
-    release = threading.Event()
-    reg = memory_registry(schemas, config)
-    srv, base = _serve(reg, status=lambda: (release.wait(HANG_GUARD_SECONDS), {})[1], clock=FakeTime(join_times_out=True))      # 합류가 시간 초과로 끝난다
+    """보조 수치를 주 연결로 읽다 막혀도 /readyz는 마지막 값(stale)으로 답한다. 읽기를 영원히 막아 두고(set하지 않는다) 결과만 본다.
+    마지막 값이 아직 없으면 계약 GateReadyz를 채울 수 없으므로 거짓 ready 대신 503이다(만드는 쪽 검증, R7)."""
+    release, blocked = threading.Event(), {"on": False}
+    fake = FakeTime()
+    srv, base = _serve(memory_registry(schemas, config),
+                       status=lambda: (release.wait(HANG_GUARD_SECONDS), dict(READY_STATUS))[1] if blocked["on"] else dict(READY_STATUS), clock=fake)
     try:
+        code, body = _get(base, "/readyz")                       # 첫 호출은 정상: 마지막 값이 생긴다
+        assert code == 200 and "db_stats_stale" not in json.loads(body)
+        blocked["on"], fake.join_times_out = True, True          # 이제 읽기가 영원히 막히고, 합류는 시간 초과로 끝난다(가짜 시계)
         code, body = _get(base, "/readyz")
         assert code == 200 and json.loads(body)["db_stats_stale"] is True
     finally:
         release.set()
+        srv.shutdown()
+
+
+def test_readyz_is_503_when_nothing_was_ever_read_and_status_is_stuck(schemas, config):
+    release = threading.Event()
+    srv, base = _serve(memory_registry(schemas, config), status=lambda: (release.wait(HANG_GUARD_SECONDS), dict(READY_STATUS))[1],
+                       clock=FakeTime(join_times_out=True))
+    try:
+        code, body = _get(base, "/readyz")
+        assert code == 503 and json.loads(body)["status"] == "not ready"
+    finally:
+        release.set()
+        srv.shutdown()
+
+
+def test_readyz_body_that_breaks_the_contract_is_not_sent(schemas, config):
+    srv, base = _serve(memory_registry(schemas, config), status=lambda: {"judging": 5})
+    try:
+        code, body = _get(base, "/readyz")
+        assert code == 503 and "GateReadyz" in json.loads(body)["reason"]
+    finally:
         srv.shutdown()
 
 

@@ -17,7 +17,7 @@ from boundary_contracts.errors import BoundaryError
 from release_gate import main as gate_main
 from release_gate.components import retention
 from release_gate.components import registry_store as store_mod
-from conftest import HANG_GUARD_SECONDS, NOW, FakeTime, GateHTTPServer
+from conftest import READY_STATUS, HANG_GUARD_SECONDS, NOW, FakeTime, GateHTTPServer
 from release_gate.components.retention import RetentionPolicy
 from release_gate.wiring.util import ts
 from conftest import SURVEY
@@ -31,7 +31,7 @@ def _file_store(world):
 
 def _serve(world, **kw):
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "survey-service"}, write_tokens={"wt": "operator", "wa": "release-approver"},
-                         status=lambda: {}, **kw)
+                         status=lambda: dict(READY_STATUS), **kw)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, srv.server_address[1]
 
@@ -276,7 +276,7 @@ def test_graceful_stop_waits_for_inflight_and_refuses_new(world):
     def slow_status():
         started.set()
         release.wait(HANG_GUARD_SECONDS)      # 매달림 감시: 시험이 release.set()으로 풀어 준다
-        return {}
+        return dict(READY_STATUS)
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "r"}, write_tokens={"wt": "operator"}, status=slow_status,
                          clock=FakeTime(on_sleep=at_first_sleep))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -296,7 +296,7 @@ def test_graceful_stop_returns_remaining_after_grace(world):
     release, started = threading.Event(), threading.Event()
     fake = FakeTime()
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "r"}, write_tokens={"wt": "operator"},
-                         status=lambda: (started.set(), release.wait(HANG_GUARD_SECONDS), {})[2], clock=fake)      # 매달림 감시: release.set()으로 풀어 준다
+                         status=lambda: (started.set(), release.wait(HANG_GUARD_SECONDS), dict(READY_STATUS))[2], clock=fake)      # 매달림 감시: release.set()으로 풀어 준다
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     port = srv.server_address[1]
     threading.Thread(target=lambda: _raw(port, b"GET /readyz HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"), daemon=True).start()

@@ -3,7 +3,7 @@
 (PASS가 아니면 412, 없으면 404, 클라이언트 HttpReleaseReader.get_release_question_bank가 content_hash를 검증)."""
 from __future__ import annotations
 
-from conftest import HANG_GUARD_SECONDS
+from conftest import READY_STATUS, HANG_GUARD_SECONDS
 
 import dataclasses
 import json
@@ -116,7 +116,7 @@ def test_adapter_with_exactly_the_three_files_passes(world):
 @pytest.fixture
 def srv(world):
     s = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"r-surv": "survey-service"}, write_tokens={"w-op": "operator"},
-                       status=lambda: {})
+                       status=lambda: dict(READY_STATUS))
     threading.Thread(target=s.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{s.server_address[1]}"
     s.shutdown()

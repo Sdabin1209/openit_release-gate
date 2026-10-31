@@ -2,7 +2,7 @@
 PostgreSQL 서버가 필요한 시험은 TEST_DATABASE_URL이 없으면 SKIP(PASS로 세지 않는다)."""
 from __future__ import annotations
 
-from conftest import HANG_GUARD_SECONDS
+from conftest import READY_STATUS, HANG_GUARD_SECONDS
 
 import json
 import logging
@@ -75,7 +75,7 @@ def test_connection_failure_does_not_leak_url_or_password(schemas, config, tmp_p
 def test_readyz_shows_kind_only_and_503_without_leak(world, caplog):
     caplog.set_level(logging.DEBUG)
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"r": "survey-service"}, write_tokens={"w": "operator"},
-                         status=lambda: {})
+                         status=lambda: dict(READY_STATUS))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
         base = f"http://127.0.0.1:{srv.server_address[1]}"

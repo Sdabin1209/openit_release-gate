@@ -11,14 +11,14 @@ import urllib.request
 import pytest
 
 from boundary_contracts import validator
-from conftest import GateHTTPServer
+from conftest import READY_STATUS, GateHTTPServer
 
 
 @pytest.fixture
 def base(world):
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "survey-service"},
                          write_tokens={"wt": "operator", "wo": "ops-feedback", "wq": "question-authoring", "wa": "release-approver"},
-                         status=lambda: {}, engine=world.engine())
+                         status=lambda: dict(READY_STATUS), engine=world.engine())
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{srv.server_address[1]}"
     srv.shutdown()

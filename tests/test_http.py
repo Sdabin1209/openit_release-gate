@@ -7,7 +7,7 @@ import urllib.request
 
 import pytest
 
-from conftest import tamper_decisions
+from conftest import READY_STATUS, tamper_decisions
 
 from conftest import GateHTTPServer
 
@@ -16,7 +16,7 @@ from conftest import GateHTTPServer
 def server(world):
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "survey-service", "rq": "question-authoring"}, write_tokens={"wt": "operator", "wo": "ops-feedback", "wq": "question-authoring",
                                                                     "wa": "release-approver"},
-                         status=lambda: {"gate_policy_version": "human-approval-1"}, engine=world.engine())
+                         status=lambda: dict(READY_STATUS), engine=world.engine())
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{srv.server_address[1]}"
     srv.shutdown()
@@ -220,7 +220,7 @@ def test_approval_needs_engine_and_valid_body(world, server):
 
 def test_approval_without_engine_is_unavailable(world):
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "r"}, write_tokens={"wa": "release-approver"},
-                         status=lambda: {})
+                         status=lambda: dict(READY_STATUS))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
         st, body = call(f"http://127.0.0.1:{srv.server_address[1]}", "/v1/approvals",

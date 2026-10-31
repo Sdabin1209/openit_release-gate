@@ -1,5 +1,10 @@
 # 변경 이력
 
+## (미배포) 만드는 쪽 검증 보강 (U424, R7)
+
+- 목록 응답(`GET /v1/releases`, `/v1/submissions`, `/v1/decisions`)은 봉투(계약 ListEnvelope, Route response_schema)와 원소(ReleaseManifest, SubmissionView, GateDecision)를 내보내기 전에 모두 검증한다. 단건 응답과 쓰기 응답(`/v1/releases/{id}`, question-bank, `/v1/submissions/{id}`, review-report, `/v1/decisions/{id}`, activate, rollback, 접수)에도 response_schema를 걸었고, active-pointer는 안의 포인터를 검증한다. 어기면 틀린 값을 내보내지 않고 503(UNAVAILABLE, "서버 결함")이다. 정상 응답의 모양은 그대로다.
+- `GET /readyz`는 내보내기 전에 계약 GateReadyz로 검증한다. 어기면 503 `not ready`(reason에 계약 위반)다. **동작 차이 하나**: 상태 수치 읽기가 막힌 채로 한 번도 성공한 적이 없으면 마지막 값(stale)이 없어 계약을 채울 수 없으므로 200 대신 503이다(이전에는 빈 수치로 200).
+
 ## (미배포) 시계 주입 (U422, ADR-0019)
 
 - 컴포넌트가 시간을 직접 읽지 않는다: `GateApp`/`GateHTTPServer`는 `clock`(필수), `PostgresStore`는 `scheduler`, `purge_stale_tmp`는 `now`를 받는다. 실제 시계는 `wiring/util.py SystemClock`이 넣는다. 와이어 형식·응답·잡 출력은 그대로다.

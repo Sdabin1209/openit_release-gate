@@ -9,7 +9,7 @@ import urllib.request
 
 import pytest
 
-from conftest import GateHTTPServer
+from conftest import READY_STATUS, GateHTTPServer
 from test_conformance import rollback_req
 
 
@@ -17,7 +17,7 @@ from test_conformance import rollback_req
 def server(world):
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "reader"},
                          write_tokens={"wo": "operator", "wf": "ops-feedback", "wq": "question-authoring"},
-                         status=lambda: {})
+                         status=lambda: dict(READY_STATUS))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{srv.server_address[1]}"
     srv.shutdown()
