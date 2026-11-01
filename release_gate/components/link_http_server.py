@@ -215,8 +215,11 @@ class GateApp:
             return False, {"status": "shutting_down"}
         r = self.registry
         try:
-            r.store.ping()         # PostgreSQL이면 주 연결·락을 쓰지 않는 별도 짧은 확인(상한 probe_timeout)
-            st = self.readyz_status()
+            # 왜 하나의 예산: FAULT_POLICY 5 "/readyz는 총 probe_timeout 안". ping과 보조 수치가 각자 2초씩 기다리면 최악 4초+가 된다(E2E 5pn에서 5.6초).
+            budget = getattr(r.store, "probe_timeout", 2.0)
+            start = self.clock.monotonic()
+            r.store.ping(timeout=budget)         # PostgreSQL이면 주 연결·락을 쓰지 않는 별도 짧은 확인(연결 시도 포함, 예산 안)
+            st = self.readyz_status(budget - (self.clock.monotonic() - start))
         except BoundaryError as e:
             return False, {"status": "not ready", "reason": e.message}
         body = {"status": "ready", "database": getattr(r.store, "kind", "unknown"), **st}
@@ -226,9 +229,13 @@ class GateApp:
             return False, {"status": "not ready", "reason": "readyz 본문이 계약 GateReadyz를 어긴다(서버 결함)"}
         return True, body
 
-    def readyz_status(self) -> dict:
+    def readyz_status(self, timeout: Optional[float] = None) -> dict:
         """/readyz의 보조 수치(승인 대기 건수 등). 주 연결로 읽으므로 주 연결이 막혀 있으면 기다리지 않고 마지막 값을 낸다(`db_stats_stale`).
-        확인(ping)은 이미 통과했으므로 이 때문에 503이 되지 않는다. 오류(BoundaryError)는 그대로 올린다."""
+        확인(ping)은 이미 통과했으므로 이 때문에 503이 되지 않는다. 오류(BoundaryError)는 그대로 올린다.
+        timeout: /readyz 전체 예산에서 남은 시간. 0 이하이면 기다리지 않고 마지막 값을 낸다."""
+        wait = getattr(self.registry.store, "probe_timeout", 2.0) if timeout is None else timeout
+        if wait <= 0:
+            return {**self._last_status, "db_stats_stale": True}
         box: list = []
 
         def run():
@@ -239,7 +246,7 @@ class GateApp:
 
         t = threading.Thread(target=run, daemon=True)
         t.start()
-        self.clock.join(t, getattr(self.registry.store, "probe_timeout", 2.0))
+        self.clock.join(t, wait)
         if not box:
             return {**self._last_status, "db_stats_stale": True}
         ok, v = box[0]

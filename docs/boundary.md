@@ -73,7 +73,7 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 | --- | --- | --- |
 | `GATE_DB_CONNECT_TIMEOUT_SECONDS` | 3 | 주 연결 접속 상한(libpq는 올림한 정수 초). 이전 고정값은 10 |
 | `GATE_DB_STATEMENT_TIMEOUT_SECONDS` | 3 | 문장 하나의 상한. 서버 `statement_timeout`(잠금 대기 포함)이고, 서버가 얼어 응답이 없으면 +1초에 클라이언트가 소켓을 닫는다 |
-| `GATE_READYZ_DB_TIMEOUT_SECONDS` | 2 | `/readyz`의 DB 확인 상한. 별도 연결을 쓴다 |
+| `GATE_READYZ_DB_TIMEOUT_SECONDS` | 2 | `/readyz`의 DB 확인 상한. 별도 연결을 쓴다. 연결 확인(ping)과 보조 수치 읽기가 이 **총 예산 하나를 나눠 쓴다**(ping이 쓴 만큼 빼고 남은 시간만 보조 수치에 준다, 남지 않으면 마지막 값 `db_stats_stale`). 그래서 `/readyz` 전체가 이 값을 넘지 않는다(FAULT_POLICY 5) |
 
 근거(설계 판단, 측정 아님): 정상일 때 문장은 수 ms이고 쓰기 하나는 몇 문장이라 3초면 느린 디스크·잠깐의 잠금 대기를 견디면서 요청이 수 초 안에 끝난다. 2초는 로드 밸런서 검사 제한(보통 수 초) 안이고 libpq의 `connect_timeout`은 2초 미만이 의미 없다. 상한은 문장 단위다(요청 하나가 여러 문장이면 그 합까지 걸릴 수 있다). 재접속 재시도는 하지 않고(호출자가 다시 요청) 번들 파일 복사는 상한 밖이다.
 

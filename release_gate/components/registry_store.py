@@ -107,7 +107,7 @@ class Store:
                        receipt: Optional[tuple] = None) -> bool: ...
     def get_receipt(self, request_id: str) -> Optional[tuple]: ...
     def put_receipt(self, request_id: str, request_hash: str, receipt: dict) -> tuple: ...
-    def ping(self) -> None: ...
+    def ping(self, timeout: Optional[float] = None) -> None: ...
     def close(self) -> None: ...        # 종료 때 연결을 닫는다(여러 번 불러도 안전)
     # 거부·실패한 쓰기 시도의 행위자 기록(추가 전용 감사). 성공한 쓰기는 판정·승인·포인터 기록 자체가 행위자를 담는다
     def record_attempt(self, rec: dict) -> None: ...
@@ -136,7 +136,7 @@ class MemoryStore(Store):
         self._release_reports: dict[str, dict] = {}
         self._attempts: list[dict] = []
 
-    def ping(self) -> None:
+    def ping(self, timeout: Optional[float] = None) -> None:
         return None
 
     def record_attempt(self, rec):
@@ -576,7 +576,7 @@ class SqliteStore(ReleaseFiles, Store):
             c.execute("DELETE FROM decisions WHERE submission_id=?", (submission_id,))
             return c.execute("DELETE FROM submissions WHERE submission_id=?", (submission_id,)).rowcount > 0
 
-    def ping(self) -> None:
+    def ping(self, timeout: Optional[float] = None) -> None:
         try:
             with self._lock:
                 self._c.execute("SELECT 1 FROM pointer_history LIMIT 1").fetchall()
@@ -1031,19 +1031,23 @@ class PostgresStore(ReleaseFiles, Store):
                 except Exception:
                     pass
 
-    def ping(self) -> None:
-        """/readyz용 확인. 주 연결·락을 쓰지 않는 별도 짧은 연결로 `probe_timeout` 안에 끝낸다(안 끝나면 UNAVAILABLE).
-        요청 처리가 주 연결을 쥐고 기다리는 중이어도 막히지 않는다."""
+    def ping(self, timeout: Optional[float] = None) -> None:
+        """/readyz용 확인. 주 연결·락을 쓰지 않는 별도 짧은 연결로 끝낸다(안 끝나면 UNAVAILABLE).
+        요청 처리가 주 연결을 쥐고 기다리는 중이어도 막히지 않는다.
+        timeout: /readyz 전체 예산에서 남은 시간. 연결 시도·문장·합류 모두 이 안에서 끝난다(`probe_timeout`을 넘지 않는다)."""
+        budget = self.probe_timeout if timeout is None else max(0.0, min(timeout, self.probe_timeout))
+        if budget <= 0:
+            raise BoundaryError("UNAVAILABLE", "PostgreSQL 확인에 쓸 시간이 남지 않았다")
         box: list = []
 
         def run():
             try:
-                c = psycopg.connect(autocommit=True, **self._params(self.probe_timeout, self.probe_timeout))
+                c = psycopg.connect(autocommit=True, **self._params(budget, budget))
             except Exception as e:
                 box.append(e)
                 return
             try:
-                with _Armed(c, self.probe_timeout, self._sch):
+                with _Armed(c, budget, self._sch):
                     c.execute("SELECT 1 FROM pointer_history LIMIT 1").fetchall()
                 box.append(None)
             except Exception as e:
@@ -1056,7 +1060,7 @@ class PostgresStore(ReleaseFiles, Store):
 
         t = threading.Thread(target=run, daemon=True)
         t.start()
-        self._sch.join(t, self.probe_timeout)
+        self._sch.join(t, budget)
         if not box:
             raise BoundaryError("UNAVAILABLE", "PostgreSQL 확인이 제한 시간 안에 끝나지 않았다")
         if box[0] is not None:

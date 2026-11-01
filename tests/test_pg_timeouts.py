@@ -277,6 +277,38 @@ def test_readyz_body_that_breaks_the_contract_is_not_sent(schemas, config):
         srv.shutdown()
 
 
+def test_readyz_total_time_shares_one_probe_budget(schemas, config, monkeypatch):
+    """ping이 늦고 보조 수치도 늦어도 /readyz 전체가 probe_timeout(2초)을 넘지 않는다(가짜 시계, 실제 시간 안 잼).
+    ping 1.5초 -> 보조 수치는 남은 0.5초만 기다린다. ping이 2초를 다 쓰면 보조 수치는 기다리지 않고 마지막 값이다."""
+    fake = FakeTime(join_times_out=True)
+    reg = memory_registry(schemas, config)
+    release = threading.Event()
+    srv, base = _serve(reg, status=lambda: (release.wait(HANG_GUARD_SECONDS), dict(READY_STATUS))[1], clock=fake)
+    srv._last_status = dict(READY_STATUS)
+    seen = {}
+    try:
+        def slow_ping(timeout=None):
+            seen["ping_budget"] = timeout
+            fake.t += 1.5                                  # ping이 1.5초 걸렸다
+        monkeypatch.setattr(reg.store, "ping", slow_ping)
+        start = fake.t
+        code, body = _get(base, "/readyz")
+        assert code == 200 and json.loads(body)["db_stats_stale"] is True
+        assert seen["ping_budget"] == 2.0
+        assert fake.t - start <= 2.0 + 1e-9                # 총 소요가 예산 하나 안
+
+        def full_ping(timeout=None):
+            fake.t += 2.0                                  # ping이 예산을 다 썼다
+        monkeypatch.setattr(reg.store, "ping", full_ping)
+        start = fake.t
+        code, body = _get(base, "/readyz")
+        assert code == 200 and json.loads(body)["db_stats_stale"] is True
+        assert fake.t - start == pytest.approx(2.0)        # 보조 수치를 위해 더 기다리지 않았다
+    finally:
+        release.set()
+        srv.shutdown()
+
+
 def test_readyz_503_when_the_probe_fails_and_recovers(monkeypatch, schemas, config):
     reg = memory_registry(schemas, config)
     srv, base = _serve(reg)
@@ -284,7 +316,7 @@ def test_readyz_503_when_the_probe_fails_and_recovers(monkeypatch, schemas, conf
         assert _get(base, "/readyz")[0] == 200
         real = reg.store.ping
 
-        def down():
+        def down(timeout=None):
             raise BoundaryError("UNAVAILABLE", "PostgreSQL 확인이 제한 시간 안에 끝나지 않았다")
         monkeypatch.setattr(reg.store, "ping", down)
         code, body = _get(base, "/readyz")

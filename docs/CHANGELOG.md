@@ -4,6 +4,10 @@
 
 - 서버 전체 마감 기본값 12.0 -> 170.0초(`GATE_REQUEST_DEADLINE_SECONDS`). `deploy-exposure.json` timeouts는 `{"dial": 1000, "response_header": 180000}`. 사슬은 서버 170 < gateway 180 < 화면 190. 와이어 형식은 그대로다.
 
+## (미배포) /readyz 총 예산 공유 (wo-time-limits)
+
+- `/readyz`의 DB 확인(ping)과 보조 수치 읽기가 `probe_timeout`(2초) 하나를 나눠 쓴다. 이전에는 각각 2초씩 기다려 최악 4초를 넘을 수 있었다. 값은 그대로다. `Store.ping(timeout=None)`이 남은 시간을 받는다.
+
 ## (미배포) model-runtime v0.11.9 (wo-432)
 
 - model-runtime v0.11.8 -> v0.11.9(`requirements-libs.txt`). 코드 변경 없음.
