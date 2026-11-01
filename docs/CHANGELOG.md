@@ -1,5 +1,9 @@
 # 변경 이력
 
+## (미배포) 요청 전체 마감 170초 (D125, wo-time-limits)
+
+- 서버 전체 마감 기본값 12.0 -> 170.0초(`GATE_REQUEST_DEADLINE_SECONDS`). `deploy-exposure.json` timeouts는 `{"dial": 1000, "response_header": 180000}`. 사슬은 서버 170 < gateway 180 < 화면 190. 와이어 형식은 그대로다.
+
 ## (미배포) model-runtime v0.11.9 (wo-432)
 
 - model-runtime v0.11.8 -> v0.11.9(`requirements-libs.txt`). 코드 변경 없음.

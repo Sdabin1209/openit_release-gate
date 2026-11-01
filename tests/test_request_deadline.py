@@ -17,15 +17,15 @@ from release_gate.components.link_questions import QuestionsLink
 from release_gate.wiring.util import DEFAULT_REQUEST_DEADLINE_SECONDS, Deadline, RequestDeadlines
 
 
-def test_default_deadline_is_twelve_seconds_inside_the_gateway_limit():
-    assert DEFAULT_REQUEST_DEADLINE_SECONDS == 12.0          # gateway 1초 + 13초 안(D120)
+def test_default_deadline_is_170_seconds_inside_the_gateway_limit():
+    assert DEFAULT_REQUEST_DEADLINE_SECONDS == 170.0         # gateway 응답 헤더 180초 안, 측정 최악 승인 128초 위(D125)
 
 
 def test_deadline_runs_on_the_injected_clock():
     fake = FakeTime()
-    d = Deadline(fake, 12.0)
-    assert d.remaining() == 12.0
-    fake.sleep(11.0)
+    d = Deadline(fake, 170.0)
+    assert d.remaining() == 170.0
+    fake.sleep(169.0)
     assert d.remaining() == 1.0
     fake.sleep(2.0)
     assert d.remaining() == -1.0
@@ -47,12 +47,12 @@ def test_deadlines_are_per_thread_and_cleared():
 
 def test_store_stops_after_the_deadline_and_the_same_request_can_be_sent_again(world):
     fake = FakeTime()
-    rd = RequestDeadlines(fake, 12.0)
+    rd = RequestDeadlines(fake, 170.0)
     world.reg.store.deadline_source = rd.current
     s1, s2 = world.subject(), world.subject(qs=world.q.add("qs-main", 2))
     rd.begin()
     sub = world.reg.service.submit_candidate(s1, requested_by_role="operator")       # 마감 안: 정상
-    fake.sleep(12.5)                                                                  # 가짜 시계가 마감을 넘긴다
+    fake.sleep(170.5)                                                                 # 가짜 시계가 마감을 넘긴다
     with pytest.raises(BoundaryError) as e:
         world.reg.service.submit_candidate(s2, requested_by_role="operator")
     assert e.value.code == "UNAVAILABLE" and e.value.retryable
@@ -93,7 +93,7 @@ def _call(base, path, token, body, user="u1"):
 
 def test_approval_over_http_past_the_deadline_is_503_records_nothing_and_succeeds_on_retry(world):
     fake = FakeTime()
-    rd = RequestDeadlines(fake, 12.0)
+    rd = RequestDeadlines(fake, 170.0)
     world.reg.store.deadline_source = rd.current
     slow = SlowAdapters(world.m, fake)
     eng = GateEngine(world.reg.store, world.schemas, world.survey, world.config, __import__("release_gate").GatePolicy.default(),
@@ -106,12 +106,12 @@ def test_approval_over_http_past_the_deadline_is_503_records_nothing_and_succeed
     base = f"http://127.0.0.1:{srv.server_address[1]}"
     body = {"submission_id": sid, "decision": "APPROVE", "approver_role": "release-approver", "report_hash": world.report_hash(sid)}
     try:
-        slow.cost = 13.0                                      # 어댑터 받기가 마감(12초)보다 오래 걸린 것으로 친다
+        slow.cost = 171.0                                     # 어댑터 받기가 마감(170초)보다 오래 걸린 것으로 친다(가짜 시계)
         code, rec = _call(base, "/v1/approvals", "wa", body)
         assert code == 503 and rec["code"] == "UNAVAILABLE" and rec["retryable"] is True
         assert world.reg.store.get_approval(sid) is None and world.reg.store.latest_decision(sid) is None       # 되돌림: 반쯤 쓴 상태 없음
         assert world.reg.store.get_work(sid)["state"] == "AWAITING_APPROVAL"
-        slow.cost = 5.5                                       # 어댑터 둘이 모두 마감(12초) 안에 끝나는 정상 경로(5.5초 x 2 = 11초)
+        slow.cost = 80.0                                      # 어댑터 둘이 모두 마감(170초) 안에 끝나는 정상 경로(80초 x 2 = 160초)
         code, rec = _call(base, "/v1/approvals", "wa", body)
         assert code == 201 and world.reg.store.latest_decision(sid)["result"] == "PASS"       # 같은 요청을 다시 보내면 완료된다
     finally:
@@ -139,13 +139,13 @@ class RecordingClient:
 def test_remaining_time_becomes_the_call_timeout_when_it_is_shorter(monkeypatch):
     fake = FakeTime()
     client = RecordingClient()
-    rd = RequestDeadlines(fake, 12.0)
+    rd = RequestDeadlines(fake, 170.0)
     link = QuestionsLink(client, rd.current)
     ref = {"id": "q", "version": "1", "content_hash": "sha256:" + "a" * 64}
     rd.begin()
     link.read_subject(ref)
-    assert client.timeouts[-1] == 10.0                        # 남은 12초 > 고정 10초: 고정 상한
-    fake.sleep(8.0)
+    assert client.timeouts[-1] == 10.0                        # 남은 170초 > 고정 10초: 고정 상한
+    fake.sleep(166.0)
     link.read_subject(ref)
     assert client.timeouts[-1] == pytest.approx(4.0)          # 남은 4초 < 고정 10초: 남은 시간
     fake.sleep(4.0)

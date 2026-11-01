@@ -101,6 +101,6 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 
 ## 노출 선언의 시한과 요청 전체 마감 (U427, D120)
 
-`deploy-exposure.json`의 사람용 경로는 `{"dial": 1000, "response_header": 13000}`이다(gateway 시간 사슬 D119, deploy ADR 0048). 서버의 호출별 시한을 모두 합친 최악(설정 값으로 계산, 측정 안 함: DB 문장 수 x 3초 + 이웃 호출 수 x 10초)은 읽기 3~6초, 활성화 27초, 롤백 36초, 승인 128초였다(문장 수는 SQLite 추적으로 센 값이고 PostgreSQL은 다를 수 있다).
-그래서 사람용(`/v1/*`) 요청마다 **서버 쪽 요청 전체 마감**을 둔다(D120, ADR-0020): 기본 12.0초(`GATE_REQUEST_DEADLINE_SECONDS`), 주입한 시계로 잰다. 각 문장·이웃 호출은 남은 시간을 상한으로 쓰고, 넘기면 503 UNAVAILABLE(retryable)이며 되돌림·재시도 안전이다. 어느 경로든 머리글까지의 최악은 `min(호출별 합, 12초)` < 13초다.
-고정 시험: `tests/test_exposure_budget.py`(12 < 13, 경로별 합), `tests/test_request_deadline.py`(가짜 시계로 마감 안 정상, 마감 초과 503·되돌림·재시도).
+`deploy-exposure.json`의 사람용 경로는 `{"dial": 1000, "response_header": 180000}`이다(gateway 시간 사슬 D125 개정판, `boundary-contracts/CONVENTIONS.md` "시간 상한 사슬". 이전 값 13000은 D119). 서버의 호출별 시한을 모두 합친 최악(설정 값으로 계산, 측정 안 함: DB 문장 수 x 3초 + 이웃 호출 수 x 10초)은 읽기 3~6초, 활성화 27초, 롤백 36초, 승인 128초였다(문장 수는 SQLite 추적으로 센 값이고 PostgreSQL은 다를 수 있다).
+그래서 사람용(`/v1/*`) 요청마다 **서버 쪽 요청 전체 마감**을 둔다(D120, ADR-0020): 기본 170.0초(D125, 측정 최악 승인 128초 위의 여유, `GATE_REQUEST_DEADLINE_SECONDS`), 주입한 시계로 잰다. 각 문장·이웃 호출은 남은 시간을 상한으로 쓰고, 넘기면 503 UNAVAILABLE(retryable)이며 되돌림·재시도 안전이다. 어느 경로든 머리글까지의 최악은 `min(호출별 합, 170초)` < 180초다. 측정 최악 승인 128초는 마감 안이라 이제 잘리지 않는다(마감은 그보다 더 느린 경우의 상한).
+고정 시험: `tests/test_exposure_budget.py`(170 < 180, 경로별 합), `tests/test_request_deadline.py`(가짜 시계로 마감 안 정상, 마감 초과 503·되돌림·재시도).

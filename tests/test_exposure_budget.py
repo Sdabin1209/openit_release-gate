@@ -13,7 +13,7 @@ from release_gate.components import registry_store
 from release_gate.wiring.util import DEFAULT_REQUEST_DEADLINE_SECONDS
 
 ROOT = Path(__file__).resolve().parents[1]
-DECLARED_HUMAN = {"dial": 1000, "response_header": 13000}
+DECLARED_HUMAN = {"dial": 1000, "response_header": 180000}
 STATEMENT_S = registry_store.DEFAULT_STATEMENT_TIMEOUT       # 3.0 (ADR-0008)
 
 

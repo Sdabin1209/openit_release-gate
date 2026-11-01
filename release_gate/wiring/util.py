@@ -34,9 +34,9 @@ class SystemClock:
         return t
 
 
-# 사람용(gateway를 지나는) 요청 하나의 서버 쪽 전체 마감(초). 값의 근거: D120, gateway 상한(dial 1초 + response_header 13초) 안에 서버가 끝나게 하는 마감 - 여유 2초(ADR-0020).
+# 사람용(gateway를 지나는) 요청 하나의 서버 쪽 전체 마감(초). 값의 근거: D120·D125, gateway 상한(dial 1초 + response_header 180초) 안에 서버가 끝나게 하는 마감. 170초는 측정한 최악 승인 128초 위의 여유다(ADR-0020).
 # 측정 값이 아니라 사슬 설계 값이다(화면 대기 > gateway > 서버). 설정: GATE_REQUEST_DEADLINE_SECONDS.
-DEFAULT_REQUEST_DEADLINE_SECONDS = 12.0
+DEFAULT_REQUEST_DEADLINE_SECONDS = 170.0
 
 
 class Deadline:

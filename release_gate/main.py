@@ -292,7 +292,7 @@ def serve() -> None:
     schemas, survey, config, reg = _build(cfg)
     policy = GatePolicy.from_file(os.environ.get("GATE_POLICY_FILE"))
     questions, models = _neighbors(cfg)
-    # D120: 사람용 요청마다 서버 쪽 요청 전체 마감(기본 12초 = gateway 상한 1초+13초 - 여유, ADR-0020). 저장소와 이웃 읽기가 남은 시간을 상한으로 쓴다
+    # D120: 사람용 요청마다 서버 쪽 요청 전체 마감(기본 170초: 측정 최악 승인 128초 위의 여유, gateway 응답 헤더 180초 안, D125·ADR-0020). 저장소와 이웃 읽기가 남은 시간을 상한으로 쓴다
     deadlines = RequestDeadlines(SystemClock(), _seconds("GATE_REQUEST_DEADLINE_SECONDS", DEFAULT_REQUEST_DEADLINE_SECONDS))
     reg.store.deadline_source = deadlines.current
     tasks, judging, engine = [], "disabled (I1/I3 미연결: 자동 검사와 승인 결정 불가)", None

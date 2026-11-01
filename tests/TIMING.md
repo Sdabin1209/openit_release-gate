@@ -47,3 +47,7 @@
 - 실제 waitress가 느린 연결을 끊고 큰 본문을 413으로 거절하며 연결 상한 뒤 회복하는지: 값은 넘기는 것까지만 확인한다. 실제 동작은 smoke에서 큰 본문 한 번(413)이면 충분하다.
 - DB가 얼었을 때 /readyz 503과 요청 경로 UNAVAILABLE이 상한 안에 나오는지, 풀린 뒤 회복하는지: docker pause를 쓰는 deploy 쪽 시험의 몫이다.
 - SIGTERM으로 컨테이너가 우아하게 끝나는지(종료 코드 0): deploy의 stop_grace_period 점검의 몫이다.
+
+## 요청 전체 마감 값 (D125)
+
+사람용 요청의 서버 전체 마감 기본값은 170초다(gateway 응답 헤더 180초 안). 이 값을 쓰는 시험(`test_request_deadline.py`, `test_exposure_budget.py`)은 모두 가짜 시계로 시간을 흘리거나 설정 값의 합을 계산할 뿐 170초를 실제로 기다리지 않는다.
