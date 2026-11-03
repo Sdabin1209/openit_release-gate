@@ -34,7 +34,7 @@
 
 - **자동 PASS는 없다.** 임계치 기반 통과, 평가 실행기, GPU 워커, `o11_resolved`는 모두 없앴다(이전 구현의 D38·D40 설계는 D53으로 대체되었다). 평가는 model-lab이 하고 결과를 `EvaluationReport`(합격선 없음)로 모델 패키지에 첨부한다. 게이트는 그 보고서를 읽어 승인자에게 보여 줄 뿐이다.
 - 승인자는 학습 담당자이고 역할은 `release-approver`다(`POST /v1/approvals`의 쓰기 토큰에 묶임). PASS는 승인자의 `APPROVE` 뒤에만 생긴다. 코드에 승인 없이 PASS를 만드는 경로가 없고, `assert_decision_rule`이 승인(`HUMAN_APPROVAL` PASS, `approval_id`) 없는 PASS를 거부한다(`test_no_path_to_pass_without_approval`).
-- gate_policy는 작아졌다: `gate_policy_version`(판정 기록용 버전, 기본 `human-approval-1`)과 `CONTRACT_COMPAT.require_lineage_runtime_match`뿐이다. 자동 검사 네 가지는 정책이 줄일 수 없다. 옛 형식(`o11_resolved`, `required_checks`, `thresholds`)의 정책 파일은 형식 오류로 시작이 거부된다. 형식은 `release_gate/schemas/gate_policy.schema.json`.
+- gate_policy는 작아졌다: `gate_policy_version`(판정 기록용 버전, 기본 `human-approval-1`)과 `CONTRACT_COMPAT.require_lineage_runtime_match`뿐이다. 자동 검사 네 가지는 정책이 줄일 수 없다. 옛 형식(`o11_resolved`, `required_checks`, `thresholds`)의 정책 파일은 형식 오류로 시작이 거부된다. 형식의 정본은 계약 `GatePolicy`다(리포 안에 사본 없음).
 
 ## 3. 자동 검사
 
@@ -45,7 +45,8 @@
 | CONTRACT_COMPAT | 참조 해시 일치(문항 세트, 두 매니페스트), 문항 세트가 문진 스키마(`QuestionBank`) 적합, 문진 스키마 정수 버전 = 게이트가 지원하는 값, 매니페스트 스키마 적합·MAJOR 지원·`runtime_contract_version` 일치·role 일치·`serving_config_hash == canonical.sha256_hash(serving_config)`(D42), 학습 때 action_rules_version/model-runtime 버전 = 게이트 설치 버전(정책 `require_lineage_runtime_match`, 기본 true. 제안) |
 
 CONTRACT_COMPAT는 `serving_config`의 프롬프트 템플릿 버전(model-runtime의 `/v1/info.serving_config_expectation`, 지원 목록은 model-runtime 문서가 정본)을 검사하지 않는다(판단, 제안). 이유: (1) 이 값은 model-runtime의 지원 목록이고 게이트가 이웃 값을 복사해 두면 어긋난다. I9을 직접 부르는 것도 경계 밖이다. (2) 게이트는 임계치·정책을 코드에 두지 않는다(D53). (3) 지원하지 않는 버전은 model-runtime의 `load`가 거부한다. (4) `CheckOutcome`에 경고 등급이 없어 "폐기 경고"는 PASS/FAIL로만 표현되고, 그러면 적재되는 패키지를 반려하게 된다. 필요하면 정책 항목으로 추가한다(미정, 헤드 결정).
-| QUESTION_MODEL_COMPAT | 반려 근거는 구조 호환뿐: 두 어댑터의 기반 모델·계약 버전 일치, 문항 세트가 읽힘. `lineage.question_sets`(선택)는 참고 정보로 상세에만 적는다(D42) |
+| QUESTION_MODEL_COMPAT | 반려 근거는 구조 호환뿐: 두 어댑터의 기반 모델·계약 버전 일치, 문항 세트가 읽힘. `lineage.question_sets`(선택)는 학습 문항 세트가 있으면 아래 문항 구조 비교의 기준이 된다(U81). 학습 때 쓰지 않은 문항 세트인지는 상세에만 적는다(D42, D32) |
+| (QUESTION_MODEL_COMPAT 안) 문항 구조 | U81: 후보 문항 세트의 (question_id, slot_id) 집합이 모델 매니페스트 `lineage.question_sets`(학습에 쓴 문항 세트, 계약에서 선택 필드)의 내용과 같아야 한다. 같은 ID 구조의 새 버전은 재학습 없이 출고할 수 있다(D32). 다르면 QUESTION_MODEL_COMPAT FAIL(`CHECK_FAILED`). 필드가 없거나 그 버전을 I1에서 읽지 못하면 비교하지 못한 것이라 반려하지 않고 상세에 적는다. 구조 해시 필드는 계약에 없다 |
 | ACCEPTANCE_EVAL | **형식 검사일 뿐이다**: 두 모델 각각 `manifest.eval_report_ref`의 `EvaluationReport`를 I3 `get_eval_report`로 읽어 JSON, 스키마, `content_hash`, `role`, `package`(제출한 모델과 같은 id·version·content_hash)가 맞는지 확인. 지표 값은 보지 않는다 |
 | CLINICAL_SAFETY | 그 문항 세트 버전(id, version, content_hash)의 `ReviewRecord` 중 `APPROVED`이고 `clinical_basis_approved=true`인 것이 있어야 한다(D30). 제안: 그 뒤에 더 늦은 비승인 검수가 있으면 불통과. 승인 직전에 다시 확인한다 |
 

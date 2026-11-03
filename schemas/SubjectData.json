@@ -71,6 +71,40 @@
       "items": {
         "type": "string"
       }
+    },
+    "trained_banks": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "LORA_A",
+          "LORA_B"
+        ]
+      },
+      "description": "모델마다 매니페스트 lineage.question_sets(학습에 쓴 문항 세트)의 내용. bank는 읽지 못했으면 null. 없으면 비교 정보가 없다(U81)",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ref",
+            "bank"
+          ],
+          "properties": {
+            "ref": {
+              "type": "object",
+              "description": "계약 ArtifactRef"
+            },
+            "bank": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "문항 세트(계약 QuestionBank). 읽지 못했으면 null"
+            }
+          }
+        }
+      }
     }
   },
   "required": [

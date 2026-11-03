@@ -1189,6 +1189,40 @@ _INTERNAL = json.loads(r'''{
      "lora_b"
     ],
     "type": "object"
+   },
+   "trained_banks": {
+    "additionalProperties": {
+     "items": {
+      "additionalProperties": false,
+      "properties": {
+       "bank": {
+        "description": "문항 세트(계약 QuestionBank). 읽지 못했으면 null",
+        "type": [
+         "object",
+         "null"
+        ]
+       },
+       "ref": {
+        "description": "계약 ArtifactRef",
+        "type": "object"
+       }
+      },
+      "required": [
+       "ref",
+       "bank"
+      ],
+      "type": "object"
+     },
+     "type": "array"
+    },
+    "description": "모델마다 매니페스트 lineage.question_sets(학습에 쓴 문항 세트)의 내용. bank는 읽지 못했으면 null. 없으면 비교 정보가 없다(U81)",
+    "propertyNames": {
+     "enum": [
+      "LORA_A",
+      "LORA_B"
+     ]
+    },
+    "type": "object"
    }
   },
   "required": [

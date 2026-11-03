@@ -7,6 +7,12 @@
 - **동작 차이**: `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION`의 코드 기본값(설치된 스키마 값)을 없앴다. 없으면 기동 거부. 기본값이 CONTRACT_COMPAT의 "지원 == 배포" 비교를 항상 참으로 만들었다. deploy가 명시한다. `scripts/smoke.sh`는 이미지의 스키마 값을 준다.
 - `deploy-exposure.json`: 다른 호스트의 추론 서버가 읽는 `/v1/active-pointer`, `/v1/releases/*`를 `auth.kind=machine-token`(U67)으로 선언하고 `/v1/releases/*`를 denied에서 뺐다. `/v1/decisions*`는 denied 그대로.
 
+## (미배포) 문항 구조 일치 검사 (U81, wo-320)
+
+- 새 컴포넌트 `check_question_structure`: 후보 문항 세트의 (question_id, slot_id) 집합이 모델 매니페스트 `lineage.question_sets`(학습에 쓴 문항 세트)의 내용과 다르면 FAIL. 판정 기록의 검사 종류·사유 코드는 계약 열거라 QUESTION_MODEL_COMPAT에 합치고 사유는 `CHECK_FAILED`다. **동작 차이**: 구조가 다른 조합이 이제 자동 반려된다(같은 구조의 새 버전은 그대로 통과, D32).
+- 계약의 `lineage.question_sets`는 선택 필드이고 구조 해시 필드는 없다. 필드가 없거나 그 버전을 I1에서 읽지 못하면 비교하지 못한 것이라 반려하지 않고 상세에 적는다(한계). 읽기 위해 승인 검사마다 I1 `get_question_bank`가 학습 문항 세트 수만큼 늘어난다.
+- 문서: README 컴포넌트 수, boundary.md의 연결 상한 서술, Dockerfile 주석, design.md·ADR-0002의 없는 파일 이름, brief.md 소비 목록을 현재 코드대로 고쳤다.
+
 ## (미배포) 요청 전체 마감 170초 (D125, wo-time-limits)
 
 - 서버 전체 마감 기본값 12.0 -> 170.0초(`GATE_REQUEST_DEADLINE_SECONDS`). `deploy-exposure.json` timeouts는 `{"dial": 1000, "response_header": 180000}`. 사슬은 서버 170 < gateway 180 < 화면 190. 와이어 형식은 그대로다.

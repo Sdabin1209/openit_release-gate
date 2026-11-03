@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..components import (check_acceptance_eval, check_clinical_safety, check_contract_compat,
-                          check_question_model_compat)
+                          check_question_model_compat, check_question_structure)
 
 
 class Check:
@@ -16,6 +16,20 @@ class Check:
 
     def run(self, inp: dict) -> dict:
         return self._run(inp)
+
+
+class CombinedCheck(Check):
+    """한 검사 종류(판정 기록의 열거 값)에 컴포넌트 여럿의 결과를 합친다: 하나라도 FAIL이면 FAIL, 상세는 ' | '로 잇는다.
+    왜: 계약 GateDecision은 검사 종류와 반려 사유 코드의 열거를 정하고 새 값이 없다. 문항 구조 일치(U81)는 문항-모델 호환의 일부로 기록한다."""
+
+    def __init__(self, kind: str, modules):
+        self.kind, self._modules = kind, modules
+
+    def run(self, inp: dict) -> dict:
+        outs = [m.run(inp) for m in self._modules]
+        fail = [o for o in outs if o["result"] == "FAIL"]
+        detail = " | ".join(o["detail"] for o in (fail or outs) if o.get("detail"))
+        return {"result": "FAIL" if fail else "PASS", **({"detail": detail} if detail else {})}
 
 
 class CheckRegistry:
@@ -38,4 +52,5 @@ class CheckRegistry:
 
 
 def default_checks() -> list:
-    return [Check(m) for m in (check_contract_compat, check_question_model_compat, check_acceptance_eval, check_clinical_safety)]
+    return [Check(check_contract_compat), CombinedCheck(check_question_model_compat.KIND, (check_question_model_compat, check_question_structure)),
+            Check(check_acceptance_eval), Check(check_clinical_safety)]

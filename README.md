@@ -24,7 +24,7 @@ HTTP 경로(boundary.md 기준): 쓰기는 `POST /v1/submissions`, `/v1/approval
 | --- | --- |
 | `schemas/` | 영역 내부 타입의 JSON Schema(타입 하나에 파일 하나)와 `examples/`(통과·거부 예시). 받아들이는 조건의 정본. 스키마 밖 조건은 `schemas/README.md` |
 | `release_gate/types/` | `schemas/`에서 **생성**한 코드 타입과 검증 함수(`validators.py`). 손으로 고치지 않는다. 생성 명령은 4절 |
-| `release_gate/components/` | 컴포넌트마다 파일 하나(업무 14개, 저장소 1개, 통신 4개). 서로를 가져오지 않는다. 표는 `docs/components.md` |
+| `release_gate/components/` | 컴포넌트마다 파일 하나(업무 18개, 저장소 1개, 통신 3개). 서로를 가져오지 않는다. 표는 `docs/components.md` |
 | `release_gate/wiring/` | 연결·주입: 어느 출력을 어느 입력에 넘길지(판정 엔진, I5 서비스, 수집기, 자동 검사 등록부), 저장소·시계·이웃 주입 |
 | `deploy-exposure.json`, `deploy-jobs.json` | 이미지가 선언하는 노출(라벨 `io.openit.exposure`)과 잡(라벨 `io.openit.jobs`). build-image가 계약으로 검증해 단다 |
 | `release_gate/main.py`, `config.py`, `migrate.py`, `migrations/`, `factories/` | 진입점(`serve` / `collect` / `judge` / `prune`), 설정, DB 마이그레이션, 팩토리 공개 이름(`release_gate.factories:http_question_reader`). 업무 규칙 없음 |

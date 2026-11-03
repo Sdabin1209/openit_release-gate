@@ -9,12 +9,12 @@
 
 ## 결정
 
-작업 상태는 `RECEIVED` -> `AWAITING_APPROVAL` -> `DECIDED` 세 가지이고, 외부에는 `SubmissionView.status`(PENDING_CHECK, AWAITING_APPROVAL, REJECTED_AUTO, REJECTED_HUMAN, PASSED)로 보인다(views.py). 접수 ID는 조합 해시로 정해 같은 조합은 한 번만 접수된다. 자동 검사 4종(CONTRACT_COMPAT, QUESTION_MODEL_COMPAT, ACCEPTANCE_EVAL 형식, CLINICAL_SAFETY)이 하나라도 FAIL이면 반려 판정을 남기고, 모두 통과해야 승인 대기가 된다. APPROVE는 PASS 판정과 릴리스를 만든다(승인 없는 PASS 금지: `assert_decision_rule`). 판정·승인·릴리스는 불변이다.
+작업 상태는 `RECEIVED` -> `AWAITING_APPROVAL` -> `DECIDED` 세 가지이고, 외부에는 `SubmissionView.status`(PENDING_CHECK, AWAITING_APPROVAL, REJECTED_AUTO, REJECTED_HUMAN, PASSED)로 보인다(`components/submission_view.py`). 접수 ID는 조합 해시로 정해 같은 조합은 한 번만 접수된다. 자동 검사 4종(CONTRACT_COMPAT, QUESTION_MODEL_COMPAT, ACCEPTANCE_EVAL 형식, CLINICAL_SAFETY)이 하나라도 FAIL이면 반려 판정을 남기고, 모두 통과해야 승인 대기가 된다. APPROVE는 PASS 판정과 릴리스를 만든다(승인 없는 PASS 금지: `assert_decision_rule`). 판정·승인·릴리스는 불변이다.
 
 ## 왜 (따른 표준과 근거)
 
 - 근거: D53(출고는 사람이 정한다), D30(임상 승인 기록 확인), D39(접수와 판정은 멱등 run-once). ID를 결정적으로 만든 이유는 같은 요청 재전송이 안전해야 하기 때문이다(design.md '접수 ID = sub- + 조합 해시'). 상태를 세 개로 단순하게 둔 이유의 별도 기록: 근거 기록 없음(설계 판단).
-- 승인 직전 자동 검사를 다시 한다: 그 사이 임상 승인이 철회됐을 수 있다(D30, gate.py `_finish`).
+- 승인 직전 자동 검사를 다시 한다: 그 사이 임상 승인이 철회됐을 수 있다(D30, `wiring/engine.py` `_finish`).
 
 ## 검토한 대안과 버리는 이유
 

@@ -20,8 +20,8 @@
 
 ## 3. 소비하는 것
 
-- 소비하는 계약: `QuestionBank`, `ReviewRecord`, `ChangeClassification`, `ModelPackageManifest`, `RollbackRequest`.
-- 소비하는 SDK: 문항 읽기 SDK(question-authoring), 모델 읽기 SDK(model-lab). 라이브러리로 turn-engine, model-runtime, 문진 스키마.
+- 소비하는 계약(현재 코드 기준, 2026-11-03): 이웃에게서 읽는 `ModelPackageManifest`, `ModelPackageLayout`, `EvaluationReport`, `ReviewRecord`, 요청으로 받는 `ApprovalRequest`, `RollbackRequest`, `GateSubmissionRequest`, 설정으로 받는 `GateEnv`, `GateJobConfig`, `GatePolicy`. 문항 세트 `QuestionBank`는 문진 스키마 패키지가 정한다. 처음 브리프의 `ChangeClassification`은 쓰지 않는다.
+- 소비하는 SDK: 문항 읽기 SDK(question-authoring), 모델 읽기 SDK(model-lab). 라이브러리로 model-runtime(설치된 버전 문자열만), 문진 스키마, openit-link, boundary-contracts(turn-engine은 퇴역, D109).
 - 지원하는 계약 버전: 문진 스키마 정수 버전, 경계 계약 `MAJOR.MINOR`.
 
 ## 3-1. 경계 명세 (블랙박스 기준)

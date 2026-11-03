@@ -5,6 +5,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, TypedDict
 
+from typing_extensions import NotRequired
+
+
+class TrainedBank(TypedDict):
+    ref: Dict[str, Any]
+    bank: Optional[Dict[str, Any]]
+
 
 class SubjectData(TypedDict):
     subject: Dict[str, Any]
@@ -16,3 +23,4 @@ class SubjectData(TypedDict):
     eval_reports: Dict[str, Dict[str, Any]]
     report_problems: List[str]
     problems: List[str]
+    trained_banks: NotRequired[Dict[str, List[TrainedBank]]]

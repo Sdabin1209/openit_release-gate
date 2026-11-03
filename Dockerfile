@@ -1,8 +1,8 @@
-# 빌드 컨텍스트는 scripts/stage_context.sh 가 만든 .build/ctx 이다: boundary-contracts 태그 시점 소스로 만든
+# 빌드 컨텍스트는 scripts/build-image.sh(ADR-0015)가 만든 .build/ctx 이다: boundary-contracts 태그 시점 소스로 만든
 # wheel(wheels/), 선택으로 model-runtime wheel, 문진 스키마. 이미지 안에서는 ssh로 git을 받지 않는다. 직접 빌드: scripts/smoke.sh
 FROM python:3.12-slim
 
-# 왜 n/a: 값 없음의 표기는 계약 ImageLabels에서 n/a 하나다(none·unset·unknown 불가). build_image.sh는 항상 실제 값을 넘긴다.
+# 왜 n/a: 값 없음의 표기는 계약 ImageLabels에서 n/a 하나다(none·unset·unknown 불가). build-image.sh는 항상 실제 wheel·스키마 소스에서 찍은 값을 넘긴다(ADR-0017).
 ARG COMMIT=n/a
 ARG BOUNDARY_VERSION=n/a
 ARG SURVEY_SCHEMA_VERSION=n/a

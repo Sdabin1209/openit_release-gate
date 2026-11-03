@@ -17,6 +17,20 @@ class SubjectLoader:
         qd = self.q.read_subject(subject["question_set"])
         md = self.m.read_subject(subject)
         violations = self.survey.validate_question_bank(qd["bank"]) if (self.survey is not None and qd["bank"] is not None) else []
-        return {"subject": subject, "bank": qd["bank"], "bank_violations": violations, "reviews": qd["reviews"],
+        # U81: 모델이 학습한 문항 세트(lineage.question_sets)의 내용. 후보와 같은 참조는 다시 읽지 않는다
+        trained, cache = {}, {}
+        for role, m in md["manifests"].items():
+            refs = (m.get("lineage") or {}).get("question_sets")
+            if not refs:
+                continue
+            row = []
+            for r in refs:
+                key = (r["id"], r["version"], r["content_hash"])
+                if key not in cache:
+                    same = all(r.get(k) == subject["question_set"].get(k) for k in ("id", "version", "content_hash"))
+                    cache[key] = qd["bank"] if same else self.q.read_bank(r)
+                row.append({"ref": r, "bank": cache[key]})
+            trained[role] = row
+        return {"subject": subject, "bank": qd["bank"], "trained_banks": trained, "bank_violations": violations, "reviews": qd["reviews"],
                 "reviews_ok": qd["reviews_ok"], "manifests": md["manifests"], "eval_reports": md["eval_reports"],
                 "report_problems": md["report_problems"], "problems": qd["problems"] + md["problems"]}

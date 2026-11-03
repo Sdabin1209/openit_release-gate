@@ -16,6 +16,7 @@
 | 문항-모델 호환 검사 | `components/check_question_model_compat.py` | CheckInput | CheckOutcome | 두 어댑터의 기반 모델·계약 버전 일치, 문항 세트가 읽힘(구조 호환만 반려 근거) |
 | 평가 보고서 검사 | `components/check_acceptance_eval.py` | CheckInput | CheckOutcome | 두 모델의 EvaluationReport가 있고 형식이 맞는지(지표 값은 보지 않는다, D53) |
 | 임상 승인 검사 | `components/check_clinical_safety.py` | CheckInput | CheckOutcome | 그 문항 세트 버전에 clinical_basis_approved 승인 기록이 있고 뒤에 비승인이 없는지(D30) |
+| 문항 구조 검사 | `components/check_question_structure.py` | CheckInput | CheckOutcome | 후보 문항 세트의 (question_id, slot_id) 목록이 모델 매니페스트 `lineage.question_sets`가 가리키는 학습 문항 세트와 같은지(U81). 정보가 없거나 읽지 못하면 반려하지 않고 상세에 적는다. 판정 기록의 검사 종류·사유 코드는 계약 열거라 wiring이 결과를 QUESTION_MODEL_COMPAT에 합친다(`wiring/check_registry.py CombinedCheck`) |
 | 검사 종합 | `components/auto_verdict.py` | AutoVerdictInput | AutoVerdict | 검사별 결과를 판정 기록의 checks 항목과 반려 사유로 바꾼다 |
 | 승인 요청 보고서 | `components/review_report.py` | ReviewReportInput | 계약 ReviewReport | 후보와 활성 릴리스의 평가 지표를 같은 지표끼리 맞댄다(합격 판단 없음) |
 | 승인 기록 | `components/approval_record.py` | ApprovalDraftInput | 계약 GateApproval | 사람의 결정 본문과 인증된 승인자로 승인 기록을 만들고 기존 결정과 같은지 가른다 |
