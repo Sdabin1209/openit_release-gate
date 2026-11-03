@@ -1,3 +1,8 @@
+# STATUS (wo-320: 문항 세트 여럿, 계약 3.3.0, 문진 스키마 4.0.0)
+- subject.question_sets, 세트별 검사, 매니페스트 question_sets(title), I4 세트별 조회, `question_banks/<id>.json`(ADR-0021). 시험은 `tests/test_multi_question_sets.py`. 문진 스키마 정수 버전은 2다(deploy가 `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION=2`로 준다).
+- 막힌 것(이 영역 밖): openit-link v0.4.4가 boundary-contracts v3.2.0을 고정해 `pip install -r requirements.txt`가 ResolutionImpossible이다(`scripts/setup-env.sh`와 `tests/test_u43_setup_env_report.py` 3개가 이것으로 실패). link가 3.3.0을 고정한 새 태그를 내야 한다. 시험은 `--no-deps`로 계약만 올린 venv에서 돌렸다.
+- model-runtime 핀은 v0.11.12(헤드 지시). 태그가 생기기 전에는 v0.11.11 임시 핀으로 이미지 스모크를 확인했다.
+
 # STATUS (U400: 영역 구조 개편, 2026-10-30)
 - 계약 v3.1.1, openit-link v0.4.0로 올림. 코드를 `components/`·`wiring/`·`types/`로 옮기고 `schemas/`(스키마 32개, 예시)를 만들었다. 표는 `docs/components.md`, 근거는 ADR-0018.
 - 구조 검사: `tests/test_structure.py`와 헤드의 `structure-check.py`가 통과. 영역 시험 결과와 이미지 빌드·스모크 결과는 완료 커밋 메시지에 있다.

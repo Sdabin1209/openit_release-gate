@@ -89,7 +89,7 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 - 시험 개수는 이 문서에 적지 않는다. 실행 명령으로 센다: `export TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)" && python -m pytest -q -p no:cacheprovider`(PostgreSQL 컨테이너 포함. 없으면 그 시험은 건너뛴다). `tests/test_u43_setup_env_report.py`는 GitHub에서 계약·link 태그를 받으므로 태그가 게시되기 전에는 로컬 태그로 `GIT_CONFIG_*`(url.insteadOf)를 걸어 돌린다. 이미지: `GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh`.
 
 - 이 영역 소유의 열린 항목은 없다. G08(기본 태그 올림)은 닫힘(release-gate 7139123).
-- 간접으로 닿는 열린 항목(소유는 다른 영역): G11(문진 스키마 정수 버전 1 안의 비호환 변경, 같은 잠금으로 함께 배포 필요, 다른 영역 의존), U07(실제 LLM 데모 부분, GPU 의존), U10(평가가 가짜 모델로만 돌았음, GPU 의존), D-A(운영 도메인·토큰 발급·회전 등, 사용자 결정), U12(두 번째 독립 머신 확인, 미실시).
+- 간접으로 닿는 열린 항목(소유는 다른 영역): G11(문진 스키마 정수 버전 안의 비호환 변경, 같은 잠금으로 함께 배포 필요, 다른 영역 의존), U07(실제 LLM 데모 부분, GPU 의존), U10(평가가 가짜 모델로만 돌았음, GPU 의존), D-A(운영 도메인·토큰 발급·회전 등, 사용자 결정), U12(두 번째 독립 머신 확인, 미실시).
 - 임상 안전 지표와 승인 임계치(O11)는 사용자 결정이며 D53에 따라 코드에 임계치를 두지 않는다.
 
 ## 6. 더 자세한 문서
