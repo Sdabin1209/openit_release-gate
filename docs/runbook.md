@@ -39,7 +39,7 @@ GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh          # BuildImageRequest �
 
 ```
 # 승인 요청 보고서 보기 (읽기 토큰)
-curl -H "Authorization: Bearer $READ" http://gate:8080/v1/submissions/$SID/review-report
+curl -H "Authorization: Bearer $READ" https://gate/v1/submissions/$SID/review-report
 # 결정 (쓰기 토큰, 역할 release-approver). 본문은 계약 ApprovalRequest: report_hash 필수(보낸 값이 현재 보고서와 다르면 409 STALE_REPORT), approver_id는 보내지 않는다(X-Openit-User 헤더가 승인자)
 curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'","decision":"APPROVE","approver_role":"release-approver","reason":"지표 검토함","report_hash":"sha256:…"}' http://gate:8080/v1/approvals
 ```
@@ -123,3 +123,11 @@ docker run -v /srv/secrets/gate:/run/secrets:ro \
 - 파일은 컨테이너의 비root 사용자가 읽을 수 있어야 한다(모드 0644 이상 또는 해당 uid 소유). 이미지와 리포지토리에는 넣지 않는다.
 - 파일이 없거나 비어 있으면 값 없이 이유만 담긴 오류로 시작이 중단된다. 비밀 값은 로그, `/readyz`, 오류 본문, 예외 메시지에 나오지 않는다(`tests/test_secrets.py`, `scripts/smoke.sh`가 `inspect`·`exec env`·로그에 평문이 없음을 확인한다).
 - 설정 파일(JSON)에는 비밀 값을 적을 수 없다. `i1_options`, `i3_options`에서 `token`, `secret`, `password` 등 비밀 같은 키에 문자열을 직접 적으면 시작을 거부한다(오류에는 키 경로만 나온다). 비밀은 이름으로만 받는다: `{"secret": "GATE_I1_TOKEN"}`(옛 `{"env": "이름"}`도 같은 뜻). 둘 다 `read_secret(이름)`으로 풀려서 `이름_FILE` 파일이 우선이고 없으면 환경 변수다.
+
+## TLS와 배치 (U99)
+
+- 이웃 주소(`GATE_I1_URL`, `GATE_I3_URL`)는 환경 변수로만 받고 코드에 기본값이 없다. 값은 배치가 정한다(https 주소).
+- 바깥 HTTPS 호출은 표준 `SSL_CERT_FILE`로 사설 루트를 믿는다(클라이언트는 만들 때 읽는다). 검증을 끄는 코드는 없다.
+- PostgreSQL TLS는 비밀 파일의 접속 문자열 `?sslmode=verify-full&sslrootcert=…`로 켠다. 코드는 sslmode를 덮어쓰지 않는다.
+- 들어오는 TLS는 서비스 앞의 사이드카가 끝낸다(deploy). 컨테이너 HEALTHCHECK는 루프백 평문이다.
+- 시험: `tests/test_tls_config.py`.
