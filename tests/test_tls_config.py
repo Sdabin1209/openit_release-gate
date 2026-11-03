@@ -82,3 +82,15 @@ def test_private_root_is_trusted_through_ssl_cert_file_only(tmp_path, monkeypatc
         assert items == [] and nxt is None
     finally:
         srv.shutdown()
+
+
+def test_plain_http_to_a_non_loopback_host_is_refused_at_client_creation(monkeypatch):
+    """U99(계약 3.4.1): 같은 기계(loopback) 밖의 http는 클라이언트 생성 때 ValueError다. https와 loopback http는 만들어진다."""
+    monkeypatch.setenv("GATE_I1_TOKEN", "t")
+    monkeypatch.setenv("GATE_I3_TOKEN", "t")
+    with pytest.raises(ValueError):
+        factories.http_question_reader(base_url="http://question-authoring:8080", token="t")
+    with pytest.raises(ValueError):
+        factories.http_model_registry(base_url="http://model-registry:8080", token="t")
+    assert factories.http_question_reader(base_url="https://question-authoring", token="t") is not None
+    assert factories.http_question_reader(base_url="http://127.0.0.1:1", token="t") is not None

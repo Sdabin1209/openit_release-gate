@@ -1,6 +1,6 @@
 # STATUS (wo-320: 문항 세트 여럿, 계약 3.3.0, 문진 스키마 4.0.0)
 - subject.question_sets, 세트별 검사, 매니페스트 question_sets(title), I4 세트별 조회, `question_banks/<id>.json`(ADR-0021). 시험은 `tests/test_multi_question_sets.py`. 문진 스키마 정수 버전은 코드에 박지 않고 deploy가 `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION`으로 준다(시험은 설치된 패키지 값을 쓴다).
-- openit-link v0.4.6, 계약 v3.4.0, model-runtime v0.11.13, 문진 스키마 survey-schema-v4.1.0으로 올렸다(wo-320 후속). 설치는 `requirements.txt`로 한다.
+- 잠금: 계약 v3.4.1, openit-link v0.4.7, model-runtime v0.11.14, 문진 스키마 survey-schema-v4.1.0. 설치는 `requirements.txt`로 한다.
 
 # STATUS (U400: 영역 구조 개편, 2026-10-30)
 - 계약 v3.1.1, openit-link v0.4.0로 올림. 코드를 `components/`·`wiring/`·`types/`로 옮기고 `schemas/`(스키마 32개, 예시)를 만들었다. 표는 `docs/components.md`, 근거는 ADR-0018.
