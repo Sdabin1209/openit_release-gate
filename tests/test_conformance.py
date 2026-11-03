@@ -44,7 +44,7 @@ def test_implements_protocols(reg):
 def test_submit_idempotent_and_validated(world):
     svc, s = world.reg.service, world.subject()
     a = svc.submit_candidate(s, requested_by_role="operator")
-    assert svc.submit_candidate(deepcopy(s), requested_by_role="model-lab") == a    # 기존 접수를 돌려준다
+    assert svc.submit_candidate(deepcopy(s), requested_by_role="release-gate-collector") == a    # 기존 접수를 돌려준다
     world.schemas.validate("GateSubmission", a)
     assert code(svc.submit_candidate, {"question_sets": s["question_sets"]}, requested_by_role="operator") == "INVALID_RECORD"
     assert code(svc.submit_candidate, dict(s, extra=1), requested_by_role="operator") == "INVALID_RECORD"

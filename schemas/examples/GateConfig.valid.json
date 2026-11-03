@@ -16,5 +16,9 @@
   "approver_role": "gate-service",
   "approver_roles": [
     "release-approver"
+  ],
+  "gateway_roles": [
+    "operator",
+    "release-approver"
   ]
 }

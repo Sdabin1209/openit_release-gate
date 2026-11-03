@@ -72,6 +72,15 @@
     "approver_role": {
       "type": "string",
       "minLength": 1
+    },
+    "gateway_roles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "description": "게이트웨이 토큰의 역할(X-Openit-User·Roles를 쓰는 토큰). deploy-exposure.json의 account 경로 upstream_token과 같다"
     }
   },
   "required": [
@@ -83,6 +92,7 @@
     "rollback_roles",
     "service_roles",
     "approver_roles",
+    "gateway_roles",
     "max_pending_submissions",
     "approver_role"
   ]

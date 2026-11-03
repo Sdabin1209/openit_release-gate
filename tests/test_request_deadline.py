@@ -83,7 +83,7 @@ class SlowAdapters:
 
 def _call(base, path, token, body, user="u1"):
     req = urllib.request.Request(base + path, data=json.dumps(body).encode(), method="POST",
-                                 headers={"Authorization": f"Bearer {token}", "X-Openit-User": user, "Content-Type": "application/json"})
+                                 headers={"Authorization": f"Bearer {token}", "X-Openit-User": user, "X-Openit-Roles": "operator,release-approver", "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=HANG_GUARD_SECONDS) as r:
             return r.status, json.loads(r.read())

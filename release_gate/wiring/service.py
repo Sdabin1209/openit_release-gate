@@ -46,6 +46,7 @@ def review_report_for(store, schemas, clock: Clock, sid: str) -> dict:
 class GateServiceImpl:
     def __init__(self, store, schemas: SchemaSet, config: GateConfig, clock: Clock = utc_now):
         self.store, self.schemas, self.config, self.clock = store, schemas, config, clock
+        self.submit_check = None      # 제출 때 참조(문항 세트·모델)를 이웃에서 읽어 해시를 대조하는 함수(I1·I3가 연결된 서비스만, main이 넣는다)
         self._pointer = pointer_control.PointerControl(
             store, lambda rid: verify_in_tempdir(store, rid), lambda: ts(self.clock()),
             activate_roles=config.activate_roles, rollback_roles=config.rollback_roles)
@@ -55,7 +56,7 @@ class GateServiceImpl:
 
     def submit_candidate(self, subject: dict, *, requested_by_role: str) -> dict:
         return submission_intake.intake(self.store, {"subject": subject, "requested_by_role": requested_by_role},
-                                        submit_roles=self.config.submit_roles,
+                                        submit_roles=self.config.submit_roles, precheck=self.submit_check,
                                         max_pending=self.config.max_pending_submissions, submitted_at=ts(self.clock()))
 
     def get_submission(self, submission_id: str) -> dict:

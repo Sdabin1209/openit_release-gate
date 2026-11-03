@@ -688,6 +688,15 @@ _INTERNAL = json.loads(r'''{
     "type": "array",
     "uniqueItems": true
    },
+   "gateway_roles": {
+    "description": "게이트웨이 토큰의 역할(X-Openit-User·Roles를 쓰는 토큰). deploy-exposure.json의 account 경로 upstream_token과 같다",
+    "items": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "type": "array",
+    "uniqueItems": true
+   },
    "max_pending_submissions": {
     "minimum": 1,
     "type": [
@@ -740,6 +749,7 @@ _INTERNAL = json.loads(r'''{
    "rollback_roles",
    "service_roles",
    "approver_roles",
+   "gateway_roles",
    "max_pending_submissions",
    "approver_role"
   ],

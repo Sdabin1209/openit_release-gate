@@ -12,6 +12,7 @@ import os
 from typing import Iterator, Optional
 
 from boundary_contracts import canonical, read_secret
+from boundary_contracts.clients import egress_proxy_from
 from boundary_contracts.errors import BoundaryError
 
 from ..types.validators import validate
@@ -121,7 +122,7 @@ class QuestionsLink:
 
 def http_question_reader(base_url=None, token=None, timeout=None):
     """I1 HTTP 클라이언트. base_url·token이 인자로 오지 않으면 GATE_I1_URL과 비밀 GATE_I1_TOKEN(`_FILE` 경로 우선)에서 읽는다.
-    읽기 timeout 기본 10초(`GATE_I1_TIMEOUT`): FAULT_POLICY 4(읽기 timeout 필수)와 승인 요청이 gateway 15초 안에 끝나야 한다는 설계 판단. 측정 안 함(docs/adr/0008)."""
+    읽기 timeout 기본 10초(`GATE_I1_TIMEOUT`): 계약 RUNTIME R10.3(시간 한도가 사슬 표에 없는 서비스 사이 호출의 기본, 시작값·측정 안 함)."""
     try:
         from openit_link.clients import HttpQuestionReader
     except ImportError as e:
@@ -130,4 +131,6 @@ def http_question_reader(base_url=None, token=None, timeout=None):
     tok = token or read_secret("GATE_I1_TOKEN")
     if not url or not tok:
         raise SystemExit("GATE_I1_URL과 GATE_I1_TOKEN이 필요하다")
-    return _bounded_class(HttpQuestionReader)(base_url=url, token=tok, timeout=float(timeout or os.environ.get("GATE_I1_TIMEOUT", "10")))
+    # RUNTIME IN-EGRESS·R1.8: 이웃 호출은 자기 영역 게이트웨이의 출구로만 나간다(OPENIT_EGRESS_PROXY 하나만 꺼낸다, R9.1)
+    return _bounded_class(HttpQuestionReader)(base_url=url, token=tok, timeout=float(timeout or os.environ.get("GATE_I1_TIMEOUT", "10")),
+                                              egress_proxy=egress_proxy_from(os.environ))

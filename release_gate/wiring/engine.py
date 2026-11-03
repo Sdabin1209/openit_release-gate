@@ -52,6 +52,18 @@ class GateEngine:
         return {"supported_runtime_contract_version": c.supported_runtime_contract_version,
                 "action_rules_version": c.action_rules_version, "model_runtime_version": c.model_runtime_version}
 
+    def verify_subject(self, subject: dict) -> None:
+        """HTTP.md I5 제출 검사: 문항 세트·모델 참조를 I1·I3에서 읽어 content_hash를 대조한다. 읽을 수 없거나 다르면 422 INTEGRITY_ERROR(접수하지 않는다).
+        이웃이 멈춘 경우(UNAVAILABLE)는 그대로 올려 호출자가 다시 보내게 한다. 구조 대조(문항·칸)는 접수 뒤 자동 검사가 한다(REJECTED_AUTO)."""
+        bad = []
+        for ref in subject["question_sets"]:
+            if self.loader.q.read_bank(ref) is None:
+                bad.append(f"문항 세트 {ref['id']}")
+        md = self.models.read_subject(subject)
+        bad += md["problems"]
+        if bad:
+            raise BoundaryError("INTEGRITY_ERROR", "참조를 읽을 수 없거나 해시가 다르다: " + "; ".join(bad))
+
     # --- 자동 검사
     def process_pending(self) -> list:
         """자동 검사 전의 접수를 진행하고 (반려로) 끝난 판정을 돌려준다. 통과한 접수는 AWAITING_APPROVAL로 간다.

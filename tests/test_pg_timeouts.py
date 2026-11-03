@@ -262,7 +262,7 @@ def test_readyz_is_503_when_nothing_was_ever_read_and_status_is_stuck(schemas, c
                        clock=FakeTime(join_times_out=True))
     try:
         code, body = _get(base, "/readyz")
-        assert code == 503 and json.loads(body)["status"] == "not ready"
+        assert code == 503 and json.loads(body)["status"] == "not_ready"
     finally:
         release.set()
         srv.shutdown()

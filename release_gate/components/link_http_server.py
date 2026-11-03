@@ -44,10 +44,16 @@ def _unauth(message: str) -> BoundaryError:
     return BoundaryError("PERMISSION_DENIED", message, {"http_status": 401})
 
 
-def _user(req: Request) -> Optional[str]:
-    """X-Openit-User가 있으면 ID 형식을 스키마 IdString으로 확인한다."""
-    if req.user is not None:
-        validate("IdString", req.user)
+def _user(req: Request, gateway_roles: frozenset = frozenset()) -> Optional[str]:
+    """X-Openit-User를 돌려준다. 게이트웨이 토큰(토큰 역할이 gateway_roles)이 붙은 요청에서만 쓴다: 그 밖의 토큰으로 온 같은 이름의 헤더는 무시한다(CONVENTIONS 6절).
+    게이트웨이 토큰이면 X-Openit-Roles에 그 토큰의 역할이 있어야 한다(없으면 403: 사람 요청의 권한은 헤더 역할이 정한다). ID 형식은 스키마 IdString으로 확인한다."""
+    role = (req.role or "")[2:]
+    if role not in gateway_roles or req.user is None:
+        return None
+    roles = {x.strip() for x in req.headers.get("x-openit-roles", "").split(",")}
+    if role not in roles:
+        raise BoundaryError("PERMISSION_DENIED", "X-Openit-Roles에 이 호출의 역할이 없다")
+    validate("IdString", req.user)
     return req.user
 
 
@@ -93,6 +99,7 @@ READ, WRITE = "r:", "w:"
 def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, stream: Callable) -> list:
     """경로 표. r은 registry(store, reader, service, write_bundle), engine은 승인 결정에 필요하다(없으면 None)."""
     cfg = r.service.config
+    gw = cfg.gateway_roles
 
     def ok(body, headers=None):
         return Response(200, body, headers or {})
@@ -124,7 +131,9 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
         return ok(_list_body("GateDecision", items, nxt))
 
     def approvals(req):
-        user = _user(req)
+        user = _user(req, gw)
+        if user is None:
+            raise _unauth("사람 행위자(X-Openit-User)가 게이트웨이 토큰과 함께 와야 한다")
         if engine is None:
             raise BoundaryError("UNAVAILABLE", "승인 결정에는 I1·I3 연결이 필요하다(GATE_I1_FACTORY, GATE_I3_FACTORY)")
         rec, created = engine.decide(req.body, token_role=req.role[2:], approver_id=user)
@@ -132,7 +141,7 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
 
     def actor(req) -> str:
         """D85: 역할은 토큰에서, 행위자는 게이트웨이가 붙인 X-Openit-User에서 정한다. 서비스 역할만 헤더 없이 부를 수 있다."""
-        user = _user(req)
+        user = _user(req, gw)
         if user is None:
             if req.role[2:] not in cfg.service_roles:
                 raise _unauth("X-Openit-User 헤더가 없다(게이트웨이가 붙인 행위자 식별이 필요하다)")
@@ -142,6 +151,9 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
     def obj(req) -> dict:
         body = {} if req.body is None else req.body
         validate("RequestObject", body)
+        claimed = body.get("requested_by_role")      # 기록용이다. 토큰 역할과 다르면 거절한다(CONVENTIONS 6절)
+        if claimed is not None and claimed != req.role[2:]:
+            raise BoundaryError("PERMISSION_DENIED", "본문의 requested_by_role이 토큰의 역할과 다르다")
         return body
 
     def activate(req):
@@ -221,12 +233,12 @@ class GateApp:
             r.store.ping(timeout=budget)         # PostgreSQL이면 주 연결·락을 쓰지 않는 별도 짧은 확인(연결 시도 포함, 예산 안)
             st = self.readyz_status(budget - (self.clock.monotonic() - start))
         except BoundaryError as e:
-            return False, {"status": "not ready", "reason": e.message}
+            return False, {"status": "not_ready", "reason": e.message}
         body = {"status": "ready", "database": getattr(r.store, "kind", "unknown"), **st}
         try:
             validate_contract("GateReadyz", body)      # 만드는 쪽 검증(R7): 계약을 어기는 본문은 내보내지 않는다
         except BoundaryError:
-            return False, {"status": "not ready", "reason": "readyz 본문이 계약 GateReadyz를 어긴다(서버 결함)"}
+            return False, {"status": "not_ready", "reason": "readyz 본문이 계약 GateReadyz를 어긴다(서버 결함)"}
         return True, body
 
     def readyz_status(self, timeout: Optional[float] = None) -> dict:

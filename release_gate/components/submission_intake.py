@@ -13,12 +13,14 @@ from boundary_contracts.errors import BoundaryError
 from ..types.validators import validate, validate_contract
 
 
-def intake(store, req: dict, *, submit_roles, max_pending: Optional[int], submitted_at: str) -> dict:
+def intake(store, req: dict, *, submit_roles, max_pending: Optional[int], submitted_at: str, precheck=None) -> dict:
     role = req.get("requested_by_role") if isinstance(req, dict) else None
     # 권한(403)은 모양(400)보다 먼저다: 허용 목록은 설정 값이라 스키마 밖이다(schemas/README.md)
     if isinstance(role, str) and role and role not in submit_roles:
         raise BoundaryError("PERMISSION_DENIED", f"역할 {role}은 판정 요청 권한이 없다")
     validate("SubmitRequest", req)
+    if precheck is not None:
+        precheck(req["subject"])      # HTTP.md I5: 참조를 읽을 수 없거나 해시가 다르면 접수하지 않고 422 INTEGRITY_ERROR(이웃 읽기는 wiring이 넣는다)
     ids = [q.get("id") for q in req["subject"]["question_sets"]]
     if len(set(ids)) != len(ids):
         raise BoundaryError("INVALID_RECORD", "subject.question_sets에 같은 문항 세트 ID가 둘 이상 있다", {"reason": "DUPLICATE_QUESTION_SET"})

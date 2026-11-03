@@ -332,6 +332,7 @@ def serve() -> None:
             raise SystemExit("model-runtime 버전을 읽지 못했다(설치되지 않음). GATE_MODEL_RUNTIME_VERSION을 주거나 설치한다")
         engine = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry(), deadline_source=deadlines.current)
         tasks.append(engine.process_pending)
+        reg.service.submit_check = engine.verify_subject      # HTTP.md I5: 제출 때 참조 해시를 대조해 422로 거절한다
         judging = "enabled"
     # 60초: 최초 구현의 기본값, 근거 기록 없음, 측정 안 함(docs/adr/0006)
     loop = Loop(_seconds("GATE_POLL_SECONDS", 60.0), tasks)

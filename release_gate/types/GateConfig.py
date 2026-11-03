@@ -20,6 +20,9 @@ ServiceRole = str
 ApproverRole = str
 
 
+GatewayRole = str
+
+
 class GateConfig(TypedDict):
     supported_runtime_contract_version: int
     action_rules_version: Optional[str]
@@ -31,3 +34,4 @@ class GateConfig(TypedDict):
     approver_roles: List[ApproverRole]
     max_pending_submissions: Optional[int]
     approver_role: str
+    gateway_roles: List[GatewayRole]

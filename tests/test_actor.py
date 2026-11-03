@@ -28,6 +28,7 @@ def post(base, path, body, token, user=None):
     req.add_header("Authorization", f"Bearer {token}")
     if user is not None:
         req.add_header("X-Openit-User", user)
+        req.add_header("X-Openit-Roles", "operator,release-approver")
     try:
         with urllib.request.urlopen(req) as r:
             return r.status, json.loads(r.read())
@@ -65,7 +66,7 @@ def test_rollback_without_header_is_401_for_human_role(world, server):
 
 def test_actor_recorded_from_header_and_shown(world, server):
     rid = world.make_release()
-    st, p = post(server, "/v1/activate", {"release_id": rid, "requested_by": "spoof", "requested_by_role": "ops-feedback"},
+    st, p = post(server, "/v1/activate", {"release_id": rid, "requested_by": "spoof", "requested_by_role": "operator"},
                  "wo", "alice")
     assert st == 200
     assert p["ext"]["release-gate"] == {"requested_by": "alice", "requested_by_role": "operator"}
@@ -77,8 +78,10 @@ def test_body_role_is_ignored_for_activate(world, server):
     rid = world.make_release()
     # 권한 없는 토큰이 본문에서 operator를 주장해도 소용없다
     assert post(server, "/v1/activate", {"release_id": rid, "requested_by_role": "operator"}, "wq", "mallory")[0] == 403
-    # 권한 있는 토큰이 본문에서 다른 역할을 주장해도 토큰 역할로 기록된다
+    # 권한 있는 토큰이 본문에서 다른 역할을 주장하면 거절한다(CONVENTIONS 6절: 본문 역할은 기록용이고 토큰 역할과 다르면 PERMISSION_DENIED)
     st, p = post(server, "/v1/activate", {"release_id": rid, "requested_by_role": "question-authoring"}, "wo", "alice")
+    assert st == 403 and p["code"] == "PERMISSION_DENIED" and active(server) is None
+    st, p = post(server, "/v1/activate", {"release_id": rid}, "wo", "alice")      # 본문 역할이 없으면 토큰 역할로 기록된다
     assert st == 200 and p["ext"]["release-gate"]["requested_by_role"] == "operator"
 
 
@@ -86,8 +89,7 @@ def test_rollback_actor_in_receipt_and_pointer(world, server):
     r1 = world.make_release()
     r2 = world.make_release(world.subject(qs=world.q.add("qs-main", 2)))
     post(server, "/v1/activate", {"release_id": r2}, "wo", "alice")
-    req = rollback_req("rb-b", r2, r1, "ops-feedback")
-    req["requested_by_role"] = "question-authoring"                # 본문 역할은 무시된다
+    req = rollback_req("rb-b", r2, r1, "operator")
     st, rc = post(server, "/v1/rollback", req, "wo", "bob")
     assert st == 200 and rc["status"] == "APPLIED"
     assert rc["ext"]["release-gate"] == {"requested_by": "bob", "requested_by_role": "operator"}
@@ -124,7 +126,9 @@ def test_rollback_token_role_overrides_body_role(world, server):
     r2 = world.make_release(world.subject(qs=world.q.add("qs-main", 2)))
     post(server, "/v1/activate", {"release_id": r2}, "wo", "alice")
     body = dict(admin_rollback_body("rb-f", r2, r1), requested_by_role="question-authoring")
-    st, rc = post(server, "/v1/rollback", body, "wo", "bob")
+    st, e = post(server, "/v1/rollback", body, "wo", "bob")      # 본문 역할이 토큰 역할과 다르면 403
+    assert st == 403 and e["code"] == "PERMISSION_DENIED"
+    st, rc = post(server, "/v1/rollback", dict(body, requested_by_role="operator"), "wo", "bob")
     assert st == 200 and rc["ext"]["release-gate"]["requested_by_role"] == "operator"
     # 반대로 권한 없는 토큰은 본문에서 operator를 적어도 403
     body = dict(admin_rollback_body("rb-g", r1, r2), requested_by_role="operator")

@@ -12,6 +12,7 @@ import os
 from typing import Optional
 
 from boundary_contracts import canonical, read_secret
+from boundary_contracts.clients import egress_proxy_from
 from boundary_contracts.errors import BoundaryError
 
 from ..types.validators import validate, validate_contract
@@ -59,6 +60,9 @@ def _bounded_class(cls):
             c._timeout = seconds        # 계약 클라이언트의 읽기 시한 필드(시험이 값이 걸리는지 확인한다)
             return c
     return Bounded
+
+
+TAR_TIMEOUT_SECONDS = 300.0      # 계약 RUNTIME R10.3: tar 묶음 호출의 timeout(시작값, 측정 안 함)
 
 
 class ModelsLink:
@@ -143,7 +147,14 @@ class ModelsLink:
 
     def open_adapter(self, ref: dict, dest) -> str:
         """어댑터 디렉터리를 dest에 받아 경로를 돌려준다(실패는 그대로 올린다)."""
-        return self._c.open_adapter(ref["id"], ref["version"], dest=dest)
+        # RUNTIME R10.3: tar 묶음을 받는 호출은 timeout 300초(시작값·측정 안 함). 요청 마감(D120)이 있으면 남은 시간이 상한이다
+        c, d = self.client, (self._deadline() if self._deadline else None)
+        if getattr(c, "with_timeout", None) is not None:
+            rem = d.remaining() if d is not None else TAR_TIMEOUT_SECONDS
+            if rem <= 0:
+                raise BoundaryError("UNAVAILABLE", "요청 마감을 넘겼다(D120): 같은 요청을 다시 보내면 된다")
+            c = c.with_timeout(min(TAR_TIMEOUT_SECONDS, rem))
+        return c.open_adapter(ref["id"], ref["version"], dest=dest)
 
 
 def http_model_registry(base_url=None, token=None, timeout=None):
@@ -156,4 +167,5 @@ def http_model_registry(base_url=None, token=None, timeout=None):
     tok = token or read_secret("GATE_I3_TOKEN")
     if not url or not tok:
         raise SystemExit("GATE_I3_URL과 GATE_I3_TOKEN이 필요하다")
-    return _bounded_class(HttpModelRegistry)(base_url=url, token=tok, timeout=float(timeout or os.environ.get("GATE_I3_TIMEOUT", "10")))
+    return _bounded_class(HttpModelRegistry)(base_url=url, token=tok, timeout=float(timeout or os.environ.get("GATE_I3_TIMEOUT", "10")),
+                                             egress_proxy=egress_proxy_from(os.environ))      # 출구: 자기 영역 게이트웨이(R1.8)

@@ -50,6 +50,7 @@ def call(base, path, body=None, token=None, user=AUTO):
         req.add_header("Authorization", f"Bearer {token}")
     if user:
         req.add_header("X-Openit-User", user)
+        req.add_header("X-Openit-Roles", "operator,release-approver")
     try:
         with urllib.request.urlopen(req) as r:
             return r.status, json.loads(r.read())
@@ -299,6 +300,8 @@ def hcall(base, path, body=None, token=None, headers=None):
     headers = dict(headers or {})
     if "X-Openit-User" not in headers and _gw_user(path, body, token):
         headers["X-Openit-User"] = _gw_user(path, body, token)
+    if "X-Openit-User" in headers and "X-Openit-Roles" not in headers:
+        headers["X-Openit-Roles"] = "operator,release-approver"
     for k, v in headers.items():
         if v is not None:
             req.add_header(k, v)
