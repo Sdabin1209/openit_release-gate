@@ -112,7 +112,7 @@ class FakeModels:
         self.down = False
 
     def add(self, package_id: str, version: str, role: str, *, files: dict | None = None,
-            runtime_contract_version=2, rules=None, runtime="0.1.0", base=("base-1", "r1"),
+            runtime_contract_version=None, rules=None, runtime="0.1.0", base=("base-1", "r1"),
             created_at="2026-10-14T00:00:00Z", metrics=None, report=True, prompt_path="system_prompt.txt", **over) -> dict:
         d = self.root / f"{package_id}-{version}"
         d.mkdir(parents=True, exist_ok=True)
@@ -123,6 +123,9 @@ class FakeModels:
         for name, data in files.items():
             (d / name).parent.mkdir(parents=True, exist_ok=True)
             (d / name).write_bytes(data)
+        if runtime_contract_version is None:      # 기본은 설치된 문진 스키마의 정수 버전
+            from survey_schema import available_versions
+            runtime_contract_version = max(available_versions())
         sc = {"prompt_template": "v1", "decoding": {"mode": "constrained"}, "max_attempts": 2}
         m = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "package_id": package_id, "version": version, "role": role,
              "created_at": created_at, "runtime_contract_version": runtime_contract_version,

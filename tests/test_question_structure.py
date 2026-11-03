@@ -108,6 +108,6 @@ def test_component_reports_only_the_difference_names():
                                                "bank_violations": [], "reviews": [], "reviews_ok": True}], "manifests": {"LORA_A": {}},
                             "eval_reports": {}, "report_problems": [], "problems": [],
                             "trained_banks": {"LORA_A": [{"ref": {"id": "x"}, "bank": base}]}},
-                  "params": {}, "versions": {"supported_runtime_contract_version": 2, "survey_contract_version": 2,
+                  "params": {}, "versions": {"supported_runtime_contract_version": 1, "survey_contract_version": 1,
                                              "action_rules_version": "r", "model_runtime_version": "0"}})
     assert out["result"] == "FAIL" and "q1.s2" in out["detail"] and "후보에만 있음" in out["detail"]

@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 # 왜: 문진 스키마는 survey-service가 배포한 패키지(requirements.txt의 openit-survey-schema)에서 읽는다. 이웃 폴더 없이 시험이 돌게 하기 위해서다.
 # 패키지가 없을 때만 형제 배치의 ../survey-service/schema(읽기 전용)를 쓴다.
 try:
-    from survey_schema import contract_version_dir
-    SURVEY = contract_version_dir(2)
+    from survey_schema import available_versions, contract_version_dir
+    SURVEY = contract_version_dir(max(available_versions()))      # 설치된 패키지의 정수 버전(값을 시험에 박지 않는다)
 except ImportError:
     SURVEY = ROOT / "survey-service" / "schema"
 
