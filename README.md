@@ -88,6 +88,7 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 
 - 시험 개수는 이 문서에 적지 않는다. 실행 명령으로 센다: `export TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)" && python -m pytest -q -p no:cacheprovider`(PostgreSQL 컨테이너 포함. 없으면 그 시험은 건너뛴다). `tests/test_u43_setup_env_report.py`는 GitHub에서 계약·link 태그를 받으므로 태그가 게시되기 전에는 로컬 태그로 `GIT_CONFIG_*`(url.insteadOf)를 걸어 돌린다. 이미지: `GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh`.
 
+- 계약 3.4.7 준수 시험(조항 → 시험): HTTP I5·R10.8 `tests/test_conform_344.py`(제출 422·503·역할), CONVENTIONS 6 `tests/test_gateway_tokens.py`, R4.1·R3.10 `tests/test_pg_restart.py`, R8.1·R10.5·R3.19 `tests/test_conform_344.py`·`tests/test_request_deadline.py`, R10.3·IN-EGRESS `tests/test_conform_344.py`, R10.1 `tests/test_backup_job.py`, R5.1 `tests/test_conform_344.py`, U99 `tests/test_tls_config.py`.
 - 이 영역 소유의 열린 항목은 없다. G08(기본 태그 올림)은 닫힘(release-gate 7139123).
 - 간접으로 닿는 열린 항목(소유는 다른 영역): G11(문진 스키마 정수 버전 안의 비호환 변경, 같은 잠금으로 함께 배포 필요, 다른 영역 의존), U07(실제 LLM 데모 부분, GPU 의존), U10(평가가 가짜 모델로만 돌았음, GPU 의존), D-A(운영 도메인·토큰 발급·회전 등, 사용자 결정), U12(두 번째 독립 머신 확인, 미실시).
 - 임상 안전 지표와 승인 임계치(O11)는 사용자 결정이며 D53에 따라 코드에 임계치를 두지 않는다.
@@ -128,6 +129,8 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | [0019](docs/adr/0019-injected-clock.md) | 시간은 주입한다: 컴포넌트는 시계를 읽지 않고 시험은 가짜 시계로 시간을 흘린다 |
 | [0020](docs/adr/0020-request-deadline.md) | 사람용 요청에 서버 쪽 요청 전체 마감 170초(D120, D125 개정) |
 | [0021](docs/adr/0021-multiple-question-sets.md) | 한 제출·릴리스에 문항 세트 여럿(subject.question_sets, 세트별 검사, question_banks/<id>.json) |
+| [0022](docs/adr/0022-database-component-and-backup.md) | 데이터베이스는 이 영역의 컴포넌트, 백업은 restic으로 영역 게이트웨이 출구를 지나 platform 백업 저장소로 |
+| [0023](docs/adr/0023-conformance-values.md) | 계약 3.4.x 준수에서 정한 값(게이트웨이 토큰, 본문 상한, 잡 시간 한도, 처리 중 요청 수) |
 | [0012](docs/adr/0012-job-output-self-check.md) | 잡 출력 자기 검사, /readyz는 시험에서만, 종료 코드 |
 | [0013](docs/adr/0013-wsgi-waitress.md) | HTTP 면은 WSGI 앱 + waitress |
 | [0014](docs/adr/0014-yoyo-migrations.md) | 스키마 버전 관리는 yoyo-migrations |
