@@ -155,3 +155,64 @@ def test_healthz_and_readyz_need_no_token_and_not_ready_is_spelled_not_ready(wor
         validator("HealthStatus").validate(body); validator("GateReadyz").validate(body)
     finally:
         srv.shutdown()
+
+
+# --- R8.1: 서버 내부 오류는 503 UNAVAILABLE이고 로그에는 예외 종류와 위치만 남는다
+class _Boom(Exception):
+    pass
+
+
+def test_internal_error_is_503_and_the_log_has_class_and_place_but_no_message(world, caplog):
+    import io as _io
+    import logging
+    from release_gate import main as gate_main
+    secret = "PATIENT-UTTERANCE-and-TOKEN-xyz"
+    srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "reader"}, write_tokens={"wo": "operator"}, status=lambda: dict(READY_STATUS))
+    world.reg.reader.get_active_pointer = lambda: (_ for _ in ()).throw(_Boom(secret))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    buf = _io.StringIO()
+    h = logging.StreamHandler(buf)
+    h.setFormatter(gate_main._ClassAndWhereFormatter("%(levelname)s %(name)s %(message)s"))
+    root = logging.getLogger()
+    root.addHandler(h)
+    try:
+        req = urllib.request.Request(base + "/v1/active-pointer", headers={"Authorization": "Bearer rt"})
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req)
+        body = json.loads(e.value.read())
+    finally:
+        root.removeHandler(h)
+        srv.shutdown()
+    assert e.value.code == 503 and body["code"] == "UNAVAILABLE" and secret not in json.dumps(body)
+    assert "_Boom at test_conform_344.py:" in buf.getvalue() and secret not in buf.getvalue()
+
+
+# --- R10.5: 표준 출력이 막혀도 요청의 출력은 바뀌지 않는다
+def test_a_broken_log_stream_does_not_change_the_response(world):
+    import logging
+    class Broken:
+        def write(self, *_): raise OSError(28, "No space left on device")
+        def flush(self): raise OSError(28, "No space left on device")
+    srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "reader"}, write_tokens={"wo": "operator"}, status=lambda: dict(READY_STATUS))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    root, old = logging.getLogger(), logging.raiseExceptions
+    h = logging.StreamHandler(Broken())
+    root.addHandler(h); root.setLevel(logging.INFO); logging.raiseExceptions = False
+    try:
+        req = urllib.request.Request(base + "/v1/active-pointer", headers={"Authorization": "Bearer rt"})
+        with urllib.request.urlopen(req) as r:
+            assert r.status == 200 and json.loads(r.read()) == {"item": None}
+    finally:
+        root.removeHandler(h); logging.raiseExceptions = old
+        srv.shutdown()
+
+
+# --- test_graceful_stop_returns_remaining_after_grace가 부하에서 흔들린 원인(waitress active_count는 풀 스레드가 대기에 들어가기 전의 시동 구간에 올라가 있다)
+def test_idle_server_reports_zero_requests_in_flight_even_while_pool_threads_are_starting(world):
+    srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "reader"}, write_tokens={"wo": "operator"}, status=lambda: dict(READY_STATUS))
+    try:
+        assert srv._tasks() == 0 and srv.graceful_stop(0.5) == 0
+    finally:
+        srv.shutdown()

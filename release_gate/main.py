@@ -209,8 +209,27 @@ def _tokens(name: str, required: bool) -> dict:
     return out
 
 
+class _ClassAndWhereFormatter(logging.Formatter):
+    """RUNTIME R8.1: 예외는 종류(클래스 이름)와 위치(파일:줄)만 남긴다. 예외 메시지·역추적의 값(환자 발화·비밀이 섞일 수 있다)은 남기지 않는다."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        record.exc_text = None      # 다른 처리기가 먼저 만든 전체 역추적 캐시를 쓰지 않는다
+        return super().format(record)
+
+    def formatException(self, ei) -> str:
+        t, _v, tb = ei
+        last = None
+        while tb is not None:
+            last, tb = tb, tb.tb_next
+        where = f"{os.path.basename(last.tb_frame.f_code.co_filename)}:{last.tb_lineno}" if last is not None else "?"
+        return f"{t.__name__} at {where}"
+
+
 def _logging() -> None:
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    h = logging.StreamHandler(sys.stdout)
+    h.setFormatter(_ClassAndWhereFormatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    logging.basicConfig(handlers=[h], level=logging.INFO, force=True)
+    logging.raiseExceptions = False      # RUNTIME R10.5: 로그 쓰기 실패가 요청을 실패시키지 않는다(표준 출력이 막혀도 예외를 올리지 않는다)
 
 
 def _opt_int(name: str, minimum: int = 1) -> "int | None":

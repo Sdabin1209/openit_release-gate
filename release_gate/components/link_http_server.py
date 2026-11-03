@@ -217,6 +217,7 @@ class GateApp:
         self.registry, self.status = registry, status
         self.read_tokens, self.write_tokens = dict(read_tokens), dict(write_tokens)
         self._last_status: dict = {}
+        self._inflight, self._inflight_lock = 0, threading.Lock()
         self._local = threading.local()      # 요청을 처리하는 스레드마다 읽어 둔 본문(시도 기록의 대상 ID용)
         routes = build_routes(registry, engine, frozenset(self.read_tokens.values()), frozenset(self.write_tokens.values()), self._stream)
         self._app = App(routes, self._token_roles(), ready=self._ready, on_result=self._on_result)
@@ -288,6 +289,16 @@ class GateApp:
         return self._token_roles().get(auth[7:]) if auth.startswith("Bearer ") else None
 
     def __call__(self, environ, start_response):
+        # 우아한 종료가 세는 '처리 중 요청'은 앱 안에 들어온 요청 수다(waitress의 active_count는 풀의 스레드가 대기 상태에 들어가기 전의 시동 구간에도 올라가 있어, 부하가 있으면 처리 중 요청 수를 부풀린다)
+        with self._inflight_lock:
+            self._inflight += 1
+        try:
+            return self._call(environ, start_response)
+        finally:
+            with self._inflight_lock:
+                self._inflight -= 1
+
+    def _call(self, environ, start_response):
         method = environ.get("REQUEST_METHOD", "GET")
         path = environ.get("PATH_INFO", "")
         raw = b""
@@ -308,13 +319,16 @@ class GateApp:
             finally:
                 if self.deadlines is not None:
                     self.deadlines.end()
-        except Exception:  # 서비스는 죽지 않는다. 원인은 로그에 남긴다.
+        except Exception:  # 서비스는 죽지 않는다. 원인은 로그에 남긴다(예외 종류와 위치만: RUNTIME R8.1, main._logging의 형식).
             log.exception("처리 중 예외")
             # 왜: BoundaryError 코드 열거에 내부 오류가 없다(CONVENTIONS 3절). 클라이언트는 5xx를 UNAVAILABLE로 읽으므로(HTTP.md 12행) 같은 코드로 맞춘다.
-            # 상태는 서버 결함이므로 500을 유지한다. 503으로 올릴지는 헤드 결정 대기(CR-0010)
-            status, headers = 500, {"Content-Type": "application/json"}
+            # 계약 RUNTIME R8.1·R3: 서버 내부 오류는 503 UNAVAILABLE이다(CR-0010 닫힘)
+            status, headers = 503, {"Content-Type": "application/json"}
             body = json.dumps(BoundaryError("UNAVAILABLE", "내부 오류").to_record(PIPELINE_SCHEMA_VERSION), ensure_ascii=False).encode()
-        self._log(environ, status)
+        try:
+            self._log(environ, status)
+        except Exception:      # noqa: BLE001 - RUNTIME R10.5: 로그를 쓰지 못해도(표준 출력이 막힘) 요청의 출력은 바뀌지 않는다
+            pass
         if not isinstance(body, (bytes, bytearray)):
             start_response(f"{status} {REASON.get(status, '')}".strip(), list(headers.items()))
             return body
@@ -394,8 +408,7 @@ class GateHTTPServer(GateApp):
                 raise
 
     def _tasks(self) -> int:
-        d = self._srv.task_dispatcher
-        return d.active_count + len(d.queue)
+        return self._inflight + len(self._srv.task_dispatcher.queue)      # 앱 안에서 처리 중인 요청 + 아직 일꾼을 못 받은 요청
 
     def graceful_stop(self, grace: float) -> int:
         """우아한 종료: /readyz를 shutting_down(503)으로 바꾸고, 새 연결을 받지 않고(수신 소켓을 닫는다), 처리 중인 요청이 끝나길
