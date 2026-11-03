@@ -23,7 +23,7 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 
 | 입력 | 쓰는 것 | 지원 버전 |
 | --- | --- | --- |
-| I1 QuestionReader | `get_question_bank`, `get_reviews` (`latest`, `list_ids`는 수집기) | 문진 스키마 정수 버전: 이미지를 빌드할 때 고정한 값(`GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION`, 현재 1)이 배포된 스키마의 `CONTRACT_VERSION`과 같아야 한다. 다르면 CONTRACT_COMPAT가 반려한다 |
+| I1 QuestionReader | `get_question_bank`, `get_reviews` (`latest`, `list_ids`는 수집기) | 문진 스키마 정수 버전: deploy가 명시하는 값(`GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION`, 필수, 코드 기본값 없음)이 배포된 스키마의 `CONTRACT_VERSION`과 같아야 한다. 다르면 CONTRACT_COMPAT가 반려한다 |
 | I3 ModelRegistry | `get_manifest`, `open_adapter` (`list_ids`, `list_versions`는 수집기) | 경계 계약 `2.0` (MAJOR 2, v1 매니페스트는 CONTRACT_COMPAT가 반려). `system_prompt {path, sha256}` 필수(D75): 어댑터 디렉터리 안의 파일과 해시를 확인하고 릴리스 매니페스트로 복사한다. `list_ids`, `lineage.question_sets`(참고) 사용 |
 | I9 model-runtime, LoRA-A 출력 규칙 | 코드는 쓰지 않는다. model-runtime은 설치된 패키지의 버전 문자열, 규칙 세대는 설치된 계약의 `ActionExtractionRules.rules_version`을 `action_rules_version`으로 릴리스 매니페스트에 기록하고 호환 검사에 쓴다 | 환경 변수 `GATE_MODEL_RUNTIME_VERSION` |
 | I5 호출 | 후보 제출, 활성화, `RollbackRequest` | 경계 계약 MAJOR 2 |

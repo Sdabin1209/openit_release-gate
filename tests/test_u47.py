@@ -57,13 +57,22 @@ def test_every_allowed_exposure_path_exists_in_the_code():
             assert f'"{stem}' in src, f"허용한 경로가 코드에 없다: {p}"
 
 
-def test_question_bank_route_is_not_exposed_through_the_gateway():
+def test_question_bank_route_is_not_exposed_to_people_or_anonymous_callers():
+    # survey-service가 내부 망에서 읽는다. 사람 계정·인증 없음으로는 열지 않는다. 다른 호스트의 추론 서버(machine-token, U67)는 /v1/releases/* 전체를 읽는다
     table = json.loads(EXPOSURE.read_text(encoding="utf-8"))
-    for r in table["routes"]:
-        if any(_covers(p, "/v1/releases/rel-x/question-bank") for p in r["paths"]):
-            assert r["auth"]["kind"] == "denied"      # survey-service가 내부 망에서 읽는다. 사람용 게이트웨이에는 열지 않는다
-            return
-    pytest.fail("question-bank 경로가 노출 표에 없다")
+    hit = [r for r in table["routes"] if any(_covers(p, "/v1/releases/rel-x/question-bank") for p in r["paths"])]
+    assert hit, "question-bank 경로가 노출 표에 없다"
+    assert all(r["auth"]["kind"] in ("denied", "machine-token") for r in hit)
+
+
+def test_machine_token_route_covers_exactly_the_inference_server_reads():
+    # U67: 추론 서버가 읽는 경로(활성 포인터, 릴리스 읽기 핸들)는 machine-token 하나에 모이고 읽기(GET)만이다. 계약 Exposure 스키마로 검증된다
+    table = json.loads(EXPOSURE.read_text(encoding="utf-8"))
+    validator("Exposure").validate(table)
+    m = [r for r in table["routes"] if r["auth"]["kind"] == "machine-token"]
+    assert len(m) == 1 and m[0]["methods"] == ["GET"] and "roles" not in m[0]["auth"]
+    assert sorted(m[0]["paths"]) == ["/v1/active-pointer", "/v1/releases/*"]
+    assert m[0]["user_header"] == "strip"
 
 
 # ---- GateExt ----

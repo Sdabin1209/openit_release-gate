@@ -19,7 +19,8 @@ import sys
 import threading
 import time
 
-from boundary_contracts import read_secret, validator
+from boundary_contracts import load_schema, read_secret, validator
+from jsonschema import Draft202012Validator
 from boundary_contracts.errors import BoundaryError
 
 from .components.gate_policy import GatePolicy, PolicyError
@@ -46,6 +47,28 @@ def _env(name: str, default: str | None = None) -> str:
     if v is None or v == "":
         raise SystemExit(f"환경 변수 {name}이(가) 필요하다")
     return v
+
+
+def env_violations(environ, *, serve: bool) -> list:
+    """GATE_ 접두 변수와 PORT를 계약 GateEnv로 검증하고 어긴 변수의 **이름만** 돌려준다(값은 비밀일 수 있어 싣지 않는다).
+    serve는 토큰 필수 조건(allOf)까지, 잡(collect/judge/prune)은 토큰을 읽지 않으므로 propertyNames·형식·필수 변수만 본다(GateEnv x-note)."""
+    schema = dict(load_schema("GateEnv"))
+    if not serve:
+        schema.pop("allOf", None)
+    env = {k: v for k, v in environ.items() if k.startswith("GATE_") or k == "PORT"}
+    names = set()
+    for e in Draft202012Validator(schema).iter_errors(env):
+        if not e.path and isinstance(e.instance, str) and e.instance in env:
+            names.add(e.instance)             # propertyNames 위반: 인스턴스가 값이 아니라 변수 이름이다
+        elif e.validator == "required":
+            names.add(e.message.split("'")[1])
+        elif e.path:
+            names.add(str(e.path[0]))
+        else:                                  # allOf/anyOf: 읽기·쓰기 토큰 둘 중 하나가 없다
+            for need in ("GATE_READ_TOKENS", "GATE_WRITE_TOKENS"):
+                if need not in env and need + "_FILE" not in env:
+                    names.add(f"{need}(또는 {need}_FILE)")
+    return sorted(names)
 
 
 def _csv(name: str) -> list[str]:
@@ -167,7 +190,8 @@ def _role_overrides() -> dict:
 
 def _gate_config(survey: SurveySchema) -> GateConfig:
     return GateConfig(
-        supported_runtime_contract_version=int(_env("GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION", str(survey.contract_version))),
+        # 왜 기본값이 없나: 설치된 스키마 값을 기본으로 쓰면 CONTRACT_COMPAT의 "지원 버전 == 배포 버전" 비교가 항상 참이 되어 무력화된다(계약 3.2.0 GateEnv). deploy가 명시한다
+        supported_runtime_contract_version=int(_env("GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION")),
         action_rules_version=action_rules_version(), model_runtime_version=runtime_version(),
         max_pending_submissions=_opt_int("GATE_MAX_PENDING_SUBMISSIONS"), **_role_overrides())
 
@@ -415,6 +439,15 @@ def main(argv: list[str] | None = None) -> int:
         c.add_argument("--config", help="설정 파일(JSON)")
     sp.choices["prune"].add_argument("--dry-run", action="store_true", help="지우지 않고 대상만 낸다")
     a = p.parse_args(argv)
+    # 기동 때 환경 변수 선언 검증(계약 GateEnv, U73). 어긴 변수는 이름만 적고 종료 코드 2(설정 오류)
+    bad = env_violations(os.environ, serve=a.cmd == "serve")
+    if bad:
+        msg = "환경 변수 선언(GateEnv) 위반: " + ", ".join(bad)
+        if a.cmd == "serve":
+            print(msg, file=sys.stderr)
+        else:
+            _failed(a.cmd, "INVALID_RECORD", msg)
+        return 2
     if a.cmd == "serve":
         serve()
         return 0

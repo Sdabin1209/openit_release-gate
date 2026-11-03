@@ -20,7 +20,6 @@ def job_env(world, tmp_path, monkeypatch):
     else:
         monkeypatch.delenv("GATE_DATABASE_URL", raising=False)
     monkeypatch.setenv("GATE_SURVEY_SCHEMA_DIR", str(SURVEY))
-    monkeypatch.setenv("GATE_ALLOW_TEST", "1")
     monkeypatch.setenv("GATE_MODEL_RUNTIME_VERSION", "0.1.0")
     monkeypatch.setattr(gate_main, "_neighbors", lambda cfg: (world.q, world.m))
     world.q.add("qs-main", 1)

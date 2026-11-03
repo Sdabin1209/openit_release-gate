@@ -207,3 +207,9 @@ from release_gate.wiring.util import SystemClock  # noqa: E402
 class GateHTTPServer(_GateHTTPServer):
     def __init__(self, *a, clock=None, **k):
         super().__init__(*a, clock=clock or SystemClock(), **k)
+
+
+@pytest.fixture(autouse=True)
+def _supported_runtime_contract_version(monkeypatch):
+    """GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION에는 코드 기본값이 없다(계약 3.2.0 GateEnv). 시험은 설치된 문진 스키마의 값을 명시해 준다."""
+    monkeypatch.setenv("GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION", str(SurveySchema(SURVEY).contract_version))

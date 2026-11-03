@@ -12,6 +12,8 @@ GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh          # BuildImageRequest �
 
 ## 환경 변수 (gate-service)
 
+이름·형식의 정본은 계약 `GateEnv`다. 기동할 때 `GATE_` 접두 변수와 `PORT`를 이 스키마로 검증하고 어긋나면 **변수 이름만** 적고 종료 코드 2로 끝난다(값은 싣지 않는다). `serve`는 읽기·쓰기 토큰 필수 조건까지, 잡(collect, judge, prune)은 이름·형식·필수 변수만 본다. 선언에 없는 `GATE_*` 이름은 거부된다.
+
 | 이름 | 뜻 |
 | --- | --- |
 | `GATE_SERVICE_ROLES`, `GATE_ACTIVATE_ROLES`, `GATE_ROLLBACK_ROLES` | 쉼표 구분 역할 집합(선택). 기본: 서비스 역할 `ops-feedback`, 활성화 `operator`, 롤백 `ops-feedback,operator`. 서비스 역할 토큰은 `X-Openit-User` 없이 activate·rollback을 호출할 수 있고 행위자는 `service:<역할>`로 기록된다. 그 밖의 역할(사람 계정 `operator`)은 게이트웨이가 붙인 헤더가 없으면 401이다(D85) |
@@ -19,7 +21,7 @@ GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh          # BuildImageRequest �
 | `GATE_DB_CONNECT_TIMEOUT_SECONDS`, `GATE_DB_STATEMENT_TIMEOUT_SECONDS`, `GATE_READYZ_DB_TIMEOUT_SECONDS` | PostgreSQL 대기 상한(초, 선택). 기본 3, 3, 2. 0 이하이거나 숫자가 아니면 시작을 거부한다. 근거는 boundary.md "DB 대기 상한". 잡은 DB가 응답하지 않으면 상한 안에 종료 코드 75 |
 | `GATE_DATA_DIR` | 레지스트리 디렉터리(볼륨). 기본 `/data`. 번들 파일(`releases/`)은 DB 종류와 상관없이 여기에 둔다. SQLite 모드에서는 DB 파일도 여기에 있다 |
 | `GATE_SURVEY_SCHEMA_DIR` | 문진 스키마(이미지에 포함). 경계 계약 스키마는 boundary-contracts 패키지에 들어 있다 |
-| `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION` | 빌드 때 고정한 문진 스키마 정수 버전 |
+| `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION` | **필수**(코드 기본값 없음, 계약 3.2.0 GateEnv). 지원하는 문진 스키마 정수 버전. deploy가 명시한다. 기본값을 설치된 스키마로 두면 CONTRACT_COMPAT의 "지원 == 배포" 비교가 항상 참이 되어 무력화된다. 없으면 기동 거부 |
 | `GATE_MODEL_RUNTIME_VERSION` | 선택(덮어쓰기). 계보의 `action_rules_version` 기준은 설정이 아니라 설치된 계약의 규칙 데이터(`rules_version`)다. 없으면 model-runtime은 **설치된 패키지의 실제 버전**을 읽고, 읽지 못하면 값이 없는 것으로 보고, 승인(매니페스트 생성)은 FAILED_PRECONDITION(RUNTIME_VERSION_UNKNOWN)으로 거부하며 이웃(I1·I3)이 연결된 `serve`는 시작하지 않는다. 이 값이 릴리스 매니페스트에 기록되고 학습 때 버전과의 일치 검사(CONTRACT_COMPAT)에 쓰인다. `/readyz`에 보인다 |
 | `GATE_POLICY_FILE` | gate_policy JSON. 설정하지 않으면 기본 정책. 설정했는데 파일이 없거나 읽지 못하면 PolicyError로 기동 거부(fail-closed) |
 | `GATE_READ_TOKENS`, `GATE_WRITE_TOKENS` (또는 `*_FILE`) | 필수. 비밀이므로 `GATE_READ_TOKENS_FILE`, `GATE_WRITE_TOKENS_FILE`로 파일 경로를 주는 것이 표준이다(아래 "비밀은 NAME_FILE로"). `역할=토큰,역할=토큰` 형식으로 역할에 묶는다. 읽기 예: `survey-service=…,ops-feedback=…,question-authoring=…,model-lab=…`, 쓰기 예: `operator=…,ops-feedback=…,question-authoring=…,model-lab=…,release-approver=…` (승인 요청은 `release-approver` 쓰기 토큰 + gateway가 붙인 `X-Openit-User` 필요). 토큰이 없거나 틀리면 401(`WWW-Authenticate: Bearer`), 읽기 토큰으로 쓰기 경로를 부르거나 쓰기 토큰으로 읽기 면을 부르면 403이다(boundary-contracts CONVENTIONS.md "401과 403"). `/healthz`, `/readyz`는 인증이 없다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |

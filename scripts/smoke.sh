@@ -24,7 +24,9 @@ result="$(DOCKER="$DOCKER" bash "$here/scripts/build-image.sh" "$GATE_BUILD_REQU
 tag="$(printf '%s\n' "$result" | tail -1 | "${PYTHON:-python3}" -c 'import json,sys; print(json.load(sys.stdin)["image"])')"
 # 비밀은 환경 변수가 아니라 파일로 준다(NAME_FILE, D84). 비root 사용자가 읽도록 0644
 printf 'survey-service=smoke-read' > "$sdir/read_tokens"; printf 'operator=smoke-write' > "$sdir/write_tokens"; chmod 755 "$sdir"; chmod 644 "$sdir"/*
-"$DOCKER" run -d --name "$name" -p 127.0.0.1::8080 -v "$sdir:/run/secrets:ro" \
+# 왜 이미지에서 읽나: GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION은 코드 기본값이 없고 deploy가 명시한다(계약 3.2.0 GateEnv). 스모크는 deploy 대신 이미지의 문진 스키마 값을 준다
+supported="$("$DOCKER" run --rm --entrypoint cat "$tag" /opt/contracts/survey-schema/CONTRACT_VERSION | tr -d '\r\n ')"
+"$DOCKER" run -d --name "$name" -e GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION="$supported" -p 127.0.0.1::8080 -v "$sdir:/run/secrets:ro" \
   -e GATE_READ_TOKENS_FILE=/run/secrets/read_tokens -e GATE_WRITE_TOKENS_FILE=/run/secrets/write_tokens "$tag" >/dev/null
 
 # 호스트 포트는 Docker가 배정한다(다른 영역의 스모크와 겹치지 않게 고정 포트를 쓰지 않는다)
