@@ -1,4 +1,5 @@
-"""계약 규칙의 rules_version과 설치된 model-runtime 버전을 기준으로 한 CONTRACT_COMPAT(학습 때 버전 일치 검사).
+"""규칙 D80: CONTRACT_COMPAT의 학습 때 버전 비교는 완전 일치다(큰 값도 작은 값도 반려).
+계약 규칙의 rules_version과 설치된 model-runtime 버전을 기준으로 한 CONTRACT_COMPAT(학습 때 버전 일치 검사).
 
 기준은 패키지 메타데이터에서 읽고, 반려되어야 할 옛 값은 기준에서 계산한다(버전이 올라도 이 시험을 고치지 않는다).
 """

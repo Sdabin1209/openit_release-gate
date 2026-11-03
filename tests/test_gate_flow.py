@@ -1,4 +1,5 @@
-"""자동 검사와 사람 승인 흐름(D53): 제출 -> 자동 검사 -> AWAITING_APPROVAL -> 승인자의 결정 -> 판정."""
+"""자동 검사와 사람 승인 흐름(D53): 제출 -> 자동 검사 -> AWAITING_APPROVAL -> 승인자의 결정 -> 판정.
+규칙 D69: 승인 요청의 report_hash 대조와 충돌 사유(STALE_REPORT, ALREADY_DECIDED)도 이 파일이 보증한다."""
 from __future__ import annotations
 
 import copy
