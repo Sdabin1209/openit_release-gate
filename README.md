@@ -86,9 +86,9 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 
 ## 5. 시험 상태와 이 영역의 열린 항목 (head/docs/OPEN_GAPS.md, 읽기 전용으로 확인)
 
-- 시험 개수의 정본은 이 항목 하나다. 숫자는 아래 명령을 실제로 실행해 센 것이다(2026-11-03, 브랜치 wo-320, Linux(WSL2) Python 3.12, PostgreSQL 16 컨테이너): `export TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)" && python -m pytest -q -p no:cacheprovider` -> **949 통과, 48 건너뜀, 0 실패**(102.9초). 건너뜀 48은 저장소 종류 조건 시험이다. `tests/test_u43_setup_env_report.py`는 GitHub에서 계약 태그를 받으므로, 태그가 GitHub에 게시되기 전에는 로컬 태그로 `GIT_CONFIG_*`(url.insteadOf)를 걸어 돌렸다. PostgreSQL 없이 돌리면 건너뜀이 늘어난다. 이미지: `scripts/smoke.sh` 통과(요청 파일에 로컬 태그 archive 소스).
+- 시험 개수는 이 문서에 적지 않는다. 실행 명령으로 센다: `export TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)" && python -m pytest -q -p no:cacheprovider`(PostgreSQL 컨테이너 포함. 없으면 그 시험은 건너뛴다). `tests/test_u43_setup_env_report.py`는 GitHub에서 계약·link 태그를 받으므로 태그가 게시되기 전에는 로컬 태그로 `GIT_CONFIG_*`(url.insteadOf)를 걸어 돌린다. 이미지: `GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh`.
 
-- 이 영역 소유의 열린 항목은 없다. G08(기본 태그 올림)은 닫힘(시험 209 통과, release-gate 7139123).
+- 이 영역 소유의 열린 항목은 없다. G08(기본 태그 올림)은 닫힘(release-gate 7139123).
 - 간접으로 닿는 열린 항목(소유는 다른 영역): G11(문진 스키마 정수 버전 1 안의 비호환 변경, 같은 잠금으로 함께 배포 필요, 다른 영역 의존), U07(실제 LLM 데모 부분, GPU 의존), U10(평가가 가짜 모델로만 돌았음, GPU 의존), D-A(운영 도메인·토큰 발급·회전 등, 사용자 결정), U12(두 번째 독립 머신 확인, 미실시).
 - 임상 안전 지표와 승인 임계치(O11)는 사용자 결정이며 D53에 따라 코드에 임계치를 두지 않는다.
 
