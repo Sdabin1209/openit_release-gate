@@ -19,19 +19,22 @@ def run(inp: dict) -> dict:
         bad.append(f"기반 모델이 다르다: {a.get('base_model')} / {b.get('base_model')}")
     if a.get("runtime_contract_version") != b.get("runtime_contract_version"):
         bad.append("두 어댑터의 runtime_contract_version이 다르다")
-    if d.get("bank") is None:
-        bad.append("문항 세트를 읽지 못했다")
+    for s in d["question_sets"]:
+        if s["bank"] is None:
+            bad.append(f"문항 세트를 읽지 못했다: {s['ref']['id']}")
     if bad:
         return {"result": "FAIL", "detail": " | ".join(bad)}
     # 참고 정보(CR-0005): 학습에 쓴 문항 세트(lineage.question_sets). 반려 근거로 쓰지 않는다.
-    qs = d["subject"]["question_set"]
     notes = []
     for role, m in ms.items():
         trained = m.get("lineage", {}).get("question_sets")
         if trained is None:
             notes.append(f"{role}: 학습 문항 세트 정보 없음")
-        elif any(t.get("id") == qs["id"] and t.get("version") == qs["version"] for t in trained):
-            notes.append(f"{role}: 학습에 쓴 문항 세트")
-        else:
-            notes.append(f"{role}: 학습에 쓰지 않은 문항 세트(보지 못한 문항 평가 대상)")
+            continue
+        for s in d["question_sets"]:
+            qs = s["ref"]
+            if any(t.get("id") == qs["id"] and t.get("version") == qs["version"] for t in trained):
+                notes.append(f"{role}/{qs['id']}: 학습에 쓴 문항 세트")
+            else:
+                notes.append(f"{role}/{qs['id']}: 학습에 쓰지 않은 문항 세트(보지 못한 문항 평가 대상)")
     return {"result": "PASS", "detail": "참고: " + "; ".join(notes)}

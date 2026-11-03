@@ -10,8 +10,8 @@ from boundary_contracts.action_rules import load_rules
 from boundary_contracts.errors import BoundaryError
 
 
-def make_bank(version: int = 1, tag: str = "a") -> dict:
-    return {"version": version, "session_settings": {
+def make_bank(version: int = 1, tag: str = "a", set_id: str = "qs-main") -> dict:
+    return {"question_set_id": set_id, "title": f"{set_id} 문진표", "version": version, "session_settings": {
         "risk_phrases": [], "confirm_limit": 2, "unrecognized_streak_limit": 3, "ask_limit": 3,
         "fixed_sentences": [{"key": k, "sentence": f"{k} 안내"} for k in ("RISK_NOTICE", "CALL_STAFF", "RESUME", "SURVEY_STOPPED")], "guide_list": []},
         "questions": [{"question_id": "q1", "name": f"문항-{tag}", "order": 0, "prerequisite": None,
@@ -37,7 +37,7 @@ class FakeQuestions:
 
     def add(self, set_id: str, version: int, bank: dict | None = None, *, approved: bool = True,
             clinical: bool = True, reviews: list | None = None) -> dict:
-        bank = bank or make_bank(version, f"{set_id}{version}")
+        bank = bank or make_bank(version, f"{set_id}{version}", set_id)
         ref = ref_of(set_id, version, bank)
         self.banks[(set_id, ref["version"])] = bank
         if reviews is None:
@@ -112,7 +112,7 @@ class FakeModels:
         self.down = False
 
     def add(self, package_id: str, version: str, role: str, *, files: dict | None = None,
-            runtime_contract_version=1, rules=None, runtime="0.1.0", base=("base-1", "r1"),
+            runtime_contract_version=2, rules=None, runtime="0.1.0", base=("base-1", "r1"),
             created_at="2026-10-14T00:00:00Z", metrics=None, report=True, prompt_path="system_prompt.txt", **over) -> dict:
         d = self.root / f"{package_id}-{version}"
         d.mkdir(parents=True, exist_ok=True)

@@ -186,9 +186,10 @@ class GateEngine:
                 adapters[role] = Path(p)
             man = release_builder.build({"release_id": d["release_id"], "created_at": d["decided_at"],
                                          "gate_decision_id": d["decision_id"], "subject": subject,
+                                         "question_set_titles": {s["ref"]["id"]: s["bank"].get("title") for s in data["question_sets"]},
                                          "versions": self._versions(), "adapters": infos})
             movable = work_dir is not None and all(Path(a).resolve().is_relative_to(Path(tmp).resolve()) for a in adapters.values())
-            self._commit(sid, d, approval, ReleaseParts(man, data["bank"], adapters, data["eval_reports"], movable=movable))
+            self._commit(sid, d, approval, ReleaseParts(man, {s["ref"]["id"]: s["bank"] for s in data["question_sets"]}, adapters, data["eval_reports"], movable=movable))
 
     def _commit(self, sid, d, approval, release=None):
         self.store.commit_decision(d, {"state": "DECIDED", "decision_id": d["decision_id"],

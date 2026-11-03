@@ -178,7 +178,7 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
         Route("GET", "/v1/releases", releases, roles=R, response_schema="ListEnvelope"),
         Route("GET", "/v1/releases/{rid}", lambda q: ok(r.reader.get_release(q.params["rid"])), roles=R, response_schema="ReleaseManifest"),
         Route("GET", "/v1/releases/{rid}/bundle", bundle, roles=R),
-        Route("GET", "/v1/releases/{rid}/question-bank", lambda q: ok(r.reader.get_release_question_bank(q.params["rid"])), roles=R,
+        Route("GET", "/v1/releases/{rid}/question-bank", lambda q: ok(r.reader.get_release_question_bank(q.params["rid"], question_set_id=q.query.get("question_set_id"))), roles=R,
               response_schema="SurveyQuestionBankRead"),
         Route("GET", "/v1/submissions", submissions, roles=R, response_schema="ListEnvelope"),
         Route("GET", "/v1/submissions/{sid}", lambda q: ok(r.service.get_submission(q.params["sid"])), roles=R, response_schema="SubmissionView"),

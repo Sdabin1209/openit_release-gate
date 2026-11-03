@@ -103,10 +103,11 @@ def test_i1_outage_while_reading_the_trained_set_defers_the_judgement(world):
 
 def test_component_reports_only_the_difference_names():
     base = _bank(1)
-    out = cs.run({"data": {"subject": {"question_set": {}, "lora_a": {}, "lora_b": {}}, "bank": _bank(2, slots=("s1", "s2")),
-                            "bank_violations": [], "reviews": [], "reviews_ok": True, "manifests": {"LORA_A": {}},
+    out = cs.run({"data": {"subject": {"question_sets": [{}], "lora_a": {}, "lora_b": {}},
+                            "question_sets": [{"ref": {"id": "qs-main"}, "bank": _bank(2, slots=("s1", "s2")),
+                                               "bank_violations": [], "reviews": [], "reviews_ok": True}], "manifests": {"LORA_A": {}},
                             "eval_reports": {}, "report_problems": [], "problems": [],
                             "trained_banks": {"LORA_A": [{"ref": {"id": "x"}, "bank": base}]}},
-                  "params": {}, "versions": {"supported_runtime_contract_version": 1, "survey_contract_version": 1,
+                  "params": {}, "versions": {"supported_runtime_contract_version": 2, "survey_contract_version": 2,
                                              "action_rules_version": "r", "model_runtime_version": "0"}})
     assert out["result"] == "FAIL" and "q1.s2" in out["detail"] and "후보에만 있음" in out["detail"]

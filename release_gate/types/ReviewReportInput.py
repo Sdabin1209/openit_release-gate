@@ -6,9 +6,13 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, TypedDict
 
 
+class Subject(TypedDict):
+    question_sets: List
+
+
 class ReviewReportInput(TypedDict):
     submission_id: str
-    subject: Dict[str, Any]
+    subject: Subject
     generated_at: str
     checks: List[Dict[str, Any]]
     candidate: Dict[str, Dict[str, Any]]

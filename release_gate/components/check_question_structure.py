@@ -24,20 +24,24 @@ def _fmt(pairs) -> str:
 def run(inp: dict) -> dict:
     validate("CheckInput", inp)
     d = inp["data"]
-    if d.get("bank") is None:
-        return {"result": "PASS", "detail": "후보 문항 세트를 읽지 못해 구조를 비교하지 못했다"}
-    cand = structure(d["bank"])
     bad, notes = [], []
-    for role, trained in sorted((d.get("trained_banks") or {}).items()):
-        known = [structure(t["bank"]) for t in trained if t["bank"] is not None]
-        if not known:
-            notes.append(f"{role}: 학습 문항 세트 내용 없음")
-        elif cand not in known:
-            near = min(known, key=lambda k: len(k ^ cand))       # 가장 가까운 학습 구조와의 차이를 보여 준다
-            bad.append(f"{role}: 문항·칸 구조가 학습 때와 다르다(후보에만 있음: {_fmt(cand - near) or '없음'}; 학습에만 있음: {_fmt(near - cand) or '없음'})")
-        else:
-            notes.append(f"{role}: 구조 일치")
-    for role in d["manifests"]:
+    unread = [s["ref"]["id"] for s in d["question_sets"] if s["bank"] is None]
+    if unread:
+        notes.append("후보 문항 세트를 읽지 못해 구조를 비교하지 못했다: " + ", ".join(unread))
+    for s in d["question_sets"]:      # 후보 문항 세트마다 따로 비교한다. 하나라도 다르면 반려
+        if s["bank"] is None:
+            continue
+        cand, sid = structure(s["bank"]), s["ref"]["id"]
+        for role, trained in sorted((d.get("trained_banks") or {}).items()):
+            known = [structure(t["bank"]) for t in trained if t["bank"] is not None]
+            if not known:
+                notes.append(f"{role}: 학습 문항 세트 내용 없음")
+            elif cand not in known:
+                near = min(known, key=lambda k: len(k ^ cand))       # 가장 가까운 학습 구조와의 차이를 보여 준다
+                bad.append(f"{role}: 문항 세트 {sid}의 문항·칸 구조가 학습 때와 다르다(후보에만 있음: {_fmt(cand - near) or '없음'}; 학습에만 있음: {_fmt(near - cand) or '없음'})")
+            else:
+                notes.append(f"{role}/{sid}: 구조 일치")
+    for role in sorted(d["manifests"]):
         if role not in (d.get("trained_banks") or {}):
             notes.append(f"{role}: 학습 문항 세트 정보 없음")
     if bad:

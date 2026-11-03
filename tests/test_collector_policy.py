@@ -20,7 +20,8 @@ def test_collector_configured_ids_only(world):
     world.m.add("lora-a", "1", "LORA_A")
     world.m.add("lora-b", "1", "LORA_B")
     assert len(collector(world, configured=True).run_once()) == 1
-    assert len(collector(world).run_once()) == 2          # list_ids는 qs-other도 찾는다
+    subs = collector(world).run_once()          # list_ids는 qs-other도 찾고, 지켜보는 세트 전부를 한 제출에 묶는다
+    assert len(subs) == 1 and [q["id"] for q in subs[0]["subject"]["question_sets"]] == ["qs-main", "qs-other"]
 
 
 def test_collector_submits_new_combination_once(world):

@@ -78,4 +78,4 @@ def ts(dt: datetime) -> str:
 
 def subject_of(record_or_subject: dict) -> dict:
     s = record_or_subject
-    return {"question_set": s["question_set"], "lora_a": s["lora_a"], "lora_b": s["lora_b"]}
+    return {"question_sets": s["question_sets"], "lora_a": s["lora_a"], "lora_b": s["lora_b"]}

@@ -7,11 +7,12 @@ from release_gate.components import check_contract_compat
 
 
 def _data(survey, bank):
-    subject = {"question_set": {"id": "qs", "version": "1", "content_hash": "sha256:" + "a" * 64},
+    ref = {"id": "qs-main", "version": "1", "content_hash": "sha256:" + "a" * 64}
+    subject = {"question_sets": [ref],
                "lora_a": {"id": "a", "version": "1", "content_hash": "sha256:" + "b" * 64},
                "lora_b": {"id": "b", "version": "1", "content_hash": "sha256:" + "c" * 64}}
     v = survey.validate_question_bank(bank)
-    return {"subject": subject, "bank": bank, "bank_violations": v, "reviews": [], "reviews_ok": True, "manifests": {},
+    return {"subject": subject, "question_sets": [{"ref": ref, "bank": bank, "bank_violations": v, "reviews": [], "reviews_ok": True}], "manifests": {},
             "eval_reports": {}, "report_problems": [], "problems": []}
 
 

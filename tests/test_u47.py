@@ -137,7 +137,7 @@ def test_question_bank_over_http_roundtrips_with_the_contract_client(world, srv)
     body = HttpReleaseReader(srv, "r-surv", timeout=HANG_GUARD_SECONDS).get_release_question_bank(rid)      # 매달림 감시
     validator("SurveyQuestionBankRead").validate(body)
     bank = world.q.banks[("qs-main", "1")]
-    assert body["release_id"] == rid and body["question_bank"] == bank and body["content_hash"] == canonical.sha256_hash(bank)
+    assert body["release_id"] == rid and body["question_set_id"] == "qs-main" and body["question_bank"] == bank and body["content_hash"] == canonical.sha256_hash(bank)
 
 
 def test_question_bank_of_unknown_release_is_404_and_non_pass_is_412(world, srv):

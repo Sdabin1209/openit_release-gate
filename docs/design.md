@@ -77,7 +77,7 @@ PASS일 때만 만든다. `commit_decision` 한 번에: 판정 기록, 릴리스
 - 어댑터는 `ModelRegistry.open_adapter`로 풀어 `directory_hash`가 매니페스트의 `adapter_hash`와 같은지 다시 확인하고 복사해 묶는다. 서비스는 I1·I3 없이 I4만으로 필요한 것을 얻는다(확인: `test_runtime_does_not_need_neighbors_after_release`).
 - `ReleaseManifest.content_hash` = `canonical.content_hash`. 어댑터 해시와 serving_config는 정식 필드 `adapters.{LORA_A,LORA_B}.{adapter_hash, serving_config, serving_config_hash}`에 복사해 담는다(D42). 서비스는 I3 없이 I9 `load`에 넘길 값을 얻는다. `ext`는 쓰지 않는다.
 - `load_bundle`은 모두 검증한다: 매니페스트 해시, 판정이 PASS이고 그 릴리스를 가리킴(아니면 FAILED_PRECONDITION), 문항 세트 해시 = 참조의 `content_hash`, 어댑터별 `directory_hash` = 매니페스트 값. 어긋나면 INTEGRITY_ERROR. 확인: 변조 시험.
-- 저장 디스크 구조: `<data>/registry.sqlite3`, `<data>/releases/<release_id>/{question_bank.json, adapters/LORA_A, adapters/LORA_B}`. 파일은 임시 디렉터리에 쓴 뒤 트랜잭션 안에서 이름을 바꾼다.
+- 저장 디스크 구조: `<data>/registry.sqlite3`, `<data>/releases/<release_id>/{question_banks/<문항 세트 ID>.json(세트마다), adapters/LORA_A, adapters/LORA_B}(ADR-0021)`. 파일은 임시 디렉터리에 쓴 뒤 트랜잭션 안에서 이름을 바꾼다.
 
 ## 7. 활성 포인터와 롤백
 
@@ -98,7 +98,7 @@ PASS일 때만 만든다. `commit_decision` 한 번에: 판정 기록, 릴리스
 
 서비스 프로세스가 스스로 돌리지 않고 `python -m release_gate collect --config …`를 한 번 실행한다(D39). 멱등이다: 같은 조합은 접수가 늘지 않는다. 설정 형식은 runbook.
 
-I1·I3의 `list_ids`로 문항 세트와 패키지를 찾고(설정으로 ID 목록을 주면 그것만 본다), 패키지의 LORA_A/LORA_B는 매니페스트의 role로 가른다. 최신 버전은 `created_at`이 가장 늦은 것으로 본다. 주기마다 (문항 세트의 검수 완료 최신) × (LORA_A 최신) × (LORA_B 최신)의 조합을 `submit_candidate(role="release-gate-collector")`로 낸다. 중복은 게이트가 걸러 같은 조합은 한 번만 판정된다. 최신이 아닌 조합(예: 옛 모델과 새 문항)은 사람이 I5로 제출한다(제안). 일시 오류는 다음 주기로 미룬다.
+I1·I3의 `list_ids`로 문항 세트와 패키지를 찾고(설정으로 ID 목록을 주면 그것만 본다), 패키지의 LORA_A/LORA_B는 매니페스트의 role로 가른다. 최신 버전은 `created_at`이 가장 늦은 것으로 본다. 주기마다 (검수 완료 최신 문항 세트 전부를 묶은 목록) × (LORA_A 최신) × (LORA_B 최신)의 조합을 `submit_candidate(role="release-gate-collector")`로 낸다. 중복은 게이트가 걸러 같은 조합은 한 번만 판정된다. 최신이 아닌 조합(예: 옛 모델과 새 문항)은 사람이 I5로 제출한다(제안). 일시 오류는 다음 주기로 미룬다.
 
 ## 10. 오류와 로깅
 

@@ -8,6 +8,10 @@ from typing import Any, Dict, List, Literal, TypedDict
 from typing_extensions import NotRequired
 
 
+class Subject(TypedDict):
+    question_sets: List
+
+
 class Approval(TypedDict):
     approval_id: str
     approver_role: str
@@ -20,7 +24,7 @@ class DecisionDraft(TypedDict):
     sequence: int
     decided_at: str
     gate_policy_version: str
-    subject: Dict[str, Any]
+    subject: Subject
     runtime_contract_version: int
     checks: List[Dict[str, Any]]
     gate_role: str

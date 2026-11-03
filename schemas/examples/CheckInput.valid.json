@@ -1,11 +1,13 @@
 {
   "data": {
     "subject": {
-      "question_set": {
-        "id": "qs-1",
-        "version": "1",
-        "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      },
+      "question_sets": [
+        {
+          "id": "qs-1",
+          "version": "1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
       "lora_a": {
         "id": "la-1",
         "version": "1",
@@ -17,10 +19,19 @@
         "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
     },
-    "bank": {},
-    "bank_violations": [],
-    "reviews": [],
-    "reviews_ok": true,
+    "question_sets": [
+      {
+        "ref": {
+          "id": "qs-1",
+          "version": "1",
+          "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "bank": {},
+        "bank_violations": [],
+        "reviews": [],
+        "reviews_ok": true
+      }
+    ],
     "manifests": {},
     "eval_reports": {},
     "report_problems": [],

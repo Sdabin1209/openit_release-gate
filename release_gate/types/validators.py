@@ -283,9 +283,16 @@ _INTERNAL = json.loads(r'''{
   "properties": {
    "subjects": {
     "items": {
-     "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다",
+     "description": "판정 대상 조합(계약 GateSubmission.subject). 참조의 모양은 계약이 정본이다",
+     "properties": {
+      "question_sets": {
+       "description": "계약 ArtifactRef의 배열(문항 세트 하나당 하나)",
+       "minItems": 1,
+       "type": "array"
+      }
+     },
      "required": [
-      "question_set",
+      "question_sets",
       "lora_a",
       "lora_b"
      ],
@@ -515,9 +522,16 @@ _INTERNAL = json.loads(r'''{
     "type": "integer"
    },
    "subject": {
-    "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다",
+    "description": "판정 대상 조합(계약 GateSubmission.subject). 참조의 모양은 계약이 정본이다",
+    "properties": {
+     "question_sets": {
+      "description": "계약 ArtifactRef의 배열(문항 세트 하나당 하나)",
+      "minItems": 1,
+      "type": "array"
+     }
+    },
     "required": [
-     "question_set",
+     "question_sets",
      "lora_a",
      "lora_b"
     ],
@@ -904,14 +918,28 @@ _INTERNAL = json.loads(r'''{
     "pattern": "^gd-.",
     "type": "string"
    },
+   "question_set_titles": {
+    "additionalProperties": {
+     "type": "string"
+    },
+    "description": "문항 세트 ID -> bank.title. 매니페스트 question_sets[].title의 출처",
+    "type": "object"
+   },
    "release_id": {
     "pattern": "^rel-.",
     "type": "string"
    },
    "subject": {
-    "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다",
+    "description": "판정 대상 조합(계약 GateSubmission.subject). 참조의 모양은 계약이 정본이다",
+    "properties": {
+     "question_sets": {
+      "description": "계약 ArtifactRef의 배열(문항 세트 하나당 하나)",
+      "minItems": 1,
+      "type": "array"
+     }
+    },
     "required": [
-     "question_set",
+     "question_sets",
      "lora_a",
      "lora_b"
     ],
@@ -927,7 +955,8 @@ _INTERNAL = json.loads(r'''{
    "gate_decision_id",
    "subject",
    "versions",
-   "adapters"
+   "adapters",
+   "question_set_titles"
   ],
   "title": "ReleaseBuildInput",
   "type": "object"
@@ -1030,9 +1059,16 @@ _INTERNAL = json.loads(r'''{
     "type": "string"
    },
    "subject": {
-    "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다",
+    "description": "판정 대상 조합(계약 GateSubmission.subject). 참조의 모양은 계약이 정본이다",
+    "properties": {
+     "question_sets": {
+      "description": "계약 ArtifactRef의 배열(문항 세트 하나당 하나)",
+      "minItems": 1,
+      "type": "array"
+     }
+    },
     "required": [
-     "question_set",
+     "question_sets",
      "lora_a",
      "lora_b"
     ],
@@ -1123,19 +1159,6 @@ _INTERNAL = json.loads(r'''{
   "additionalProperties": false,
   "description": "판정 대상의 내용 전부(문항 쪽 + 모델 쪽 + 문진 스키마 위반 목록). 자동 검사의 공통 입력 재료",
   "properties": {
-   "bank": {
-    "description": "문항 세트(계약 QuestionBank). 읽지 못했으면 null",
-    "type": [
-     "object",
-     "null"
-    ]
-   },
-   "bank_violations": {
-    "items": {
-     "type": "string"
-    },
-    "type": "array"
-   },
    "eval_reports": {
     "additionalProperties": {
      "type": "object"
@@ -1166,25 +1189,67 @@ _INTERNAL = json.loads(r'''{
     },
     "type": "array"
    },
+   "question_sets": {
+    "description": "문항 세트마다 하나(subject.question_sets와 같은 순서)",
+    "items": {
+     "additionalProperties": false,
+     "properties": {
+      "bank": {
+       "description": "문항 세트(계약 QuestionBank). 읽지 못했으면 null",
+       "type": [
+        "object",
+        "null"
+       ]
+      },
+      "bank_violations": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "ref": {
+       "description": "계약 ArtifactRef",
+       "type": "object"
+      },
+      "reviews": {
+       "items": {
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "reviews_ok": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "ref",
+      "bank",
+      "bank_violations",
+      "reviews",
+      "reviews_ok"
+     ],
+     "type": "object"
+    },
+    "minItems": 1,
+    "type": "array"
+   },
    "report_problems": {
     "items": {
      "type": "string"
     },
     "type": "array"
    },
-   "reviews": {
-    "items": {
-     "type": "object"
-    },
-    "type": "array"
-   },
-   "reviews_ok": {
-    "type": "boolean"
-   },
    "subject": {
-    "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다",
+    "description": "판정 대상 조합(계약 GateSubmission.subject). 참조의 모양은 계약이 정본이다",
+    "properties": {
+     "question_sets": {
+      "description": "계약 ArtifactRef의 배열(문항 세트 하나당 하나)",
+      "minItems": 1,
+      "type": "array"
+     }
+    },
     "required": [
-     "question_set",
+     "question_sets",
      "lora_a",
      "lora_b"
     ],
@@ -1227,10 +1292,7 @@ _INTERNAL = json.loads(r'''{
   },
   "required": [
    "subject",
-   "bank",
-   "bank_violations",
-   "reviews",
-   "reviews_ok",
+   "question_sets",
    "manifests",
    "eval_reports",
    "report_problems",
@@ -1367,9 +1429,16 @@ _INTERNAL = json.loads(r'''{
     "type": "string"
    },
    "subject": {
-    "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다",
+    "description": "판정 대상 조합(계약 GateSubmission.subject). 참조의 모양은 계약이 정본이다",
+    "properties": {
+     "question_sets": {
+      "description": "계약 ArtifactRef의 배열(문항 세트 하나당 하나)",
+      "minItems": 1,
+      "type": "array"
+     }
+    },
     "required": [
-     "question_set",
+     "question_sets",
      "lora_a",
      "lora_b"
     ],

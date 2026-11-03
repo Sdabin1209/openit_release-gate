@@ -53,12 +53,12 @@ def test_reader_over_http(world, srv, tmp_path):
     assert [d["release_id"] for d in ds] == [r2, r1]
     assert rd.get_decision(ds[0]["decision_id"]) == ds[0]
     assert code(rd.get_decision, "gd-none") == "NOT_FOUND"
-    assert [d["release_id"] for d in rd.find_decisions(question_set=m1["question_set"])[0]] == [r1]
+    assert [d["release_id"] for d in rd.find_decisions(question_set=m1["question_sets"][0])[0]] == [r1]
     assert len(rd.find_decisions(lora_a=m1["lora_a"], lora_b=m1["lora_b"])[0]) == 2
     assert rd.find_decisions(submission_id=ds[1]["submission_id"])[0][0]["release_id"] == r1
     # 번들: 클라이언트가 모든 해시를 검증한다
     b = rd.load_bundle(r1, dest=tmp_path / "bundle")
-    assert b.manifest == m1 and b.question_bank == world.q.banks[("qs-main", "1")]
+    assert b.manifest == m1 and b.question_banks == {"qs-main": world.q.banks[("qs-main", "1")]}
     assert (b.adapters["LORA_B"] / "adapter_model.safetensors").exists()
     assert code(rd.load_bundle, "rel-none", dest=tmp_path / "x") == "NOT_FOUND"
 
@@ -124,5 +124,5 @@ def test_role_mismatch_and_read_token_cannot_write(world, srv):
 
 def test_invalid_submission_and_unreachable_server(world, srv):
     gs = HttpGateService(srv, "w-op")
-    assert code(gs.submit_candidate, {"question_set": {}}, requested_by_role="operator") == "INVALID_RECORD"
+    assert code(gs.submit_candidate, {"question_sets": {}}, requested_by_role="operator") == "INVALID_RECORD"
     assert code(HttpReleaseReader("http://127.0.0.1:1", "x", timeout=HANG_GUARD_SECONDS).get_active_pointer) == "UNAVAILABLE"

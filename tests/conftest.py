@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # 패키지가 없을 때만 형제 배치의 ../survey-service/schema(읽기 전용)를 쓴다.
 try:
     from survey_schema import contract_version_dir
-    SURVEY = contract_version_dir(1)
+    SURVEY = contract_version_dir(2)
 except ImportError:
     SURVEY = ROOT / "survey-service" / "schema"
 
@@ -161,10 +161,12 @@ class World:
                           clock=self.clock)
 
     def subject(self, qs=None, a=None, b=None) -> dict:
+        """qs: 문항 세트 참조 하나 또는 목록(없으면 qs-main 하나)."""
         qs = qs or self.q.add("qs-main", 1)
+        qs = list(qs) if isinstance(qs, (list, tuple)) else [qs]
         a = a or self.m.add("lora-a", "1", "LORA_A")
         b = b or self.m.add("lora-b", "1", "LORA_B")
-        return {"question_set": qs, "lora_a": self.m.ref(a), "lora_b": self.m.ref(b)}
+        return {"question_sets": qs, "lora_a": self.m.ref(a), "lora_b": self.m.ref(b)}
 
     def approve(self, sid, decision="APPROVE", reason=None, approver="trainer-1", **extra):
         """승인자(release-approver)의 결정. (GateApproval, created). 본문은 계약 ApprovalRequest 모양이고 approver는 X-Openit-User에 해당한다."""

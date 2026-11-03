@@ -8,19 +8,28 @@ from typing import Any, Dict, List, Optional, TypedDict
 from typing_extensions import NotRequired
 
 
+class Subject(TypedDict):
+    question_sets: List
+
+
 class TrainedBank(TypedDict):
     ref: Dict[str, Any]
     bank: Optional[Dict[str, Any]]
 
 
-class SubjectData(TypedDict):
-    subject: Dict[str, Any]
+class QuestionSet(TypedDict):
+    ref: Dict[str, Any]
     bank: Optional[Dict[str, Any]]
     bank_violations: List[str]
     reviews: List[Dict[str, Any]]
     reviews_ok: bool
+
+
+class SubjectData(TypedDict):
+    subject: Subject
     manifests: Dict[str, Dict[str, Any]]
     eval_reports: Dict[str, Dict[str, Any]]
     report_problems: List[str]
     problems: List[str]
     trained_banks: NotRequired[Dict[str, List[TrainedBank]]]
+    question_sets: List[QuestionSet]

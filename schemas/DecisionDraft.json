@@ -32,11 +32,18 @@
     "subject": {
       "type": "object",
       "required": [
-        "question_set",
+        "question_sets",
         "lora_a",
         "lora_b"
       ],
-      "description": "판정 대상 조합(계약 GateSubmission.subject). 세 참조의 모양은 계약이 정본이다"
+      "description": "판정 대상 조합(계약 GateSubmission.subject). 참조의 모양은 계약이 정본이다",
+      "properties": {
+        "question_sets": {
+          "type": "array",
+          "minItems": 1,
+          "description": "계약 ArtifactRef의 배열(문항 세트 하나당 하나)"
+        }
+      }
     },
     "runtime_contract_version": {
       "type": "integer",

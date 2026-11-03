@@ -118,7 +118,7 @@ def test_list_endpoints_and_pagination(world, server):
     st, ds = call(server, "/v1/decisions", token="rt")
     assert [d["release_id"] for d in ds["items"]] == [r2, r1]              # 최신부터
     m1 = call(server, f"/v1/releases/{r1}", token="rt")[1]
-    qs = m1["question_set"]
+    qs = m1["question_sets"][0]
     q = f"/v1/decisions?question_set_id={qs['id']}&question_set_version={qs['version']}"
     assert [d["release_id"] for d in call(server, q, token="rt")[1]["items"]] == [r1]
     q2 = f"/v1/decisions?lora_a_id={m1['lora_a']['id']}&lora_a_version={m1['lora_a']['version']}&lora_b_id=lora-b"
@@ -148,10 +148,10 @@ def test_bundle_tar_over_http_with_hash_verification(world, server, tmp_path):
     out = tmp_path / "b"
     _untar(data, out)
     man = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
-    bank = json.loads((out / "question_bank.json").read_text(encoding="utf-8"))
+    bank = json.loads((out / "question_banks" / "qs-main.json").read_text(encoding="utf-8"))
     assert man == world.reg.reader.get_release(rid)
     assert canonical.content_hash(man) == man["content_hash"]
-    assert canonical.sha256_hash(bank) == man["question_set"]["content_hash"]
+    assert canonical.sha256_hash(bank) == man["question_sets"][0]["content_hash"]
     for role in ("LORA_A", "LORA_B"):
         assert canonical.directory_hash(out / "adapters" / role) == man["adapters"][role]["adapter_hash"]
     assert (out / "adapters" / "LORA_A" / "adapter_config.json").read_bytes() == b"{}"

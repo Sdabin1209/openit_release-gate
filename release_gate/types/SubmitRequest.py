@@ -3,9 +3,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, TypedDict
+from typing import List, TypedDict
+
+
+class Subject(TypedDict):
+    question_sets: List
 
 
 class SubmitRequest(TypedDict):
-    subject: Dict[str, Any]
+    subject: Subject
     requested_by_role: str

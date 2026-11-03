@@ -8,7 +8,14 @@ from typing import Optional
 
 from boundary_contracts import canonical
 from boundary_contracts.errors import BoundaryError
-from boundary_contracts.sdk import ReleaseBundle
+
+
+class ReleaseBundle:
+    """load_bundle의 결과: 매니페스트, 문항 세트 {문항 세트 ID: QuestionBank}, 역할별 어댑터 디렉터리.
+    왜 여기서 정의: 묶음의 문항 세트가 여럿이다(계약 3.3.0 ReleaseManifest.question_sets)."""
+
+    def __init__(self, manifest, question_banks, adapters):
+        self.manifest, self.question_banks, self.adapters = manifest, question_banks, adapters
 
 
 # 해시를 읽는 조각 크기. 계약 canonical.file_hash와 같은 1 MiB다(결과는 같고, 조각마다 요청 마감을 확인할 수 있게 직접 읽는다: D120, ADR-0020).
@@ -59,6 +66,16 @@ class _DeadlineReader:
 
 ROLES = ("LORA_A", "LORA_B")   # 릴리스에 묶는 어댑터 역할(계약 ReleaseManifest.adapters의 키)
 
+
+def _check_banks(manifest: dict, banks: dict, release_id: str) -> None:
+    """묶음의 문항 세트들이 매니페스트 question_sets와 ID 집합·content_hash가 모두 같은지 본다."""
+    want = {q["id"]: q["content_hash"] for q in manifest["question_sets"]}
+    if set(banks) != set(want):
+        raise BoundaryError("INTEGRITY_ERROR", f"묶음의 문항 세트 목록이 매니페스트와 다르다: {release_id}")
+    for qid, bank in banks.items():
+        if canonical.sha256_hash(bank) != want[qid]:
+            raise BoundaryError("INTEGRITY_ERROR", f"묶음의 문항 세트 해시가 매니페스트와 다르다: {release_id}/{qid}")
+
 def verify_release(store, release_id: str, dest: Optional[Path]) -> ReleaseBundle:
     """검증하는 동안 같은 릴리스가 prune에 걸려 어댑터가 사라졌으면, 손상(INTEGRITY_ERROR)이 아니라 정리됨(FAILED_PRECONDITION, PRUNED)이다.
     왜: 읽기는 락 없이 하고 prune의 파일 삭제는 포인터 락 밖에서 하므로(store.prune_unprotected) 둘이 겹칠 수 있다. 겹침에서 진 읽기가 변조
@@ -91,9 +108,8 @@ def _verify_release(store, release_id: str, dest: Optional[Path]) -> ReleaseBund
         raise BoundaryError("FAILED_PRECONDITION", f"통과(PASS)하지 않은 릴리스다: {release_id}")
     if dest is not None:
         Path(dest).mkdir(parents=True, exist_ok=True)
-    bank, adapters = store.read_release_parts(release_id, Path(dest) if dest is not None else None)
-    if canonical.sha256_hash(bank) != manifest["question_set"]["content_hash"]:
-        raise BoundaryError("INTEGRITY_ERROR", f"묶음의 문항 세트 해시가 매니페스트와 다르다: {release_id}")
+    banks, adapters = store.read_release_parts(release_id, Path(dest) if dest is not None else None)
+    _check_banks(manifest, banks, release_id)
     expected = manifest.get("adapters", {})
     deadline = getattr(store, "deadline_source", None)      # 현재 요청의 마감을 돌려주는 함수(D120)
     for role in ROLES:
@@ -110,7 +126,7 @@ def _verify_release(store, release_id: str, dest: Optional[Path]) -> ReleaseBund
         have = files.get(sp_path) if sp_path in files else (_file_hash_bounded(f, deadline) if f.is_file() else None)
         if not sp or have != sp.get("sha256"):
             raise BoundaryError("INTEGRITY_ERROR", f"묶음의 {role} 시스템 프롬프트 파일이 없거나 해시가 다르다: {release_id}")
-    return ReleaseBundle(manifest, bank, adapters)
+    return ReleaseBundle(manifest, banks, adapters)
 
 
 class ReleaseReaderImpl:
@@ -131,9 +147,10 @@ class ReleaseReaderImpl:
     def load_bundle(self, release_id: str, *, dest: Path) -> ReleaseBundle:
         return verify_release(self._store, release_id, Path(dest))
 
-    def get_release_question_bank(self, release_id: str) -> dict:
-        """I4 get_release_question_bank(2.7.0, SurveyQuestionBankRead): 어댑터 없이 릴리스에 묶인 문항 세트만. PASS가 아니면 FAILED_PRECONDITION(HTTP 412).
-        문항 세트 해시를 매니페스트와 대조한다(어댑터는 읽지 않으므로 어댑터 검증은 하지 않는다)."""
+    def get_release_question_bank(self, release_id: str, question_set_id: Optional[str] = None) -> dict:
+        """I4 get_release_question_bank(SurveyQuestionBankRead): 어댑터 없이 릴리스에 묶인 문항 세트 하나. PASS가 아니면 FAILED_PRECONDITION(HTTP 412).
+        매니페스트에 세트가 둘 이상이면 question_set_id가 필수(없으면 INVALID_RECORD 400, details.reason=QUESTION_SET_REQUIRED), 하나면 생략할 수 있다.
+        묶음에 없는 ID는 NOT_FOUND. 그 세트의 해시를 매니페스트와 대조한다(어댑터는 읽지 않으므로 어댑터 검증은 하지 않는다)."""
         manifest = self._store.get_release(release_id)
         if canonical.content_hash(manifest) != manifest["content_hash"]:
             raise BoundaryError("INTEGRITY_ERROR", f"릴리스 매니페스트의 content_hash가 맞지 않는다: {release_id}")
@@ -145,11 +162,21 @@ class ReleaseReaderImpl:
             raise
         if decision.get("result") != "PASS" or decision.get("release_id") != release_id:
             raise BoundaryError("FAILED_PRECONDITION", f"통과(PASS)하지 않은 릴리스다: {release_id}")
-        bank = self._store.read_question_bank(release_id)
-        h = canonical.sha256_hash(bank)
-        if h != manifest["question_set"]["content_hash"]:
-            raise BoundaryError("INTEGRITY_ERROR", f"묶음의 문항 세트 해시가 매니페스트와 다르다: {release_id}")
-        return {"release_id": release_id, "content_hash": h, "question_bank": bank}
+        refs = manifest["question_sets"]
+        if question_set_id is None:
+            if len(refs) > 1:
+                raise BoundaryError("INVALID_RECORD", "릴리스에 문항 세트가 둘 이상이다: question_set_id가 필요하다",
+                                    {"reason": "QUESTION_SET_REQUIRED", "question_set_ids": [q["id"] for q in refs]})
+            question_set_id = refs[0]["id"]
+        ref = next((q for q in refs if q["id"] == question_set_id), None)
+        if ref is None:
+            raise BoundaryError("NOT_FOUND", f"릴리스에 그 문항 세트가 없다: {release_id}/{question_set_id}")
+        banks = self._store.read_question_banks(release_id)
+        bank = banks.get(question_set_id)
+        h = canonical.sha256_hash(bank) if bank is not None else None
+        if h != ref["content_hash"]:
+            raise BoundaryError("INTEGRITY_ERROR", f"묶음의 문항 세트 해시가 매니페스트와 다르다: {release_id}/{question_set_id}")
+        return {"release_id": release_id, "question_set_id": question_set_id, "content_hash": h, "question_bank": bank}
 
     def get_decision(self, decision_id: str) -> dict:
         return self._store.get_decision(decision_id)
@@ -177,7 +204,7 @@ def verify_in_tempdir(store, release_id: str) -> None:
 
 
 def write_bundle_tar(store, release_id: str, out) -> None:
-    """HTTP.md의 번들 tar를 out(바이너리 파일 객체)에 쓴다: manifest.json, question_bank.json, adapters/<ROLE>/….
+    """HTTP.md의 번들 tar를 out(바이너리 파일 객체)에 쓴다: manifest.json, question_banks/<문항 세트 ID>.json(세트마다), adapters/<ROLE>/….
     서버도 모든 해시를 먼저 검증한다(PASS 아님 412, 불일치 422). 일반 파일만 담는다."""
     import io
     import json
@@ -187,7 +214,7 @@ def write_bundle_tar(store, release_id: str, out) -> None:
         # 보내기 전에 모든 해시를 검증한다. 파일 저장소는 복사 없이 제자리에서 읽는다(수신 쪽 클라이언트도 해시를 다시 확인한다)
         b = verify_release(store, release_id, None if _in_place(store) else Path(d))
         with tarfile.open(fileobj=out, mode="w|") as tar:
-            for name, obj in (("manifest.json", b.manifest), ("question_bank.json", b.question_bank)):
+            for name, obj in [("manifest.json", b.manifest)] + [(f"question_banks/{qid}.json", bk) for qid, bk in sorted(b.question_banks.items())]:
                 data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
                 info = tarfile.TarInfo(name)
                 info.size = len(data)

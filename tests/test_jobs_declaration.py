@@ -57,7 +57,7 @@ def test_collector_checks_each_request_against_the_contract_before_sending(world
     try:
         assert c.run_once() and ok.sent == [s]
         bad = Gate()
-        monkey_subjects["subjects"] = [{"question_set": {"id": "x"}, "lora_a": s["lora_a"], "lora_b": s["lora_b"]}]
+        monkey_subjects["subjects"] = [{"question_sets": [{"id": "x"}], "lora_a": s["lora_a"], "lora_b": s["lora_b"]}]
         with pytest.raises(BoundaryError) as e:
             CandidateCollector(world.q, world.m, bad).run_once()
         assert e.value.code == "INVALID_RECORD" and bad.sent == []         # 계약을 어기는 요청은 보내지 않는다

@@ -3,8 +3,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, TypedDict
+from typing import List, TypedDict
+
+
+class Subject(TypedDict):
+    question_sets: List
 
 
 class CandidateSubjects(TypedDict):
-    subjects: List[Dict[str, Any]]
+    subjects: List[Subject]

@@ -3,9 +3,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, TypedDict
+from typing import Dict, List, TypedDict
 
 from . import AdapterInfo, RuntimeVersions
+
+
+class Subject(TypedDict):
+    question_sets: List
 
 
 class Adapters(TypedDict):
@@ -17,6 +21,7 @@ class ReleaseBuildInput(TypedDict):
     release_id: str
     created_at: str
     gate_decision_id: str
-    subject: Dict[str, Any]
+    subject: Subject
     versions: RuntimeVersions
     adapters: Adapters
+    question_set_titles: Dict[str, str]

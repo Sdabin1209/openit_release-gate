@@ -19,7 +19,11 @@ def intake(store, req: dict, *, submit_roles, max_pending: Optional[int], submit
     if isinstance(role, str) and role and role not in submit_roles:
         raise BoundaryError("PERMISSION_DENIED", f"역할 {role}은 판정 요청 권한이 없다")
     validate("SubmitRequest", req)
-    subject = req["subject"]
+    ids = [q.get("id") for q in req["subject"]["question_sets"]]
+    if len(set(ids)) != len(ids):
+        raise BoundaryError("INVALID_RECORD", "subject.question_sets에 같은 문항 세트 ID가 둘 이상 있다", {"reason": "DUPLICATE_QUESTION_SET"})
+    # 왜 ID로 정렬: 같은 세트 묶음은 순서와 무관하게 같은 접수 ID(조합 해시)를 받아 한 번만 판정된다(멱등)
+    subject = {**req["subject"], "question_sets": sorted(req["subject"]["question_sets"], key=lambda q: q["id"])}
     key = canonical.sha256_hash(subject)
     rec = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "submission_id": "sub-" + key[7:39],
            "submitted_at": submitted_at, "submitted_by_role": role, "subject": subject}

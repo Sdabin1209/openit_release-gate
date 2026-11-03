@@ -21,9 +21,14 @@ def build(inp: dict) -> dict:
     require_versions(inp.get("versions"))
     validate("ReleaseBuildInput", inp)
     v, subject = inp["versions"], inp["subject"]
+    titles = inp["question_set_titles"]
+    missing = [q["id"] for q in subject["question_sets"] if not titles.get(q["id"])]
+    if missing:      # 왜 거부: QuestionSetRef.title은 필수이고 bank에서만 온다. 비어 있으면 거짓 값을 넣지 않는다
+        raise BoundaryError("FAILED_PRECONDITION", "문항 세트 제목(bank.title)이 없다: " + ", ".join(missing), {"reason": "QUESTION_SET_TITLE_MISSING"})
+    refs = [{"id": q["id"], "version": q["version"], "content_hash": q["content_hash"], "title": titles[q["id"]]} for q in subject["question_sets"]]
     man = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "release_id": inp["release_id"],
            "created_at": inp["created_at"], "gate_decision_id": inp["gate_decision_id"],
-           "question_set": subject["question_set"], "lora_a": subject["lora_a"], "lora_b": subject["lora_b"],
+           "question_sets": refs, "lora_a": subject["lora_a"], "lora_b": subject["lora_b"],
            "runtime_contract_version": v["supported_runtime_contract_version"],
            "action_rules_version": v["action_rules_version"],
            "model_runtime_version": v["model_runtime_version"], "adapters": inp["adapters"]}

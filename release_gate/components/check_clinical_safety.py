@@ -15,22 +15,27 @@ def _same_ref(a: dict, b: dict) -> bool:
 def run(inp: dict) -> dict:
     validate("CheckInput", inp)
     d = inp["data"]
-    if not d["reviews_ok"]:
+    if not all(s["reviews_ok"] for s in d["question_sets"]):
         return {"result": "FAIL", "detail": "검수 기록을 읽지 못했다"}
-    ref = d["subject"]["question_set"]
-    mine = []
-    for r in d["reviews"]:
-        try:
-            validate_contract("ReviewRecord", r)
-        except BoundaryError:
-            continue  # 형식이 틀린 기록은 근거로 쓰지 않는다
-        if _same_ref(r["question_set"], ref):
-            mine.append(r)
-    mine.sort(key=lambda r: r["reviewed_at"])
-    approved = [r for r in mine if r["decision"] == "APPROVED" and r["clinical_basis_approved"] is True]
-    if not approved:
-        return {"result": "FAIL", "detail": "이 문항 세트 버전에 임상 기준 승인(clinical_basis_approved=true) 기록이 없다"}
-    newest = mine[-1]
-    if newest not in approved:
-        return {"result": "FAIL", "detail": f"승인 뒤에 더 늦은 비승인 검수({newest['review_id']})가 있다"}
-    return {"result": "PASS", "detail": f"검수 {approved[-1]['review_id']}"}
+    fails, ok = [], []
+    for s in d["question_sets"]:      # 문항 세트마다 따로 본다: 하나라도 승인이 없으면 반려
+        ref, tag = s["ref"], s["ref"]["id"]
+        mine = []
+        for r in s["reviews"]:
+            try:
+                validate_contract("ReviewRecord", r)
+            except BoundaryError:
+                continue  # 형식이 틀린 기록은 근거로 쓰지 않는다
+            if _same_ref(r["question_set"], ref):
+                mine.append(r)
+        mine.sort(key=lambda r: r["reviewed_at"])
+        approved = [r for r in mine if r["decision"] == "APPROVED" and r["clinical_basis_approved"] is True]
+        if not approved:
+            fails.append(f"{tag}: 이 문항 세트 버전에 임상 기준 승인(clinical_basis_approved=true) 기록이 없다")
+        elif mine[-1] not in approved:
+            fails.append(f"{tag}: 승인 뒤에 더 늦은 비승인 검수({mine[-1]['review_id']})가 있다")
+        else:
+            ok.append(f"{tag}: 검수 {approved[-1]['review_id']}")
+    if fails:
+        return {"result": "FAIL", "detail": " | ".join(fails)}
+    return {"result": "PASS", "detail": "; ".join(ok)}

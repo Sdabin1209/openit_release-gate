@@ -33,7 +33,7 @@ ROLES = ("LORA_A", "LORA_B")
 @dataclass
 class ReleaseParts:
     manifest: dict
-    question_bank: dict
+    question_banks: Mapping[str, dict]  # 문항 세트 ID -> QuestionBank. 매니페스트 question_sets와 같은 ID 집합
     adapters: Mapping[str, Path]  # role -> 원본 디렉터리(저장소가 복사해 간다)
     eval_reports: Optional[Mapping[str, dict]] = None  # role -> EvaluationReport. 다음 승인 보고서의 기준값으로 쓴다
     movable: bool = False  # True면 adapters의 디렉터리를 저장소가 옮겨 간다(같은 파일 시스템이면 복사 없음). 원본은 사라진다
@@ -41,6 +41,11 @@ class ReleaseParts:
 
 def ref_key(ref: dict) -> str:
     return f"{ref['id']}\x1f{ref['version']}\x1f{ref['content_hash']}"
+
+
+def qs_key(refs: list) -> str:
+    """판정 대상의 문항 세트 참조들을 한 칸(qs)에 담는 키: 참조마다 앞에 \x1e를 붙여 잇는다. 부분 참조 필터는 '\x1e' + 접두사가 어디든 들어 있는지로 맞춘다(목록 중 하나와 맞으면 반환)."""
+    return "".join("\x1e" + ref_key(r) for r in refs)
 
 
 def ref_prefix(ref: dict) -> str:
@@ -56,6 +61,10 @@ def ref_prefix(ref: dict) -> str:
 
 def _ref_hit(key: str, ref: dict) -> bool:
     return key.startswith(ref_prefix(ref))
+
+
+def _qs_hit(key: str, ref: dict) -> bool:
+    return ("\x1e" + ref_prefix(ref)) in key
 
 
 def _page_args(cursor: Optional[str], limit: int) -> tuple[Optional[int], int]:
@@ -99,7 +108,7 @@ class Store:
     def get_release(self, release_id: str) -> dict: ...
     def list_releases(self, *, cursor=None, limit=100) -> tuple[list, Optional[str]]: ...
     def read_release_parts(self, release_id: str, dest: Path) -> tuple[dict, dict]: ...
-    def read_question_bank(self, release_id: str) -> dict: ...      # 어댑터 없이 릴리스에 묶인 문항 세트만(I4 get_release_question_bank)
+    def read_question_banks(self, release_id: str) -> dict: ...      # 어댑터 없이 릴리스에 묶인 문항 세트들만 {문항 세트 ID: QuestionBank}(I4 get_release_question_bank)
     # 활성 포인터와 롤백
     def get_pointer(self) -> Optional[dict]: ...
     def pointer_history(self) -> list[dict]: ...
@@ -257,7 +266,7 @@ class MemoryStore(Store):
                     src = Path(src)
                     files[role] = {p.relative_to(src).as_posix(): p.read_bytes()
                                    for p in sorted(src.rglob("*")) if p.is_file()}
-                self._release_files[rid] = (json.loads(json.dumps(release.question_bank)), files)
+                self._release_files[rid] = (json.loads(json.dumps(dict(release.question_banks))), files)
                 self._release_reports[rid] = json.loads(json.dumps(dict(release.eval_reports or {})))
                 self._release_by_id[rid] = len(self._releases)
                 self._releases.append(json.loads(json.dumps(release.manifest)))
@@ -291,7 +300,7 @@ class MemoryStore(Store):
                     continue
                 d = self._decisions[seq - 1]
                 s = d["subject"]
-                if question_set and not _ref_hit(ref_key(s["question_set"]), question_set):
+                if question_set and not _qs_hit(qs_key(s["question_sets"]), question_set):
                     continue
                 if lora_a and not _ref_hit(ref_key(s["lora_a"]), lora_a):
                     continue
@@ -318,7 +327,7 @@ class MemoryStore(Store):
             nxt = str(page[-1]) if len(seqs) > limit else None
             return [json.loads(json.dumps(self._releases[s - 1])) for s in page], nxt
 
-    def read_question_bank(self, release_id):
+    def read_question_banks(self, release_id):
         with self._lock:
             self.get_release(release_id)
             return json.loads(json.dumps(self._release_files[release_id][0]))
@@ -400,7 +409,9 @@ class ReleaseFiles:
         try:
             (tmp / "adapters").mkdir(parents=True)
             (tmp / "eval_reports.json").write_text(json.dumps(dict(release.eval_reports or {}), ensure_ascii=False), encoding="utf-8")
-            (tmp / "question_bank.json").write_text(json.dumps(release.question_bank, ensure_ascii=False), encoding="utf-8")
+            (tmp / "question_banks").mkdir()      # 왜 세트마다 파일: 매니페스트 question_sets가 여럿이므로 ID로 하나씩 읽고 해시를 대조한다(ADR-0021)
+            for qid, bank in release.question_banks.items():
+                (tmp / "question_banks" / f"{qid}.json").write_text(json.dumps(bank, ensure_ascii=False), encoding="utf-8")
             for role, src in release.adapters.items():
                 if release.movable:
                     shutil.move(str(src), str(tmp / "adapters" / role))
@@ -494,12 +505,18 @@ class ReleaseFiles:
         except (OSError, ValueError):
             return {}  # 기준 보고서가 없는 릴리스(비교 기준 없음)
 
-    def read_question_bank(self, release_id):
-        self.get_release(release_id)
+    def _read_banks(self, release_id: str) -> dict:
+        """매니페스트 question_sets가 가리키는 ID마다 question_banks/<id>.json을 읽는다(없거나 깨지면 INTEGRITY_ERROR). ID 모양은 계약이 보장한다."""
+        base = self.root / "releases" / release_id / "question_banks"
         try:
-            return json.loads((self.root / "releases" / release_id / "question_bank.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError) as e:
+            return {q["id"]: json.loads((base / f"{q['id']}.json").read_text(encoding="utf-8"))
+                    for q in self.get_release(release_id)["question_sets"]}
+        except (OSError, ValueError, KeyError) as e:
             raise BoundaryError("INTEGRITY_ERROR", f"릴리스 묶음의 문항 세트를 읽을 수 없다: {release_id}") from e
+
+    def read_question_banks(self, release_id):
+        self.get_release(release_id)
+        return self._read_banks(release_id)
 
     def read_release_parts(self, release_id, dest=None):
         """문항 세트와 역할별 어댑터 디렉터리. dest가 None이면 복사하지 않고 릴리스 디렉터리를 그대로 가리킨다(읽기 전용으로 쓸 것).
@@ -508,10 +525,7 @@ class ReleaseFiles:
         base = self.root / "releases" / release_id
         if self.is_pruned(release_id):
             raise BoundaryError("FAILED_PRECONDITION", f"어댑터 사본이 정리된 릴리스다: {release_id}", {"reason": "PRUNED"})
-        try:
-            bank = json.loads((base / "question_bank.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError) as e:
-            raise BoundaryError("INTEGRITY_ERROR", f"릴리스 묶음의 문항 세트를 읽을 수 없다: {release_id}") from e
+        bank = self._read_banks(release_id)
         out = {}
         for role in ROLES:
             src = base / "adapters" / role
@@ -525,7 +539,7 @@ class ReleaseFiles:
 
 
 class SqliteStore(ReleaseFiles, Store):
-    """root/registry.sqlite3 와 root/releases/<release_id>/ (question_bank.json, adapters/<ROLE>/...).
+    """root/registry.sqlite3 와 root/releases/<release_id>/ (question_banks/<id>.json, adapters/<ROLE>/...).
     read_only=True이면 쓰기 없이 열린다. 게이트 서비스가 멈춰도 읽기 SDK는 이 모드로 계속 읽는다."""
 
     kind = "sqlite"
@@ -717,7 +731,7 @@ class SqliteStore(ReleaseFiles, Store):
                               (release.manifest["release_id"], json.dumps(release.manifest, ensure_ascii=False)))
                 s = decision["subject"]
                 c.execute("INSERT INTO decisions(decision_id,submission_id,qs,la,lb,record) VALUES(?,?,?,?,?,?)",
-                          (did, decision["submission_id"], ref_key(s["question_set"]), ref_key(s["lora_a"]),
+                          (did, decision["submission_id"], qs_key(s["question_sets"]), ref_key(s["lora_a"]),
                            ref_key(s["lora_b"]), json.dumps(decision, ensure_ascii=False)))
                 c.execute("UPDATE submissions SET work=?, state=? WHERE submission_id=?",
                           (json.dumps(work, ensure_ascii=False), work["state"], decision["submission_id"]))
@@ -750,8 +764,12 @@ class SqliteStore(ReleaseFiles, Store):
         for col, ref in (("qs", question_set), ("la", lora_a), ("lb", lora_b)):
             if ref:
                 p = ref_prefix(ref)
-                where.append(f"substr({col},1,?)=?")
-                args += [len(p), p]
+                if col == "qs":      # 목록 중 하나와 맞으면 반환: 구분자 \x1e로 시작하는 접두사가 어디든 들어 있으면 된다
+                    where.append("instr(qs,?)>0")
+                    args.append("\x1e" + p)
+                else:
+                    where.append(f"substr({col},1,?)=?")
+                    args += [len(p), p]
         if submission_id:
             where.append("submission_id=?")
             args.append(submission_id)
@@ -1163,7 +1181,7 @@ class PostgresStore(ReleaseFiles, Store):
                               (release.manifest["release_id"], json.dumps(release.manifest, ensure_ascii=False)))
                 s = decision["subject"]
                 c.execute("INSERT INTO decisions(decision_id,submission_id,qs,la,lb,record) VALUES(%s,%s,%s,%s,%s,%s)",
-                          (did, decision["submission_id"], ref_key(s["question_set"]), ref_key(s["lora_a"]),
+                          (did, decision["submission_id"], qs_key(s["question_sets"]), ref_key(s["lora_a"]),
                            ref_key(s["lora_b"]), json.dumps(decision, ensure_ascii=False)))
                 c.execute("UPDATE submissions SET work=%s, state=%s WHERE submission_id=%s",
                           (json.dumps(work, ensure_ascii=False), work["state"], decision["submission_id"]))
@@ -1195,8 +1213,12 @@ class PostgresStore(ReleaseFiles, Store):
         for col, ref in (("qs", question_set), ("la", lora_a), ("lb", lora_b)):
             if ref:
                 p = ref_prefix(ref)
-                where.append(f"substr({col},1,%s)=%s")
-                args += [len(p), p]
+                if col == "qs":
+                    where.append("position(%s in qs)>0")
+                    args.append("\x1e" + p)
+                else:
+                    where.append(f"substr({col},1,%s)=%s")
+                    args += [len(p), p]
         if submission_id:
             where.append("submission_id=%s")
             args.append(submission_id)

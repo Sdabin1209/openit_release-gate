@@ -1,5 +1,12 @@
 # 변경 이력
 
+## (미배포) 계약 3.3.0: 문항 세트 여럿 (wo-320, ADR-0021)
+
+- boundary-contracts v3.2.0 -> v3.3.0, 문진 스키마 survey-schema-v3.0.0 -> v4.0.0(`requirements.txt`).
+- **동작 차이**: `subject.question_set`(하나)이 `subject.question_sets`(배열)로 바뀌었다. 접수·판정·보고서·매니페스트(`question_sets`, 항목에 `title`)가 모두 같다. 옛 형식은 없다. 세트마다 I1 읽기·해시 대조·문진 스키마 적합·임상 승인·U81 구조 대조를 하고 하나라도 실패하면 조합 전체를 반려한다. bank의 `question_set_id`가 참조 id와 다르거나 `title`이 없으면 CONTRACT_COMPAT가 반려한다.
+- **동작 차이**: 수집기는 지켜보는 세트 전부를 한 제출에 묶는다(이전: 세트마다 제출).
+- **동작 차이**: I4 `GET /v1/releases/{id}/question-bank?question_set_id=` 세트가 둘 이상이면 필수(400 `INVALID_RECORD`, `QUESTION_SET_REQUIRED`). 응답에 `question_set_id`. 번들 tar와 릴리스 디렉터리는 `question_banks/<id>.json`(단일 `question_bank.json` 없음). `find_decisions`는 목록 중 하나와 맞으면 반환.
+
 ## (미배포) 계약 3.2.0: 환경 변수 선언 검증, machine-token 노출 (wo-320)
 
 - boundary-contracts v3.1.2 -> v3.2.0, openit-link v0.4.3 -> v0.4.4(`requirements.txt`, link 0.4.4가 계약 3.2.0을 고정한다).

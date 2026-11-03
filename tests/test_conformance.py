@@ -46,7 +46,7 @@ def test_submit_idempotent_and_validated(world):
     a = svc.submit_candidate(s, requested_by_role="operator")
     assert svc.submit_candidate(deepcopy(s), requested_by_role="model-lab") == a    # 기존 접수를 돌려준다
     world.schemas.validate("GateSubmission", a)
-    assert code(svc.submit_candidate, {"question_set": s["question_set"]}, requested_by_role="operator") == "INVALID_RECORD"
+    assert code(svc.submit_candidate, {"question_sets": s["question_sets"]}, requested_by_role="operator") == "INVALID_RECORD"
     assert code(svc.submit_candidate, dict(s, extra=1), requested_by_role="operator") == "INVALID_RECORD"
     assert code(svc.submit_candidate, s, requested_by_role="") == "INVALID_RECORD"
     assert code(svc.submit_candidate, s, requested_by_role="stranger") == "PERMISSION_DENIED"
@@ -154,7 +154,7 @@ def test_find_decisions_filters_and_order(world):
     m1, m2 = rd.get_release(r1), rd.get_release(r2)
     allv, _ = rd.find_decisions()
     assert [d["release_id"] for d in allv] == [r2, r1]                        # 최신부터
-    assert [d["release_id"] for d in rd.find_decisions(question_set=m1["question_set"])[0]] == [r1]
+    assert [d["release_id"] for d in rd.find_decisions(question_set=m1["question_sets"][0])[0]] == [r1]
     assert len(rd.find_decisions(lora_a=m1["lora_a"], lora_b=m1["lora_b"])[0]) == 2
     assert rd.find_decisions(lora_a=dict(m1["lora_a"], version="zz"))[0] == []
     sid = allv[0]["submission_id"]
@@ -174,10 +174,11 @@ def test_find_decisions_includes_rejections(world):
 def tamper(reg, rid, what):
     s = reg.store
     if isinstance(s, MemoryStore):
-        bank, files = s._release_files[rid]
+        banks, files = s._release_files[rid]
         if what == "adapter":
             files["LORA_A"]["adapter.bin"] = b"x"
         else:
+            bank = banks["qs-main"]
             bank["questions"][0]["name"] = "변조"
     else:
         base = s.root / "releases" / rid
@@ -185,7 +186,7 @@ def tamper(reg, rid, what):
             (base / "adapters" / "LORA_A" / "adapter.bin").write_bytes(b"x")
         else:
             import json
-            p = base / "question_bank.json"
+            p = base / "question_banks" / "qs-main.json"
             b = json.loads(p.read_text(encoding="utf-8"))
             b["questions"][0]["name"] = "변조"
             p.write_text(json.dumps(b, ensure_ascii=False), encoding="utf-8")

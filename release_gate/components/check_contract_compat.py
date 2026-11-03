@@ -24,8 +24,17 @@ def run(inp: dict) -> dict:
     if v["survey_contract_version"] != v["supported_runtime_contract_version"]:
         bad.append(f"게이트가 지원하는 문진 스키마 버전({v['supported_runtime_contract_version']})과 "
                    f"배포된 스키마 버전({v['survey_contract_version']})이 다르다")
-    if d.get("bank") is not None and d["bank_violations"]:
-        bad.append("QuestionBank가 문진 스키마를 위반한다: " + "; ".join(d["bank_violations"]))
+    for s in d["question_sets"]:
+        sid, bank = s["ref"]["id"], s["bank"]
+        if bank is None:
+            continue
+        if s["bank_violations"]:
+            bad.append(f"QuestionBank({sid})가 문진 스키마를 위반한다: " + "; ".join(s["bank_violations"]))
+        # 문진 스키마 4.0.0: bank의 question_set_id가 ArtifactRef.id와 같고 title이 있어야 한다(출고 매니페스트 QuestionSetRef.title의 출처)
+        if bank.get("question_set_id") != sid:
+            bad.append(f"QuestionBank.question_set_id({bank.get('question_set_id')})가 참조 id({sid})와 다르다")
+        if not isinstance(bank.get("title"), str) or not bank["title"].strip():
+            bad.append(f"QuestionBank({sid})에 title이 없다")
     strict_rt = params.get("require_lineage_runtime_match", True)
     for role, m in d["manifests"].items():
         try:

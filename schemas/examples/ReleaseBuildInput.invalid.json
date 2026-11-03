@@ -3,11 +3,13 @@
   "created_at": "t",
   "gate_decision_id": "gd-1",
   "subject": {
-    "question_set": {
-      "id": "qs-1",
-      "version": "1",
-      "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    },
+    "question_sets": [
+      {
+        "id": "qs-1",
+        "version": "1",
+        "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
     "lora_a": {
       "id": "la-1",
       "version": "1",
@@ -43,5 +45,8 @@
         "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
     }
+  },
+  "question_set_titles": {
+    "qs-1": "문진표"
   }
 }
