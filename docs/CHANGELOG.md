@@ -2,7 +2,7 @@
 
 ## (미배포) 계약 3.2.0: 환경 변수 선언 검증, machine-token 노출 (wo-320)
 
-- boundary-contracts v3.1.2 -> v3.2.0(`requirements.txt`).
+- boundary-contracts v3.1.2 -> v3.2.0, openit-link v0.4.3 -> v0.4.4(`requirements.txt`, link 0.4.4가 계약 3.2.0을 고정한다).
 - 기동 때 `GATE_` 접두 변수와 `PORT`를 계약 `GateEnv`로 검증한다. 어긋나면 변수 이름만 적고 종료 코드 2. `serve`는 토큰 필수 조건까지, 잡은 이름·형식·필수 변수만 본다. **동작 차이**: 선언에 없는 `GATE_*`(예: 죽은 `GATE_ALLOW_TEST`)가 있으면 기동하지 않는다.
 - **동작 차이**: `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION`의 코드 기본값(설치된 스키마 값)을 없앴다. 없으면 기동 거부. 기본값이 CONTRACT_COMPAT의 "지원 == 배포" 비교를 항상 참으로 만들었다. deploy가 명시한다. `scripts/smoke.sh`는 이미지의 스키마 값을 준다.
 - `deploy-exposure.json`: 다른 호스트의 추론 서버가 읽는 `/v1/active-pointer`, `/v1/releases/*`를 `auth.kind=machine-token`(U67)으로 선언하고 `/v1/releases/*`를 denied에서 뺐다. `/v1/decisions*`는 denied 그대로.
