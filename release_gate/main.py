@@ -36,7 +36,7 @@ from .wiring.loop import Loop
 from .wiring.registry import open_registry
 from .wiring.schema_set import SchemaSet
 from .wiring.survey import SurveySchema
-from .wiring.util import DEFAULT_REQUEST_DEADLINE_SECONDS, RequestDeadlines, SystemClock, utc_now
+from .wiring.util import DEFAULT_REQUEST_DEADLINE_SECONDS, RequestDeadlines, SystemClock, ts, utc_now
 
 log = logging.getLogger("gate")
 EX_TEMPFAIL = 75
@@ -480,8 +480,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     _logging()
     if a.cmd == "backup":      # 마지막 줄은 계약 BackupJobResult(RUNTIME R10.1), 종료 코드 0·75·1
-        from . import backup as _backup
-        out, rc = _backup.run(os.environ)
+        from .components import backup_job
+        from .components.link_questions import egress_proxy_from_env
+        out, rc = backup_job.run(os.environ, egress_proxy=egress_proxy_from_env(), now=lambda: ts(utc_now()))
         validator("BackupJobResult").validate(out)      # 만드는 쪽 검증(R7)
         print(json.dumps(out, ensure_ascii=False))
         return rc

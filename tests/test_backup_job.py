@@ -9,8 +9,10 @@ import subprocess
 import pytest
 from boundary_contracts import validator
 
-from release_gate import backup, main as gate_main
+from release_gate import main as gate_main
+from release_gate.components import backup_job as backup
 
+NOW = lambda: "2026-11-04T00:00:00Z"      # 시계는 주입한다(ADR-0019)
 CRED, REPOPW, DBPW = "backupuser:S3CRET-cred", "S3CRET-repo", "S3CRET-db"
 
 
@@ -45,7 +47,7 @@ def env(tmp_path, monkeypatch):
 
 def test_sqlite_backup_is_one_snapshot_and_result_matches_the_contract(env):
     fake = FakeRestic()
-    out, rc = backup.run(env, runner=fake)
+    out, rc = backup.run(env, egress_proxy=env["OPENIT_EGRESS_PROXY"], runner=fake, now=NOW)
     validator("BackupJobResult").validate(out)
     assert rc == 0 and out["status"] == "ok" and out["snapshot_id"] == "abc123" and out["bytes"] == 42
     cmd, e = fake.calls[-1]
@@ -57,13 +59,13 @@ def test_sqlite_backup_is_one_snapshot_and_result_matches_the_contract(env):
 
 def test_missing_repository_is_initialised_once_then_backed_up(env):
     fake = FakeRestic(no_repo=True)
-    out, rc = backup.run(env, runner=fake)
+    out, rc = backup.run(env, egress_proxy=env["OPENIT_EGRESS_PROXY"], runner=fake, now=NOW)
     assert rc == 0 and [c[0][1] for c in fake.calls] == ["cat", "init", "backup"]
 
 
 @pytest.mark.parametrize("kw", [dict(fail_backup=True), dict(no_repo=True, fail_init=True)])
 def test_unreachable_backup_store_is_retryable_75_and_leaks_nothing(env, kw):
-    out, rc = backup.run(env, runner=FakeRestic(**kw))
+    out, rc = backup.run(env, runner=FakeRestic(**kw), now=NOW)
     validator("BackupJobResult").validate(out)
     assert rc == 75 and out["status"] == "failed" and out["snapshot_id"] is None and out["error"]["retryable"] is True
     blob = json.dumps(out)
@@ -71,9 +73,9 @@ def test_unreachable_backup_store_is_retryable_75_and_leaks_nothing(env, kw):
 
 
 def test_plain_http_backup_url_and_missing_settings_are_exit_1(env):
-    out, rc = backup.run({**env, "OPENIT_BACKUP_URL": "http://backup.example/x"}, runner=FakeRestic())
+    out, rc = backup.run({**env, "OPENIT_BACKUP_URL": "http://backup.example/x"}, runner=FakeRestic(), now=NOW)
     assert rc == 1 and out["error"]["code"] == "INVALID_RECORD"
-    out, rc = backup.run({k: v for k, v in env.items() if k != "OPENIT_BACKUP_URL"}, runner=FakeRestic())
+    out, rc = backup.run({k: v for k, v in env.items() if k != "OPENIT_BACKUP_URL"}, runner=FakeRestic(), now=NOW)
     assert rc == 1
 
 

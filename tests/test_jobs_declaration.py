@@ -16,7 +16,7 @@ JOBS = json.loads((ROOT / "deploy-jobs.json").read_text(encoding="utf-8"))
 
 def test_jobs_declaration_follows_the_contract():
     validator("JobsDeclaration").validate(JOBS)
-    assert [j["name"] for j in JOBS["jobs"]] == ["collect", "judge", "prune"]
+    assert [j["name"] for j in JOBS["jobs"]] == ["collect", "judge", "prune", "backup"]
 
 
 @pytest.mark.parametrize("job", JOBS["jobs"], ids=lambda j: j["name"])
@@ -29,6 +29,9 @@ def test_declared_argv_is_a_real_subcommand_and_config_path_matches(job, monkeyp
     monkeypatch.setattr(gate_main, "judge", lambda cfg: 0)
     monkeypatch.setattr(gate_main, "prune", lambda cfg, dry_run=False: 0)
     monkeypatch.setattr(gate_main, "load_config", lambda path: {})
+    if job["name"] == "backup":      # 백업 잡은 자기 결과 형식(BackupJobResult)을 낸다: 설정 없이 실행하면 설정 오류 1이고 해석 오류(2)는 아니다
+        assert gate_main.main(job["argv"][3:]) == 1
+        return
     assert gate_main.main(job["argv"][3:]) == 0
 
 

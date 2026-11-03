@@ -120,6 +120,11 @@ class QuestionsLink:
         return bank if canonical.sha256_hash(bank) == qref["content_hash"] else None
 
 
+def egress_proxy_from_env() -> Optional[str]:
+    """자기 영역 게이트웨이의 출구 주소(OPENIT_EGRESS_PROXY, 계약 CommonEnv). 통신 쪽 코드가 환경에서 이 이름 하나만 꺼낸다(R9.1). 백업 잡도 이 값을 쓴다."""
+    return egress_proxy_from(os.environ)
+
+
 def http_question_reader(base_url=None, token=None, timeout=None):
     """I1 HTTP 클라이언트. base_url·token이 인자로 오지 않으면 GATE_I1_URL과 비밀 GATE_I1_TOKEN(`_FILE` 경로 우선)에서 읽는다.
     읽기 timeout 기본 10초(`GATE_I1_TIMEOUT`): 계약 RUNTIME R10.3(시간 한도가 사슬 표에 없는 서비스 사이 호출의 기본, 시작값·측정 안 함)."""

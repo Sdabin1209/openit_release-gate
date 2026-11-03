@@ -13,20 +13,14 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from boundary_contracts import read_secret
-from boundary_contracts.clients import egress_proxy_from
 from boundary_contracts.errors import BoundaryError
 
 EX_TEMPFAIL = 75
-
-
-def _ts() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _repo_url(url: str, credentials: str) -> str:
@@ -65,7 +59,7 @@ def _dump_postgres(url: str, out: Path) -> None:
                     f.write(chunk)
 
 
-def run(environ, *, runner: Optional[Callable] = None, now: Callable[[], str] = _ts, dump_pg: Callable = _dump_postgres) -> tuple:
+def run(environ, *, egress_proxy: Optional[str] = None, runner: Optional[Callable] = None, now: Callable[[], str], dump_pg: Callable = _dump_postgres) -> tuple:
     """(BackupJobResult 레코드, 종료 코드). 종료 코드 0 ok, 75 재시도 가능(백업 저장소·DB에 닿지 못함), 1 그 밖의 실패."""
     runner = runner or subprocess.run
     started = now()
@@ -79,7 +73,7 @@ def run(environ, *, runner: Optional[Callable] = None, now: Callable[[], str] = 
             raise BoundaryError("INVALID_RECORD", "OPENIT_BACKUP_CREDENTIALS_FILE과 OPENIT_BACKUP_REPO_PASSWORD_FILE이 필요하다")
         data_dir = Path(environ.get("GATE_DATA_DIR") or "/data")
         db_url = read_secret("GATE_DATABASE_URL")
-        proxy = egress_proxy_from(environ)
+        proxy = egress_proxy      # 자기 영역 게이트웨이 출구(R1.8). 환경에서 꺼내는 일은 wiring이 한다(boundary_contracts.clients.egress_proxy_from)
         env = {"PATH": environ.get("PATH", ""), "RESTIC_REPOSITORY": _repo_url(url, creds), "RESTIC_PASSWORD_FILE": pw_file}
         if "SSL_CERT_FILE" in environ:
             env["SSL_CERT_FILE"] = environ["SSL_CERT_FILE"]      # 사설 루트를 표준 변수로 믿는다(Go 표준 라이브러리)
