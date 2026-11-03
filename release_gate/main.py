@@ -441,6 +441,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="release_gate", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = p.add_subparsers(dest="cmd", required=True)
     sp.add_parser("serve")
+    sp.add_parser("backup")
     for n in ("collect", "judge", "prune"):
         c = sp.add_parser(n)
         c.add_argument("--config", help="설정 파일(JSON)")
@@ -459,6 +460,12 @@ def main(argv: list[str] | None = None) -> int:
         serve()
         return 0
     _logging()
+    if a.cmd == "backup":      # 마지막 줄은 계약 BackupJobResult(RUNTIME R10.1), 종료 코드 0·75·1
+        from . import backup as _backup
+        out, rc = _backup.run(os.environ)
+        validator("BackupJobResult").validate(out)      # 만드는 쪽 검증(R7)
+        print(json.dumps(out, ensure_ascii=False))
+        return rc
     try:
         cfg = load_config(a.config)
         if a.cmd == "prune":

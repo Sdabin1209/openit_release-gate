@@ -18,6 +18,8 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 \
     GATE_DATA_DIR=/data \
     PORT=8080
 
+# 백업 잡(release_gate backup)이 쓰는 restic(백업 저장소 프로토콜의 표준 클라이언트, ADR-0022). 배포판 패키지, 버전은 이미지 빌드 때의 배포판 값이다
+RUN apt-get update && apt-get install -y --no-install-recommends restic ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin gate \
  && mkdir -p /data /opt/contracts/survey-schema && chown gate /data
 WORKDIR /src
