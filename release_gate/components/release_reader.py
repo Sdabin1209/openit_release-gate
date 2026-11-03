@@ -9,14 +9,7 @@ from typing import Optional
 from boundary_contracts import canonical
 from boundary_contracts.errors import BoundaryError
 
-
-class ReleaseBundle:
-    """load_bundle의 결과: 매니페스트, 문항 세트 {문항 세트 ID: QuestionBank}, 역할별 어댑터 디렉터리.
-    왜 여기서 정의: 묶음의 문항 세트가 여럿이다(계약 3.3.0 ReleaseManifest.question_sets)."""
-
-    def __init__(self, manifest, question_banks, adapters):
-        self.manifest, self.question_banks, self.adapters = manifest, question_banks, adapters
-
+from boundary_contracts.sdk import ReleaseBundle  # 3.3.0: ReleaseBundle(manifest, question_banks, adapters)
 
 # 해시를 읽는 조각 크기. 계약 canonical.file_hash와 같은 1 MiB다(결과는 같고, 조각마다 요청 마감을 확인할 수 있게 직접 읽는다: D120, ADR-0020).
 HASH_CHUNK = 1 << 20

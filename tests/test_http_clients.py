@@ -53,7 +53,7 @@ def test_reader_over_http(world, srv, tmp_path):
     assert [d["release_id"] for d in ds] == [r2, r1]
     assert rd.get_decision(ds[0]["decision_id"]) == ds[0]
     assert code(rd.get_decision, "gd-none") == "NOT_FOUND"
-    assert [d["release_id"] for d in rd.find_decisions(question_set=m1["question_sets"][0])[0]] == [r1]
+    assert [d["release_id"] for d in rd.find_decisions(question_set={k: m1["question_sets"][0][k] for k in ("id", "version", "content_hash")})[0]] == [r1]
     assert len(rd.find_decisions(lora_a=m1["lora_a"], lora_b=m1["lora_b"])[0]) == 2
     assert rd.find_decisions(submission_id=ds[1]["submission_id"])[0][0]["release_id"] == r1
     # 번들: 클라이언트가 모든 해시를 검증한다

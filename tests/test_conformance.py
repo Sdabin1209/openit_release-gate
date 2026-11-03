@@ -154,7 +154,7 @@ def test_find_decisions_filters_and_order(world):
     m1, m2 = rd.get_release(r1), rd.get_release(r2)
     allv, _ = rd.find_decisions()
     assert [d["release_id"] for d in allv] == [r2, r1]                        # 최신부터
-    assert [d["release_id"] for d in rd.find_decisions(question_set=m1["question_sets"][0])[0]] == [r1]
+    assert [d["release_id"] for d in rd.find_decisions(question_set={k: m1["question_sets"][0][k] for k in ("id", "version", "content_hash")})[0]] == [r1]
     assert len(rd.find_decisions(lora_a=m1["lora_a"], lora_b=m1["lora_b"])[0]) == 2
     assert rd.find_decisions(lora_a=dict(m1["lora_a"], version="zz"))[0] == []
     sid = allv[0]["submission_id"]

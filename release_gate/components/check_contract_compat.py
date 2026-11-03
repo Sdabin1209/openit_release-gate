@@ -29,7 +29,7 @@ def run(inp: dict) -> dict:
         if bank is None:
             continue
         if s["bank_violations"]:
-            bad.append(f"QuestionBank({sid})가 문진 스키마를 위반한다: " + "; ".join(s["bank_violations"]))
+            bad.append(f"QuestionBank가 문진 스키마를 위반한다({sid}): " + "; ".join(s["bank_violations"]))
         # 문진 스키마 4.0.0: bank의 question_set_id가 ArtifactRef.id와 같고 title이 있어야 한다(출고 매니페스트 QuestionSetRef.title의 출처)
         if bank.get("question_set_id") != sid:
             bad.append(f"QuestionBank.question_set_id({bank.get('question_set_id')})가 참조 id({sid})와 다르다")
