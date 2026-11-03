@@ -94,3 +94,21 @@ def test_plain_http_to_a_non_loopback_host_is_refused_at_client_creation(monkeyp
         factories.http_model_registry(base_url="http://model-registry:8080", token="t")
     assert factories.http_question_reader(base_url="https://question-authoring", token="t") is not None
     assert factories.http_question_reader(base_url="http://127.0.0.1:1", token="t") is not None
+
+
+def test_gate_host_is_the_bind_address_default_all_interfaces():
+    from release_gate import main as gate_main
+    assert gate_main.bind_host({}) == "0.0.0.0"
+    assert gate_main.bind_host({"GATE_HOST": "127.0.0.1"}) == "127.0.0.1"
+
+
+def test_server_bound_to_gate_host_listens_only_there(world, monkeypatch):
+    from conftest import GateHTTPServer, READY_STATUS
+    from release_gate import main as gate_main
+    host = gate_main.bind_host({"GATE_HOST": "127.0.0.1"})
+    srv = GateHTTPServer((host, 0), world.reg, read_tokens={"rt": "survey-service"}, write_tokens={"wt": "operator"},
+                         status=lambda: dict(READY_STATUS))
+    try:
+        assert srv.server_address[0] == "127.0.0.1"
+    finally:
+        srv._srv.close()

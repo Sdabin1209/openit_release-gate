@@ -310,6 +310,12 @@ def _failed(job: str, code: str, reason: str, exit_code: int = 1) -> int:
     return exit_code
 
 
+def bind_host(environ=None) -> str:
+    """서버가 붙을 주소. 계약 GateEnv.GATE_HOST(선택). 왜 기본 0.0.0.0: 컨테이너 안에서 바깥 포트 연결을 받으려면 모든 인터페이스여야 한다.
+    TLS 사이드카 뒤의 배치는 deploy가 루프백 주소를 준다(U99, 배치별 설정 값)."""
+    return (environ if environ is not None else os.environ).get("GATE_HOST") or "0.0.0.0"
+
+
 def serve() -> None:
     _logging()
     cfg = load_config(os.environ.get("GATE_CONFIG"))
@@ -341,7 +347,7 @@ def serve() -> None:
         read_tokens[single] = "reader"
     if not read_tokens:
         raise SystemExit("비밀 GATE_READ_TOKENS(또는 GATE_READ_TOKENS_FILE)이(가) 필요하다")
-    srv = GateHTTPServer(("0.0.0.0", port), reg, read_tokens=read_tokens,
+    srv = GateHTTPServer((bind_host(), port), reg, read_tokens=read_tokens,
                          write_tokens=_tokens("GATE_WRITE_TOKENS", True), status=status, engine=engine,
                          request_timeout=_seconds("GATE_REQUEST_TIMEOUT_SECONDS", DEFAULT_REQUEST_TIMEOUT),
                          max_connections=_opt_int("GATE_MAX_CONNECTIONS") or DEFAULT_MAX_CONNECTIONS, clock=SystemClock(), deadlines=deadlines)

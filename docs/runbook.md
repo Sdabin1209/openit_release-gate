@@ -31,6 +31,7 @@ GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh          # BuildImageRequest �
 | `GATE_I1_TIMEOUT`, `GATE_I3_TIMEOUT` | I1·I3 HTTP 읽기 timeout(초, 소켓 읽기 단위). 기본 10(이전 30). 장애 동작은 boundary.md 장애 영향 |
 | `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`(설정 파일의 `i1_factory`, `i3_factory`가 우선). 둘 다 있어야 판정이 켜진다. HTTP 클라이언트는 `release_gate.factories:http_question_reader`, `release_gate.factories:http_model_registry`(`boundary_contracts.clients`, 설치된 boundary-contracts에서 확인). 이 둘은 `GATE_I1_URL`, `GATE_I3_URL`(선택 `*_TIMEOUT`)과 비밀 `GATE_I1_TOKEN`, `GATE_I3_TOKEN`(`*_FILE` 우선)을 읽는다 |
 | `GATE_POLL_SECONDS`, `PORT` | 주기(기본 60), 포트(기본 8080) |
+| `GATE_HOST` | 서버 바인드 주소(선택, 기본 0.0.0.0, 계약 3.4.2 GateEnv). TLS 사이드카 뒤의 배치는 deploy가 127.0.0.1을 준다 |
 
 
 ## 출고 흐름과 승인 (D53)
