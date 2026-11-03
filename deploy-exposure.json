@@ -15,7 +15,7 @@
      "timeouts_ms": {"dial": 1000, "response_header": 180000}},
     {"paths": ["/v1/submissions"], "methods": ["POST"], "auth": {"kind": "denied"}},
     {"paths": ["/v1/active-pointer", "/v1/releases/*"], "methods": ["GET"],
-     "auth": {"kind": "machine-token"}, "upstream_token": "gate-read-inference-server", "user_header": "strip", "streaming": true},
+     "auth": {"kind": "machine-token"}, "upstream_token": "gate-read-model-serving", "user_header": "strip", "streaming": true},
     {"paths": ["/v1/decisions", "/v1/decisions/*"], "auth": {"kind": "denied"}}
   ]
 }

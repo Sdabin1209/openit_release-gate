@@ -73,6 +73,7 @@ def test_machine_token_route_covers_exactly_the_inference_server_reads():
     assert len(m) == 1 and m[0]["methods"] == ["GET"] and "roles" not in m[0]["auth"]
     assert sorted(m[0]["paths"]) == ["/v1/active-pointer", "/v1/releases/*"]
     assert m[0]["user_header"] == "strip"
+    assert m[0]["upstream_token"] == "gate-read-model-serving"      # deploy가 이미 쓰는 비밀 이름(D122). 이름을 둘 만들지 않는다
 
 
 # ---- GateExt ----
