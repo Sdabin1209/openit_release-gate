@@ -228,3 +228,43 @@ def test_real_build_emits_build_image_result_with_labels_from_request(tmp_path):
         assert layers[0] == layers[1], (ids, layers)
     finally:
         subprocess.run(["docker", "rmi", "-f", tag], capture_output=True)
+
+
+# --- variant db (D126): 영역 DB 이미지
+def _db_req(tmp_path, **kw):
+    return {**BASE, "variant": "db", "image_tag": "release-gate-db-u42test:" + tmp_path.name[-8:], **kw}
+
+
+def test_db_variant_with_a_boundary_version_that_differs_from_the_pin_is_refused(tmp_path, fake_docker):
+    docker, marker = fake_docker
+    r = run(tmp_path, _db_req(tmp_path, versions={**BASE["versions"], "boundary": "v0.0.1"}), docker)
+    assert r.returncode != 0 and "고정" in r.stderr and not marker.exists()      # 라벨이 거짓이 되므로 도커를 부르기 전에 멈춘다
+
+
+def test_db_variant_with_an_invalid_declaration_is_refused_before_docker(tmp_path, fake_docker):
+    docker, marker = fake_docker
+    src = tmp_path / "src"; (src / "db").mkdir(parents=True)
+    (src / "requirements.txt").write_text((ROOT / "requirements.txt").read_text(encoding="utf-8"))
+    (src / "deploy-database.json").write_text('{"engine": "postgresql", "major": 16, "port": 5432, "accounts": []}')
+    r = run(tmp_path, _db_req(tmp_path, source_dir=str(src)), docker)
+    assert r.returncode != 0 and ("DatabaseDeclaration" in r.stderr or "[] is too short" in r.stderr or "non-empty" in r.stderr), r.stderr
+    assert not marker.exists()
+
+
+@pytest.mark.skipif(subprocess.run(["docker", "info"], capture_output=True).returncode != 0 or subprocess.run(["docker", "image", "inspect", "postgres:16"], capture_output=True).returncode != 0,
+                    reason="도커 데몬 또는 postgres:16 이미지가 없다")
+def test_db_variant_builds_an_image_with_the_contract_labels(tmp_path):
+    r = run(tmp_path, _db_req(tmp_path), "docker")
+    try:
+        assert r.returncode == 0, r.stderr[-600:]
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        validator("BuildImageResult").validate(out)
+        validator("ImageLabels").validate(out["labels"])
+        lab = out["labels"]
+        assert lab["io.openit.service"] == "release-gate-db" and lab["io.openit.contracts.boundary"] == PIN_BC and lab["io.openit.variant"] == "db"
+        decl = json.loads(lab["io.openit.database"])
+        validator("DatabaseDeclaration").validate(decl)
+        assert decl == json.loads((ROOT / "deploy-database.json").read_text(encoding="utf-8"))      # 라벨은 리포의 선언 그대로다
+        assert lab["io.openit.revision"] == "abc1234"
+    finally:
+        subprocess.run(["docker", "rmi", "-f", _db_req(tmp_path)["image_tag"]], capture_output=True)

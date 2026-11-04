@@ -1,5 +1,10 @@
 # 변경 이력
 
+## (미배포) 영역 DB 이미지 release-gate-db (D126, 계약 v3.4.11)
+
+- `db/`(Dockerfile·진입점·초기화·생성기), `deploy-database.json`(DatabaseDeclaration), `scripts/build-image.sh`의 variant `db`(`build-db-image.sh`), 스모크 `scripts/smoke-db.sh`, ADR-0024.
+- 고정: 계약 v3.4.11, link v0.4.17.
+
 ## (미배포) 계약 3.3.0: 문항 세트 여럿 (wo-320, ADR-0021)
 
 - boundary-contracts v3.2.0 -> v3.3.0, 문진 스키마 survey-schema-v3.0.0 -> v4.0.0(`requirements.txt`).

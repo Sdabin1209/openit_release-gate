@@ -14,6 +14,11 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"; elif [ -x "$here/.venv/bin/python" ]; then PY="$here/.venv/bin/python"; else PY="python3"; fi
 DOCKER="${DOCKER:-docker}"
 
+# 0) variant db: 영역 DB 이미지(D126)는 다른 빌드(scripts/build-db-image.sh)다. 모르는 variant는 아래에서 거부한다
+if "$PY" -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1], encoding="utf-8")).get("variant") == "db" else 1)' "$req" 2>/dev/null; then
+  exec bash "$here/scripts/build-db-image.sh" "$req"
+fi
+
 # 1) 요청 검증과 값 읽기. 왜 계약 validator: 영역 경계 입력의 모양은 계약 스키마가 정본이다(모르는 키·필수 키 없음은 여기서 거부).
 # 이 영역이 쓰는 키(versions.model_runtime, versions.survey_schema, dependency_sources 셋)가 없으면 기본값으로 채우지 않고 실패한다(기준표와 어긋나지 않게).
 mapfile -t F < <("$PY" - "$req" <<'PY'

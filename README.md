@@ -88,6 +88,7 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 
 - 시험 개수는 이 문서에 적지 않는다. 실행 명령으로 센다: `export TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)" && python -m pytest -q -p no:cacheprovider`(PostgreSQL 컨테이너 포함. 없으면 그 시험은 건너뛴다). `tests/test_u43_setup_env_report.py`는 GitHub에서 계약·link 태그를 받으므로 태그가 게시되기 전에는 로컬 태그로 `GIT_CONFIG_*`(url.insteadOf)를 걸어 돌린다. 이미지: `GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh`.
 
+- DB 이미지(D126): `tests/test_db_image.py`(이미지를 띄워 verify-full·권한·접속 규칙·변이), `tests/test_u42_build_image.py`의 db 변형, 스모크 `scripts/smoke-db.sh`.
 - 계약 3.4.7 준수 시험(조항 → 시험): HTTP I5·R10.8 `tests/test_conform_344.py`(제출 422·503·역할), CONVENTIONS 6 `tests/test_gateway_tokens.py`, R4.1·R3.10 `tests/test_pg_restart.py`, R8.1·R10.5·R3.19 `tests/test_conform_344.py`·`tests/test_request_deadline.py`, R10.3·IN-EGRESS `tests/test_conform_344.py`, R10.1 `tests/test_backup_job.py`, R5.1 `tests/test_conform_344.py`, U99 `tests/test_tls_config.py`.
 - 이 영역 소유의 열린 항목은 없다. G08(기본 태그 올림)은 닫힘(release-gate 7139123).
 - 간접으로 닿는 열린 항목(소유는 다른 영역): G11(문진 스키마 정수 버전 안의 비호환 변경, 같은 잠금으로 함께 배포 필요, 다른 영역 의존), U07(실제 LLM 데모 부분, GPU 의존), U10(평가가 가짜 모델로만 돌았음, GPU 의존), D-A(운영 도메인·토큰 발급·회전 등, 사용자 결정), U12(두 번째 독립 머신 확인, 미실시).
@@ -131,6 +132,7 @@ DB 대기 상한(FAULT_MATRIX P0-3 / C4, 이번 변경): PostgreSQL 접속·문�
 | [0021](docs/adr/0021-multiple-question-sets.md) | 한 제출·릴리스에 문항 세트 여럿(subject.question_sets, 세트별 검사, question_banks/<id>.json) |
 | [0022](docs/adr/0022-database-component-and-backup.md) | 데이터베이스는 이 영역의 컴포넌트, 백업은 restic으로 영역 게이트웨이 출구를 지나 platform 백업 저장소로 |
 | [0023](docs/adr/0023-conformance-values.md) | 계약 3.4.x 준수에서 정한 값(게이트웨이 토큰, 본문 상한, 잡 시간 한도, 처리 중 요청 수) |
+| [0024](docs/adr/0024-database-image.md) | release-gate-db 이미지: 계정·권한·접속 규칙·TLS를 이미지 안에서 초기화(D126) |
 | [0012](docs/adr/0012-job-output-self-check.md) | 잡 출력 자기 검사, /readyz는 시험에서만, 종료 코드 |
 | [0013](docs/adr/0013-wsgi-waitress.md) | HTTP 면은 WSGI 앱 + waitress |
 | [0014](docs/adr/0014-yoyo-migrations.md) | 스키마 버전 관리는 yoyo-migrations |

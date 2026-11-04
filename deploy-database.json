@@ -1,0 +1,8 @@
+{
+  "engine": "postgresql",
+  "major": 16,
+  "port": 5432,
+  "accounts": [
+    {"name": "gate", "database": "gate", "privilege": "owner", "url_env": ["GATE_DATABASE_URL_FILE"]}
+  ]
+}

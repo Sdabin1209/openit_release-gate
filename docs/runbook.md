@@ -133,3 +133,10 @@ docker run -v /srv/secrets/gate:/run/secrets:ro \
 - PostgreSQL TLS는 비밀 파일의 접속 문자열 `?sslmode=verify-full&sslrootcert=…`로 켠다. 코드는 sslmode를 덮어쓰지 않는다.
 - 들어오는 TLS는 서비스 앞의 사이드카가 끝낸다(deploy). 컨테이너 HEALTHCHECK는 루프백 평문이다.
 - 시험: `tests/test_tls_config.py`.
+
+## 데이터베이스 이미지 (release-gate-db, D126)
+
+- 빌드: BuildImageRequest에 `"variant": "db"`를 주고 `scripts/build-image.sh`(ADR-0024). 선언은 `deploy-database.json`, 라벨 `io.openit.database`.
+- 입력(AreaDatabaseEnv): `POSTGRES_PASSWORD_FILE`, `DB_ACCOUNT_SECRETS_DIR`(기본 /run/secrets/db, 계정 이름의 파일 하나씩), `DB_TLS_DIR`(기본 /certs, tls.crt·tls.key). 서비스는 `GATE_DATABASE_URL_FILE`의 접속 URI(`sslmode=verify-full`)로 닿는다.
+- 계정 암호는 첫 초기화(빈 데이터 폴더)에만 반영된다. 바꾸려면 `ALTER ROLE`(ADR-0024 결과 절).
+- 스모크: `GATE_BUILD_REQUEST=<variant db 요청> scripts/smoke-db.sh`.
