@@ -26,13 +26,19 @@ def _sh(*a, **kw):
     return subprocess.run(list(a), capture_output=True, text=True, timeout=HANG_GUARD_SECONDS, **kw)
 
 
+# 왜 digest로 고정: ':latest'는 받는 날마다 다른 이미지라 시험이 재현되지 않는다(restic 0.18→0.19처럼 동작이 바뀌는 판이 들어올 수 있다).
+# 값은 2026-11-04에 이 시험이 통과한 이미지의 RepoDigest다(restic/rest-server 0.14.0 계열, restic/restic 0.19.1). 올릴 때는 시험을 다시 돌려 이 상수만 바꾼다.
+REST_SERVER_IMAGE = "restic/rest-server@sha256:d2aff06f47eb38637dff580c3e6bce4af98f386c396a25d32eb6727ec96214a5"
+RESTIC_IMAGE = "restic/restic@sha256:9940e6c7421ab3a21ee9fdc4e91596d04c792b600d31b102696c75cbf3ac4481"
+
+
 def _have_images():
     if shutil.which("docker") is None or shutil.which("openssl") is None:
         return False
-    return all(_sh("docker", "image", "inspect", i).returncode == 0 for i in ("restic/rest-server:latest", "restic/restic:latest"))
+    return all(_sh("docker", "image", "inspect", i).returncode == 0 for i in (REST_SERVER_IMAGE, RESTIC_IMAGE))
 
 
-pytestmark = pytest.mark.skipif(not _have_images(), reason="docker·openssl·restic 이미지(restic/rest-server, restic/restic)가 없다")
+pytestmark = pytest.mark.skipif(not _have_images(), reason="docker·openssl 또는 digest로 고정한 restic 이미지가 없다(docker pull REST_SERVER_IMAGE RESTIC_IMAGE)")
 
 
 @pytest.fixture
@@ -52,7 +58,7 @@ def store_server(tmp_path):
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]
     name = "release-gate-rs-" + uuid.uuid4().hex[:8]
-    r = _sh("docker", "run", "-d", "--name", name, "-p", f"127.0.0.1:{port}:8000", "-v", f"{certs}:/certs:ro", "--entrypoint", "rest-server", "restic/rest-server:latest",
+    r = _sh("docker", "run", "-d", "--name", name, "-p", f"127.0.0.1:{port}:8000", "-v", f"{certs}:/certs:ro", "--entrypoint", "rest-server", REST_SERVER_IMAGE,
             "--tls", "--tls-cert", "/certs/srv.pem", "--tls-key", "/certs/srv.key", "--htpasswd-file", "/certs/htpasswd", "--path", "/tmp/repos")
     if r.returncode != 0:
         _sh("docker", "rm", "-f", name)
@@ -78,7 +84,7 @@ def _restic_in_docker(workdirs, root_pem):
             args += ["-v", f"{d}:{d}"]
         for k in ("RESTIC_REPOSITORY", "RESTIC_PASSWORD_FILE"):
             args += ["-e", f"{k}={env[k]}"]
-        args += ["restic/restic:latest", *cmd[1:]]
+        args += [RESTIC_IMAGE, *cmd[1:]]
         r = subprocess.run(args, capture_output=True, text=True, timeout=HANG_GUARD_SECONDS)
         return r
     return run
