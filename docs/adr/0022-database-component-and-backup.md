@@ -14,6 +14,9 @@
 - 설정 이름은 계약 CommonEnv의 `OPENIT_BACKUP_URL`(restic REST 서버, https), `OPENIT_BACKUP_CREDENTIALS_FILE`(HTTP 기본 인증, RFC 7617), `OPENIT_BACKUP_REPO_PASSWORD_FILE`(restic 저장소 암호)만 쓴다. 출구는 `OPENIT_EGRESS_PROXY`를 restic 자식 프로세스의 표준 `HTTPS_PROXY`로만 넘긴다(R9.1: 환경을 통째로 넘기지 않는다).
 - 결과: 마지막 줄 `BackupJobResult`(만드는 쪽 검증), 종료 코드 0(ok)·75(백업 저장소·DB에 닿지 못함, 재시도 가능)·1(설정 오류). 자격·암호·접속 문자열은 어떤 출력에도 쓰지 않고 오류 문구는 고정 문장과 예외 종류뿐이다.
 
+- 보존: 저장소는 append-only를 쓰지 않는다. 백업이 끝날 때마다 이 영역이 `restic forget --prune --host release-gate --keep-daily 7 --keep-weekly 4 --keep-monthly 6`을 부른다. 값은 시작값이고 측정·근거 기록이 없다(계약에 이름이 없어 설정으로 두지 않는다). 내보내기 폴더(`.backup-stage`)와 `--host`를 고정해 스냅숏이 한 묶음으로 보존 규칙에 걸리게 한다.
+- 복구: 잡 `python -m release_gate restore [--snapshot <ID>]`(기본 latest, 주기 없이 선언만 한다, deploy-jobs.json의 `restore`). 스냅숏을 임시 폴더로 풀어, SQLite는 `registry.sqlite3`를 복사하고 PostgreSQL은 마이그레이션으로 표를 만든 뒤 표마다 `COPY … FROM STDIN (FORMAT binary)`로 넣고 `seq` 일련번호를 이어 간다. 대상 DB에 행이 있으면 거부(종료 코드 1, 살아 있는 데이터를 덮어쓰지 않는다). 이미 있는 릴리스 묶음은 덮어쓰지 않는다. 결과는 BackupJobResult(snapshot_id는 되살린 스냅숏).
+
 ## 왜
 
 - restic: 계약이 백업 저장소 프로토콜을 'restic REST 서버'로 정했으므로 그 표준 클라이언트를 쓴다. 암호화·중복 제거·스냅숏이 들어 있어 직접 짜지 않는다.
@@ -28,7 +31,7 @@
 
 ## 결과
 
-- 얻는 것: 영역이 자기 데이터를 게이트웨이 출구로만 내보낸다. 복원은 마이그레이션으로 표를 만든 뒤 표 이름의 `.copy` 파일을 `COPY … FROM`으로 넣는다(복원 시험은 이 영역에 없다 — 실제 restic 저장소로 돌려 보지 않았다: 시험은 restic을 가짜 실행기로 대신하고 PostgreSQL 내보내기만 실제 DB로 확인한다).
+- 얻는 것: 영역이 자기 데이터를 게이트웨이 출구로만 내보낸다. 복원은 마이그레이션으로 표를 만든 뒤 표 이름의 `.copy` 파일을 `COPY … FROM`으로 넣는다(왕복은 실제 restic rest-server(TLS·bcrypt 기본 인증)로 시험한다: tests/test_backup_roundtrip.py, SQLite·PostgreSQL 모두 backup → restore 잡 → 행 확인).
 - 감수하는 것: 임시 폴더가 DB 크기만큼 디스크를 쓴다. 이미지에 `restic`(배포판 패키지)이 들어간다.
 
 ## 되돌리는 조건

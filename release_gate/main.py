@@ -461,6 +461,8 @@ def main(argv: list[str] | None = None) -> int:
     sp = p.add_subparsers(dest="cmd", required=True)
     sp.add_parser("serve")
     sp.add_parser("backup")
+    rs = sp.add_parser("restore")
+    rs.add_argument("--snapshot", default="latest", help="되살릴 스냅숏 ID(기본 latest)")
     for n in ("collect", "judge", "prune"):
         c = sp.add_parser(n)
         c.add_argument("--config", help="설정 파일(JSON)")
@@ -484,6 +486,19 @@ def main(argv: list[str] | None = None) -> int:
         from .components.link_questions import egress_proxy_from_env
         out, rc = backup_job.run(os.environ, egress_proxy=egress_proxy_from_env(), now=lambda: ts(utc_now()))
         validator("BackupJobResult").validate(out)      # 만드는 쪽 검증(R7)
+        print(json.dumps(out, ensure_ascii=False))
+        return rc
+    if a.cmd == "restore":      # 주기 없이 사람이 요청할 때 한 번 돈다. 빈 DB와 빈 릴리스 묶음에만 되살린다(ADR-0022)
+        from .components import backup_job
+        from .components.link_questions import egress_proxy_from_env
+
+        def load_pg(url, dump_dir):
+            import psycopg
+            from .migrate import migrate_postgres
+            migrate_postgres(psycopg.conninfo.conninfo_to_dict(url))      # 표는 서비스의 마이그레이션이 만든다
+            backup_job.load_postgres(url, dump_dir)
+        out, rc = backup_job.restore(os.environ, snapshot=a.snapshot, egress_proxy=egress_proxy_from_env(), now=lambda: ts(utc_now()), load_pg=load_pg)
+        validator("BackupJobResult").validate(out)
         print(json.dumps(out, ensure_ascii=False))
         return rc
     try:

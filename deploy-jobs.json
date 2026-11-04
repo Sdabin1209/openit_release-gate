@@ -115,6 +115,31 @@
         "GATE_DATA_DIR"
       ],
       "timeout_seconds": 3600
+    },
+    {
+      "name": "restore",
+      "argv": [
+        "python",
+        "-m",
+        "release_gate",
+        "restore"
+      ],
+      "idempotent": true,
+      "secret_files": [
+        "GATE_DATABASE_URL_FILE",
+        "OPENIT_BACKUP_CREDENTIALS_FILE",
+        "OPENIT_BACKUP_REPO_PASSWORD_FILE"
+      ],
+      "needs": [
+        "postgres",
+        "gate-data"
+      ],
+      "env": [
+        "OPENIT_BACKUP_URL",
+        "OPENIT_EGRESS_PROXY",
+        "GATE_DATA_DIR"
+      ],
+      "timeout_seconds": 3600
     }
   ]
 }

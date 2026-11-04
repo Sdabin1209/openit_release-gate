@@ -188,24 +188,28 @@ def test_internal_error_is_503_and_the_log_has_class_and_place_but_no_message(wo
     assert "_Boom at test_conform_344.py:" in buf.getvalue() and secret not in buf.getvalue()
 
 
-# --- R10.5: 표준 출력이 막혀도 요청의 출력은 바뀌지 않는다
-def test_a_broken_log_stream_does_not_change_the_response(world):
+# --- R10.5: 로그를 쓰다 예외가 나도(표준 출력이 막힘, 처리기가 예외를 던짐) 요청의 출력은 바뀌지 않는다
+def test_a_log_handler_that_raises_on_write_does_not_change_the_response(world):
     import logging
-    class Broken:
-        def write(self, *_): raise OSError(28, "No space left on device")
-        def flush(self): raise OSError(28, "No space left on device")
+
+    class Raising(logging.Handler):
+        def handle(self, record):      # emit이 아니라 handle에서 던진다: 표준 처리기가 삼키는 경로(handleError) 밖의 실패를 만든다
+            raise OSError(28, "No space left on device")
     srv = GateHTTPServer(("127.0.0.1", 0), world.reg, read_tokens={"rt": "reader"}, write_tokens={"wo": "operator"}, status=lambda: dict(READY_STATUS))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
-    root, old = logging.getLogger(), logging.raiseExceptions
-    h = logging.StreamHandler(Broken())
-    root.addHandler(h); root.setLevel(logging.INFO); logging.raiseExceptions = False
+    gate_log = logging.getLogger("gate")
+    h, old_level = Raising(), gate_log.level
+    gate_log.addHandler(h); gate_log.setLevel(logging.INFO)
     try:
         req = urllib.request.Request(base + "/v1/active-pointer", headers={"Authorization": "Bearer rt"})
         with urllib.request.urlopen(req) as r:
             assert r.status == 200 and json.loads(r.read()) == {"item": None}
+        with pytest.raises(urllib.error.HTTPError) as e:      # 오류 응답도 같다: 틀린 토큰은 그대로 401
+            urllib.request.urlopen(urllib.request.Request(base + "/v1/active-pointer", headers={"Authorization": "Bearer bad"}))
+        assert e.value.code == 401
     finally:
-        root.removeHandler(h); logging.raiseExceptions = old
+        gate_log.removeHandler(h); gate_log.setLevel(old_level)
         srv.shutdown()
 
 

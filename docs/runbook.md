@@ -100,7 +100,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 
 ## 백업과 정리
 
-- 백업 잡(운영, 계약 R10.1): `python -m release_gate backup`(deploy-jobs.json의 `backup`, ADR-0022). DB와 `releases/`를 한 스냅숏으로 restic REST 저장소에 올린다. 필요한 설정: `OPENIT_BACKUP_URL`(https), `OPENIT_BACKUP_CREDENTIALS_FILE`, `OPENIT_BACKUP_REPO_PASSWORD_FILE`, `OPENIT_EGRESS_PROXY`(자기 영역 게이트웨이 출구), PostgreSQL이면 `GATE_DATABASE_URL_FILE`. 마지막 줄은 BackupJobResult, 종료 코드 0·75(재시도)·1. 복원: restic으로 스냅숏을 받고, 마이그레이션으로 표를 만든 뒤 표 이름의 `.copy` 파일을 `COPY "<표>" FROM STDIN (FORMAT binary)`로 넣고, `releases/`를 데이터 디렉터리에 놓는다.
+- 백업 잡(운영, 계약 R10.1): `python -m release_gate backup`(deploy-jobs.json의 `backup`, ADR-0022). DB와 `releases/`를 한 스냅숏으로 restic REST 저장소에 올린다. 필요한 설정: `OPENIT_BACKUP_URL`(https), `OPENIT_BACKUP_CREDENTIALS_FILE`, `OPENIT_BACKUP_REPO_PASSWORD_FILE`, `OPENIT_EGRESS_PROXY`(자기 영역 게이트웨이 출구), PostgreSQL이면 `GATE_DATABASE_URL_FILE`. 마지막 줄은 BackupJobResult, 종료 코드 0·75(재시도)·1. 복구: `python -m release_gate restore [--snapshot <ID>]`(주기 없음, 사람이 요청). 빈 DB·빈 릴리스 디렉터리에만 되살린다(ADR-0022). 보존은 백업 잡이 `forget --prune`으로 지킨다(7일·4주·6개월).
 - 백업(손으로, PostgreSQL 모드): `pg_dump`로 서비스 데이터베이스를 받고 `releases/` 디렉터리를 함께 복사한다. 둘이 한 쌍이다.
 - 백업(SQLite 모드): 서비스를 멈추거나 `sqlite3 registry.sqlite3 ".backup ..."`으로 DB를 복사하고 `releases/` 디렉터리를 함께 복사한다. 둘이 한 쌍이다.
 - 정리: `releases/` 아래 `.tmp-*` 디렉터리와 DB에 행이 없는 릴리스 디렉터리는 중단된 쓰기의 잔재이고 읽기에 영향이 없다. 서비스가 멈춘 뒤 지워도 된다.

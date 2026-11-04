@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import subprocess
+from pathlib import Path
 
 import pytest
 from boundary_contracts import validator
@@ -17,8 +18,9 @@ CRED, REPOPW, DBPW = "backupuser:S3CRET-cred", "S3CRET-repo", "S3CRET-db"
 
 
 class FakeRestic:
-    def __init__(self, fail_backup=False, no_repo=False, fail_init=False):
+    def __init__(self, fail_backup=False, no_repo=False, fail_init=False, fail_forget=False, fail_restore=False, snapshots=None):
         self.calls, self.fail_backup, self.no_repo, self.fail_init = [], fail_backup, no_repo, fail_init
+        self.fail_forget, self.fail_restore, self.snapshots, self.restored_to = fail_forget, fail_restore, snapshots if snapshots is not None else [{"id": "snap-1"}], None
 
     def __call__(self, cmd, **kw):
         self.calls.append((cmd, kw.get("env")))
@@ -27,6 +29,13 @@ class FakeRestic:
             return subprocess.CompletedProcess(cmd, 1 if self.no_repo else 0, "", "")
         if sub == "init":
             return subprocess.CompletedProcess(cmd, 1 if self.fail_init else 0, "", "")
+        if sub == "forget":
+            return subprocess.CompletedProcess(cmd, 1 if self.fail_forget else 0, "", "")
+        if sub == "snapshots":
+            return subprocess.CompletedProcess(cmd, 0, json.dumps(self.snapshots), "")
+        if sub == "restore":
+            self.restored_to = cmd[cmd.index("--target") + 1]
+            return subprocess.CompletedProcess(cmd, 1 if self.fail_restore else 0, "", "")
         if self.fail_backup:
             return subprocess.CompletedProcess(cmd, 1, "", "")
         out = json.dumps({"message_type": "status"}) + "\n" + json.dumps({"message_type": "summary", "snapshot_id": "abc123", "total_bytes_processed": 42})
@@ -50,17 +59,24 @@ def test_sqlite_backup_is_one_snapshot_and_result_matches_the_contract(env):
     out, rc = backup.run(env, egress_proxy=env["OPENIT_EGRESS_PROXY"], runner=fake, now=NOW)
     validator("BackupJobResult").validate(out)
     assert rc == 0 and out["status"] == "ok" and out["snapshot_id"] == "abc123" and out["bytes"] == 42
-    cmd, e = fake.calls[-1]
-    assert cmd[:3] == ["restic", "backup", "--json"] and cmd[-1].endswith("/releases") and "/.backup-" in cmd[3]
+    cmd, e = [c for c in fake.calls if c[0][1] == "backup"][0]
+    assert cmd[:3] == ["restic", "backup", "--json"] and cmd[-1].endswith("/releases") and "/.backup-stage" in " ".join(cmd) and "--host" in cmd
     assert e["HTTPS_PROXY"] == "http://127.0.0.1:3128"                      # 자기 영역 게이트웨이 출구로만 나간다
     assert e["RESTIC_REPOSITORY"].startswith("rest:https://") and e["RESTIC_PASSWORD_FILE"] == env["OPENIT_BACKUP_REPO_PASSWORD_FILE"]
     assert not list((tmp := __import__("pathlib").Path(env["GATE_DATA_DIR"])).glob(".backup-*"))      # 임시 덤프는 지운다
 
 
-def test_missing_repository_is_initialised_once_then_backed_up(env):
+def test_missing_repository_is_initialised_once_then_backed_up_then_old_snapshots_are_forgotten(env):
     fake = FakeRestic(no_repo=True)
     out, rc = backup.run(env, egress_proxy=env["OPENIT_EGRESS_PROXY"], runner=fake, now=NOW)
-    assert rc == 0 and [c[0][1] for c in fake.calls] == ["cat", "init", "backup"]
+    assert rc == 0 and [c[0][1] for c in fake.calls] == ["cat", "init", "backup", "forget"]
+    forget = fake.calls[-1][0]      # 저장소는 append-only가 아니다: 이 영역이 보존 상한으로 지운다(ADR-0022)
+    assert forget[:3] == ["restic", "forget", "--prune"] and "--keep-daily" in forget and "--host" in forget
+
+
+def test_forget_failure_is_a_retryable_75_even_though_the_snapshot_exists(env):
+    out, rc = backup.run(env, egress_proxy=env["OPENIT_EGRESS_PROXY"], runner=FakeRestic(fail_forget=True), now=NOW)
+    assert rc == 75 and out["status"] == "failed" and out["error"]["retryable"] is True
 
 
 @pytest.mark.parametrize("kw", [dict(fail_backup=True), dict(no_repo=True, fail_init=True)])
@@ -95,3 +111,27 @@ def test_postgres_dump_writes_one_file_per_table(pg_url, tmp_path):
         c.execute("CREATE TABLE t_backup(x int)"); c.execute("INSERT INTO t_backup VALUES (7)")
     backup._dump_postgres(pg_url, tmp_path)
     assert (tmp_path / "t_backup.copy").stat().st_size > 0
+
+
+# --- 복구 잡
+def test_restore_without_a_matching_snapshot_is_exit_1_and_unreachable_store_is_75(env):
+    out, rc = backup.restore(env, snapshot="latest", runner=FakeRestic(snapshots=[]), now=NOW)
+    assert rc == 1 and out["error"]["code"] == "INVALID_RECORD"
+    out, rc = backup.restore(env, snapshot="latest", runner=FakeRestic(fail_restore=True), now=NOW)
+    validator("BackupJobResult").validate(out)
+    assert rc == 75 and out["error"]["retryable"] is True and out["snapshot_id"] is None
+
+
+def test_restore_refuses_a_target_that_already_has_rows(env):
+    # 복구 대상 SQLite에 행이 있으면 덮어쓰지 않는다(살아 있는 데이터 보호): 종료 코드 1
+    class R(FakeRestic):
+        def __call__(self, cmd, **kw):
+            r = super().__call__(cmd, **kw)
+            if cmd[1] == "restore":
+                root = Path(self.restored_to) / "old" / "data" / backup.STAGE
+                root.mkdir(parents=True)
+                db = sqlite3.connect(root / "registry.sqlite3"); db.execute("CREATE TABLE t(x)"); db.commit(); db.close()
+            return r
+    out, rc = backup.restore(env, snapshot="snap-1", runner=R(), now=NOW)
+    assert rc == 1 and out["error"]["code"] == "FAILED_PRECONDITION"
+    assert sqlite3.connect(Path(env["GATE_DATA_DIR"]) / "registry.sqlite3").execute("SELECT x FROM t").fetchall() == [(1,)]
