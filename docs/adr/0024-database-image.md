@@ -17,6 +17,7 @@
   - 각 데이터베이스와 기본 `postgres`에서 `PUBLIC`의 `CONNECT`를 회수한다.
 - 접속 규칙(`pg_hba.conf`, `gen.py`가 선언에서 만든다, 서버 인자 `hba_file`): 선언한 계정이 선언한 데이터베이스에 `hostssl` + `scram-sha-256`으로만 닿는다. 로컬 소켓도 scram이다. trust·평문(`host`)·슈퍼유저의 원격 접속은 없다. initdb도 `--auth-local/host=scram-sha-256`이라 데이터 폴더의 기본 규칙에도 trust가 남지 않는다.
 - TLS: 서버 TLS 필수(`ssl=on`, 최소 TLS 1.2). `DB_TLS_DIR`의 `tls.crt`·`tls.key`를 진입점이 postgres 소유 0600 사본으로 옮긴다(postgres는 키 소유·권한이 맞지 않으면 시작하지 않고, 배포가 마운트한 파일의 소유·권한은 우리가 정하지 않는다). 없으면 시작하지 않는다.
+- 인증서 갱신: 진입점이 5초마다 `DB_TLS_DIR`의 `tls.crt`·`tls.key` 해시를 보고 바뀌었으면 postgres 소유 사본을 갈아 끼우고 postmaster에 SIGHUP을 보낸다. PostgreSQL은 SIGHUP에 `ssl_cert_file`·`ssl_key_file`을 다시 읽고 새 연결부터 새 인증서를 쓴다(PostgreSQL 10 이후 표준). 별도 reload 컨테이너를 두지 않는다(deploy는 파일만 바꾼다). 5초는 해시 두 개만 보는 값싼 확인의 시작값이다. 측정 안 함.
 - 연결 상한: 서버 `max_connections=40`, `superuser_reserved_connections=3`.
 
 ## 왜
@@ -34,8 +35,8 @@
 
 ## 결과
 
-- 얻는 것: 이미지 하나가 선언·초기화·접속 규칙·TLS를 함께 가진다. 시험이 실제로 이미지를 띄워 verify-full 접속, 평문·틀린 암호·슈퍼유저 원격 거절, PUBLIC 회수, dml 권한을 확인한다. 변이(PUBLIC 회수 제거, `hostssl`→`host`)가 단언을 실패시킨다.
-- 감수하는 것: **계정 암호를 바꾸려면 데이터 폴더가 비어 있어야 한다**(첫 초기화에만 반영). 회전은 운영 절차(ALTER ROLE)로 한다. 이 절차는 이 영역에서 구현·시험하지 않았다.
+- 얻는 것: 이미지 하나가 선언·초기화·접속 규칙·TLS를 함께 가진다. 시험이 실제로 이미지를 띄워 verify-full 접속, 평문·틀린 암호·슈퍼유저 원격 거절, PUBLIC 회수, dml 권한, 인증서 교체 뒤 재시작 없이 새 인증서 제공을 확인한다. 변이(PUBLIC 회수 제거, `hostssl`→`host`, 인증서 감시 제거)가 단언을 실패시킨다.
+- 감수하는 것: 인증서를 다시 읽는 동안 열린 연결은 옛 인증서로 이미 맺어져 있다(새 연결부터 새 인증서). **계정 암호를 바꾸려면 데이터 폴더가 비어 있어야 한다**(첫 초기화에만 반영). 회전은 운영 절차(ALTER ROLE)로 한다. 이 절차는 이 영역에서 구현·시험하지 않았다.
 
 ## 되돌리는 조건
 

@@ -10,6 +10,21 @@ if [ "$1" = "postgres" ]; then
   install -d -o postgres -g postgres -m 0700 /run/openit-tls
   install -o postgres -g postgres -m 0644 "$TLS_DIR/tls.crt" /run/openit-tls/tls.crt
   install -o postgres -g postgres -m 0600 "$TLS_DIR/tls.key" /run/openit-tls/tls.key
+  # 갱신된 인증서를 스스로 다시 읽는다(별도 reload 컨테이너 없음): 배포가 DB_TLS_DIR의 파일을 새 것으로 바꾸면 사본을 갈아 끼우고 postmaster에 SIGHUP을 보낸다.
+  # PostgreSQL은 SIGHUP에 ssl_cert_file·ssl_key_file을 다시 읽고 새 연결부터 새 인증서를 쓴다(PostgreSQL 10 이후 표준 동작). 열린 연결은 그대로다.
+  # 5초: 두 파일의 해시만 보는 값싼 확인이라 짧게 잡은 시작값이고 인증서 갱신(수 시간 전 만료 대비)에는 넉넉하다. 측정 안 함(ADR-0024).
+  (
+    last="$(cat "$TLS_DIR/tls.crt" "$TLS_DIR/tls.key" | sha256sum)"
+    while sleep 5; do
+      now="$(cat "$TLS_DIR/tls.crt" "$TLS_DIR/tls.key" 2>/dev/null | sha256sum)" || continue
+      [ "$now" != "$last" ] || continue
+      [ -s "$TLS_DIR/tls.crt" ] && [ -s "$TLS_DIR/tls.key" ] || continue      # 교체 중간의 빈 파일은 다음 확인으로 미룬다
+      install -o postgres -g postgres -m 0600 "$TLS_DIR/tls.key" /run/openit-tls/tls.key.new && install -o postgres -g postgres -m 0644 "$TLS_DIR/tls.crt" /run/openit-tls/tls.crt.new \
+        && mv -f /run/openit-tls/tls.key.new /run/openit-tls/tls.key && mv -f /run/openit-tls/tls.crt.new /run/openit-tls/tls.crt || continue
+      pid="$(head -n 1 "${PGDATA:-/var/lib/postgresql/data}/postmaster.pid" 2>/dev/null)" && [ -n "$pid" ] && kill -HUP "$pid" || continue
+      last="$now"
+    done
+  ) &
   if [ ! -s "${PGDATA:-/var/lib/postgresql/data}/PG_VERSION" ]; then
     # 첫 초기화 때만: 초기화 스크립트는 postgres 사용자로 돌므로 읽을 수 있는 임시 사본을 만든다(스크립트가 끝에 지운다)
     [ -d "$SECRETS_DIR" ] || { echo "release-gate-db: $SECRETS_DIR가 없다(계정 암호 파일)" >&2; exit 1; }

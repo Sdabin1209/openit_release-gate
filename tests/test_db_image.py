@@ -39,7 +39,7 @@ DECL = {"engine": "postgresql", "major": 16, "port": 5432, "accounts": [
 
 class Db:
     def __init__(self, name, port, root_pem):
-        self.name, self.port, self.root = name, port, root_pem
+        self.name, self.port, self.root, self.certs = name, port, root_pem, root_pem.parent
 
     def connect(self, user="gate", password=None, db="gate", sslmode="verify-full"):
         return psycopg.connect(host="localhost", port=self.port, dbname=db, user=user, password=password or PW.get(user, ""),
@@ -170,6 +170,35 @@ def test_the_service_migrates_and_stores_through_the_owner_url_with_verify_full(
         reg.store.close()
 
 
+def _served_serial(port):
+    r = subprocess.run(["bash", "-c", f"openssl s_client -starttls postgres -connect 127.0.0.1:{port} </dev/null 2>/dev/null | openssl x509 -noout -serial"],
+                       capture_output=True, text=True, timeout=HANG_GUARD_SECONDS)
+    return r.stdout.strip()
+
+
+def check_renewed_certificate_is_served(db):
+    """배포가 DB_TLS_DIR의 tls.crt·tls.key를 같은 루트의 새 인증서로 바꾸면 컨테이너 안에서 스스로 다시 읽는다(별도 reload 컨테이너 없음)."""
+    before = _served_serial(db.port)
+    assert before.startswith("serial=")
+    certs = db.certs
+    _sh("openssl", "req", "-newkey", "rsa:2048", "-nodes", "-keyout", "new.key", "-out", "new.csr", "-subj", "/CN=localhost", cwd=certs).check_returncode()
+    _sh("openssl", "x509", "-req", "-in", "new.csr", "-CA", "root.pem", "-CAkey", "root.key", "-set_serial", "0x5eed", "-out", "new.crt", "-days", "2", "-extfile", "ext", cwd=certs).check_returncode()
+    # 컨테이너의 마운트는 읽기 전용 사본이 아니라 같은 호스트 폴더라 파일 내용을 바꾸면 안에서 보인다. 키 먼저, 인증서 나중(실제 갱신기와 같은 순서 가정 없이 해시가 둘을 함께 본다)
+    (certs / "tls.key").write_bytes((certs / "new.key").read_bytes())
+    (certs / "tls.crt").write_bytes((certs / "new.crt").read_bytes())
+    for _ in range(40):      # 확인 주기(5초)보다 충분히 길게: 횟수로 제한한다
+        if _served_serial(db.port) != before:
+            break
+        subprocess.run(["sleep", "1"])
+    assert _served_serial(db.port) == "serial=5EED", "갱신된 인증서를 다시 읽지 않았다"
+    with db.connect("gate") as c:      # 새 인증서로도 verify-full 접속이 된다(같은 루트가 서명)
+        assert c.execute("SELECT 1").fetchone() == (1,)
+
+
+def test_a_renewed_certificate_is_picked_up_without_a_restart(db):
+    check_renewed_certificate_is_served(db)
+
+
 def test_accounts_are_plain_login_roles_with_a_connection_limit(db):
     rows = db.psql_super("SELECT rolname || ':' || rolsuper || rolcreatedb || rolcreaterole || rolreplication || rolcanlogin || ':' || rolconnlimit FROM pg_roles WHERE rolname IN ('gate', 'gate_dml') ORDER BY 1")
     assert rows.splitlines() == ["gate:falsefalsefalsefalsetrue:30", "gate_dml:falsefalsefalsefalsetrue:30"]      # 슈퍼유저·DB 생성·역할 생성·복제 모두 false, 로그인 true
@@ -190,6 +219,7 @@ def test_connection_rules_tls_only_scram_only_no_superuser_over_the_network(db):
 
 @pytest.mark.parametrize("what,mutate,check", [
     ("PUBLIC CONNECT 회수를 뺀다", lambda n, t: t.replace("REVOKE ALL ON DATABASE $db FROM PUBLIC;", "") if n == "init-openit.sh" else t, check_public_cannot_connect),
+    ("인증서 재읽기 감시를 뺀다", lambda n, t: t.replace('  ) &\n', '  ) >/dev/null 2>&1 && true\n', 1).replace('while sleep 5; do', 'while false; do') if n == "docker-entrypoint-openit.sh" else t, check_renewed_certificate_is_served),
     ("hostssl을 host로 바꾼다", lambda n, t: t.replace('f"hostssl ', 'f"host ') if n == "gen.py" else t, check_tls_and_scram_only),
 ])
 def test_mutations_make_the_assertions_fail(tmp_path, what, mutate, check):
