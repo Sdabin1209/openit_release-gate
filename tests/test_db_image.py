@@ -79,7 +79,9 @@ def _start(tmp: Path, mutate=None):
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]
     name = "release-gate-db-test-" + uuid.uuid4().hex[:8]
-    r = _sh("docker", "run", "-d", "--name", name, "-p", f"127.0.0.1:{port}:5432", "-v", f"{certs}:/certs:ro", "-v", f"{secrets}:/run/secrets/db:ro",
+    r = _sh("docker", "run", "-d", "--name", name,
+            "--read-only", "--tmpfs", "/tmp", "--tmpfs", "/run", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+            *[v for cap in ("CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID") for v in ("--cap-add", cap)], "-p", f"127.0.0.1:{port}:5432", "-v", f"{certs}:/certs:ro", "-v", f"{secrets}:/run/secrets/db:ro",
             "-v", f"{tmp / 'superpw'}:/run/secrets/super:ro", "-e", "POSTGRES_PASSWORD_FILE=/run/secrets/super", tag)
     assert r.returncode == 0, r.stderr[-300:]
     db = Db(name, port, certs / "root.pem")

@@ -21,7 +21,7 @@ if [ "$1" = "postgres" ]; then
       [ -s "$TLS_DIR/tls.crt" ] && [ -s "$TLS_DIR/tls.key" ] || continue      # 교체 중간의 빈 파일은 다음 확인으로 미룬다
       install -o postgres -g postgres -m 0600 "$TLS_DIR/tls.key" /run/openit-tls/tls.key.new && install -o postgres -g postgres -m 0644 "$TLS_DIR/tls.crt" /run/openit-tls/tls.crt.new \
         && mv -f /run/openit-tls/tls.key.new /run/openit-tls/tls.key && mv -f /run/openit-tls/tls.crt.new /run/openit-tls/tls.crt || continue
-      pid="$(head -n 1 "${PGDATA:-/var/lib/postgresql/data}/postmaster.pid" 2>/dev/null)" && [ -n "$pid" ] && kill -HUP "$pid" || continue
+      pid="$(head -n 1 "${PGDATA:-/var/lib/postgresql/data}/postmaster.pid" 2>/dev/null)" && [ -n "$pid" ] && gosu postgres kill -HUP "$pid" || continue
       last="$now"
     done
   ) &

@@ -41,3 +41,8 @@
 ## 되돌리는 조건
 
 회전을 자동으로 해야 하면 시작할 때마다 선언과 맞추는 단계(서버를 띄운 뒤 `ALTER ROLE`)를 더한다.
+
+
+## 2026-11-06 배포 권한 회귀 수정
+
+cap_drop ALL 상태에서 root 감시자가 postgres에 직접 신호를 보내면 CAP_KILL이 없어 거부된다. gosu postgres kill로 같은 사용자에게 신호를 보낸다. 배치 권한을 추가하지 않는다. DB 이미지 시험을 읽기 전용 루트·배포 capability 조건으로 실행해 갱신 경로까지 확인한다. 기존 AreaDatabaseEnv와 DatabaseDeclaration은 변경하지 않는다.
