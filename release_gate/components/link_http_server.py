@@ -220,7 +220,19 @@ class GateApp:
         self._inflight, self._inflight_lock = 0, threading.Lock()
         self._local = threading.local()      # 요청을 처리하는 스레드마다 읽어 둔 본문(시도 기록의 대상 ID용)
         routes = build_routes(registry, engine, frozenset(self.read_tokens.values()), frozenset(self.write_tokens.values()), self._stream)
-        self._app = App(routes, self._token_roles(), ready=self._ready, on_result=self._on_result)
+        cfg = registry.service.config
+        read_roles = frozenset(READ + x for x in self.read_tokens.values())
+        write_roles = frozenset(WRITE + x for x in self.write_tokens.values())
+        contract_bindings = {
+            "read_roles": sorted(read_roles), "write_roles": sorted(write_roles),
+            "approver_roles": sorted({WRITE + x for x in cfg.approver_roles} & write_roles),
+            "activate_roles": sorted({WRITE + x for x in cfg.activate_roles} & write_roles),
+            "rollback_roles": sorted({WRITE + x for x in cfg.rollback_roles} & write_roles),
+            "gateway_roles": sorted({prefix + x for x in cfg.gateway_roles for prefix in (READ, WRITE)}),
+            "service_roles": sorted(WRITE + x for x in cfg.service_roles),
+        }
+        self._app = App(routes, self._token_roles(), ready=self._ready, on_result=self._on_result,
+                        contract_service="release-gate", contract_bindings=contract_bindings)
 
     # --- /readyz
     def _ready(self) -> tuple:

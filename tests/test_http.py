@@ -46,6 +46,8 @@ def call(base, path, body=None, token=None, user=AUTO):
         user = _gw_user(path, body, token)
     req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(),
                                  method="GET" if body is None else "POST")
+    if body is not None:
+        req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     if user:
@@ -225,7 +227,7 @@ def test_approval_without_engine_is_unavailable(world):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
         st, body = call(f"http://127.0.0.1:{srv.server_address[1]}", "/v1/approvals",
-                        {"submission_id": "x", "decision": "APPROVE", "approver_id": "t"}, "wa")
+                        {"submission_id": "x", "decision": "APPROVE", "report_hash": "sha256:" + "0" * 64}, "wa")
         assert st == 503 and body["code"] == "UNAVAILABLE"
     finally:
         srv.shutdown()
@@ -295,6 +297,8 @@ def hcall(base, path, body=None, token=None, headers=None):
     """응답 헤더까지 돌려주는 호출: (상태, 본문, 헤더)."""
     req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(),
                                  method="GET" if body is None else "POST")
+    if body is not None:
+        req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     headers = dict(headers or {})
