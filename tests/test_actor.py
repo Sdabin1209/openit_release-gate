@@ -25,6 +25,7 @@ def server(world):
 
 def post(base, path, body, token, user=None):
     req = urllib.request.Request(base + path, data=json.dumps(body).encode(), method="POST")
+    req.add_header("Content-Type", "application/json")   # 계약은 JSON 본문의 매체를 application/json 으로 정한다(link 가 강제, 3.4.19)
     req.add_header("Authorization", f"Bearer {token}")
     if user is not None:
         req.add_header("X-Openit-User", user)
@@ -66,8 +67,9 @@ def test_rollback_without_header_is_401_for_human_role(world, server):
 
 def test_actor_recorded_from_header_and_shown(world, server):
     rid = world.make_release()
-    st, p = post(server, "/v1/activate", {"release_id": rid, "requested_by": "spoof", "requested_by_role": "operator"},
-                 "wo", "alice")
+    # 본문에 행위자를 위조해 넣으면 계약(ActivateRequest 에 없는 칸)이 거부한다(3.4.19 link 강제). 행위자는 머리글에서만 온다
+    assert post(server, "/v1/activate", {"release_id": rid, "requested_by": "spoof", "requested_by_role": "operator"}, "wo", "alice")[0] == 400
+    st, p = post(server, "/v1/activate", {"release_id": rid, "requested_by_role": "operator"}, "wo", "alice")
     assert st == 200
     assert p["ext"]["release-gate"] == {"requested_by": "alice", "requested_by_role": "operator"}
     assert active(server)["ext"]["release-gate"]["requested_by"] == "alice"          # 조회에 나온다

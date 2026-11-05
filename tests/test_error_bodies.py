@@ -24,6 +24,7 @@ def _serve(world, **kw):
 
 def _post(port, path, body, token):
     req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=json.dumps(body).encode(), method="POST")
+    req.add_header("Content-Type", "application/json")   # 계약은 JSON 본문의 매체를 application/json 으로 정한다(link 가 강제, 3.4.19)
     req.add_header("Authorization", f"Bearer {token}")
     try:
         with urllib.request.urlopen(req) as r:

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# deploy 와 같은 실행 조건으로 띄운다(읽기 전용 루트, /tmp tmpfs, cap_drop ALL, no-new-privileges, 쓸 수 있는 경로는 deploy compose 와 같게): 2026-11-06 E2E 기동에서야 드러난 쓰기 경로 결함을 스모크에서 잡는다
 # 스모크 시험(D22): 이미지를 빌드하고 컨테이너를 띄워 /healthz, /readyz, 인증, 비root 실행, 라벨을 확인한다.
 # 표준 `docker` 명령을 쓴다(실행 파일 이름은 DOCKER 환경 변수로만 바꾼다). 데몬에 못 닿으면 중단한다.
 set -euo pipefail
@@ -27,7 +28,7 @@ tag="$(printf '%s\n' "$result" | tail -1 | "${PYTHON:-python3}" -c 'import json,
 printf 'survey-service=smoke-read' > "$sdir/read_tokens"; printf 'operator=smoke-write' > "$sdir/write_tokens"; chmod 755 "$sdir"; chmod 644 "$sdir"/*
 # 왜 이미지에서 읽나: GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION은 코드 기본값이 없고 deploy가 명시한다(계약 3.2.0 GateEnv). 스모크는 deploy 대신 이미지의 문진 스키마 값을 준다
 supported="$("$DOCKER" run --rm --entrypoint cat "$tag" /opt/contracts/survey-schema/CONTRACT_VERSION | tr -d '\r\n ')"
-"$DOCKER" run -d --name "$name" -e GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION="$supported" -p 127.0.0.1::8080 -v "$sdir:/run/secrets:ro" \
+"$DOCKER" run -d --name "$name" --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /data -e GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION="$supported" -p 127.0.0.1::8080 -v "$sdir:/run/secrets:ro" \
   -e GATE_READ_TOKENS_FILE=/run/secrets/read_tokens -e GATE_WRITE_TOKENS_FILE=/run/secrets/write_tokens "$tag" >/dev/null
 
 # 호스트 포트는 Docker가 배정한다(다른 영역의 스모크와 겹치지 않게 고정 포트를 쓰지 않는다)
@@ -51,7 +52,7 @@ curl -fsS -H 'Authorization: Bearer smoke-read' http://127.0.0.1:$port/v1/releas
   || { echo "FAIL: 릴리스 목록 읽기"; exit 1; }
 curl -fsS -H 'Authorization: Bearer smoke-read' "http://127.0.0.1:$port/v1/submissions?status=AWAITING_APPROVAL" | grep -q '"items": \[\]' \
   || { echo "FAIL: 제출 목록 읽기"; exit 1; }
-code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Authorization: Bearer smoke-read' -d '{}' http://127.0.0.1:$port/v1/activate)"
+code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: application/json" -H 'Authorization: Bearer smoke-read' -d '{}' http://127.0.0.1:$port/v1/activate)"
 [ "$code" = 403 ] || { echo "FAIL: 읽기 토큰으로 쓰기가 됐다($code)"; exit 1; }
 uid="$("$DOCKER" exec "$name" id -u | tr -d '\r')"; [ "$uid" != 0 ] || { echo "FAIL: root로 실행 중"; exit 1; }
 # 비밀이 환경 변수·inspect·exec env에 평문으로 없어야 한다

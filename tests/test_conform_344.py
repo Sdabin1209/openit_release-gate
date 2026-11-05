@@ -88,6 +88,7 @@ def submit_server(world):
 
 def _submit(base, subject):
     req = urllib.request.Request(base + "/v1/submissions", data=json.dumps({"subject": subject, "requested_by_role": "operator"}).encode(), method="POST")
+    req.add_header("Content-Type", "application/json")   # 계약은 JSON 본문의 매체를 application/json 으로 정한다(link 가 강제, 3.4.19)
     req.add_header("Authorization", "Bearer wo")
     try:
         with urllib.request.urlopen(req) as r:

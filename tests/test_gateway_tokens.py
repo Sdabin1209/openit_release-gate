@@ -29,6 +29,7 @@ def server(world):
 
 def post(base, path, body, token, headers):
     req = urllib.request.Request(base + path, data=json.dumps(body).encode(), method="POST")
+    req.add_header("Content-Type", "application/json")   # 계약은 JSON 본문의 매체를 application/json 으로 정한다(link 가 강제, 3.4.19)
     req.add_header("Authorization", f"Bearer {token}")
     for k, v in headers.items():
         req.add_header(k, v)
