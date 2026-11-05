@@ -19,7 +19,6 @@ from boundary_contracts import validator
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "build-image.sh"
-WS = ROOT.parents[2] if (ROOT.parents[2] / "boundary-contracts").exists() else ROOT.parent   # deploy/build/wt-x -> 워크스페이스, 또는 형제 배치
 
 
 def _pin(fname: str, pattern: str) -> str:
@@ -179,12 +178,10 @@ def test_label_comes_from_the_installed_source_not_the_request(tmp_path, fake_do
 
 
 def _extract(repo: str, tag: str, sub: str | None, dest: Path) -> Path:
-    args = ["git", "-C", str(WS / repo), "archive", tag] + ([sub] if sub else [])
-    out = subprocess.run(args, capture_output=True)
-    if out.returncode != 0:
-        pytest.skip(f"{repo}의 태그 {tag}를 읽지 못했다")
-    dest.mkdir(parents=True)
-    tarfile.open(fileobj=io.BytesIO(out.stdout)).extractall(dest, filter="data")
+    # 고정 태그의 소스 트리(옆 폴더에 그 태그가 있으면 git archive, 없으면 GitHub 에서 그 태그만, 둘 다 안 되면 실패: 건너뛰지 않는다)
+    from pinned_tree import pinned_tree
+    src = pinned_tree(repo, tag, sub or "")
+    shutil.copytree(src, dest / sub if sub else dest, dirs_exist_ok=True)
     return dest / sub if sub else dest
 
 
