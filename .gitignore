@@ -5,3 +5,4 @@ __pycache__/
 .build/
 *.sqlite3
 .venv-tools/
+build/

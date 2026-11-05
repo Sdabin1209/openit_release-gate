@@ -13,14 +13,14 @@ import uuid
 
 import pytest
 
-from conftest import GateHTTPServer, HANG_GUARD_SECONDS, READY_STATUS
+from conftest import POSTGRES_IMAGE, docker_environment, GateHTTPServer, HANG_GUARD_SECONDS, READY_STATUS
 from release_gate import postgres_registry
 
 pytestmark = pytest.mark.skipif(shutil.which("docker") is None, reason="docker 명령이 없다")
 
 
 def _docker(*a):
-    return subprocess.run(["docker", *a], capture_output=True, text=True, timeout=HANG_GUARD_SECONDS)
+    return subprocess.run(["docker", *a], capture_output=True, text=True, timeout=HANG_GUARD_SECONDS, env=docker_environment())
 
 
 def _get(base, path, token=None):
@@ -51,7 +51,7 @@ def test_service_recovers_after_postgres_stop_and_start_without_app_restart(sche
         port = sk.getsockname()[1]
     name = "release-gate-r41-" + uuid.uuid4().hex[:8]
     r = _docker("run", "-d", "--name", name, "-e", "POSTGRES_HOST_AUTH_METHOD=trust", "-e", "POSTGRES_DB=gate",
-                "-p", f"127.0.0.1:{port}:5432", "postgres:16")
+                "-p", f"127.0.0.1:{port}:5432", POSTGRES_IMAGE)
     if r.returncode != 0:
         pytest.skip("PostgreSQL 컨테이너를 띄우지 못했다")
     url = f"postgresql://postgres@127.0.0.1:{port}/gate"

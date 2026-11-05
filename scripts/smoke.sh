@@ -4,6 +4,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER="${DOCKER:-docker}"
+eval "$("${PYTHON:-python3}" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/docker_env.py" --sh)"      # docker 환경 한 곳(scripts/docker_env.py): 사용자 ~/.docker에 기대지 않는다
 # 왜: 이미지는 영역 빌드 진입점(scripts/build-image.sh, 계약 BuildImageRequest)으로만 만든다. 버전과 의존 소스 트리는 이 리포가 따로 갖지 않으므로
 # 요청 파일을 환경 변수 GATE_BUILD_REQUEST로 받는다(deploy가 만드는 것과 같은 모양). 없으면 Docker에 닿기 전에 사용법을 보이며 실패한다.
 if [ -z "${GATE_BUILD_REQUEST:-}" ]; then

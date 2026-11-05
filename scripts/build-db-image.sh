@@ -29,6 +29,7 @@ PY
 [ "${#F[@]}" -eq 5 ] || die "요청을 읽지 못했다"
 src="${F[0]}" rev="${F[1]}" tag="${F[2]}" v_bc="${F[3]}" decl="${F[4]}"
 [ -d "$src/db" ] && [ -f "$src/deploy-database.json" ] || die "source_dir에 db/ 와 deploy-database.json이 없다: $src"
+eval "$("${PYTHON:-python3}" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/docker_env.py" --sh)"      # docker 환경 한 곳(scripts/docker_env.py): 사용자 ~/.docker에 기대지 않는다
 "$DOCKER" info >/dev/null 2>&1 || die "도커 데몬에 연결할 수 없다('$DOCKER info' 실패)"
 ctx="$(mktemp -d)"; trap 'rm -rf "$ctx"' EXIT
 cp -a "$src/db/." "$ctx/"

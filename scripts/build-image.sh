@@ -87,6 +87,7 @@ ss_full="$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' "$s_ss/pyproject.toml" 2>/
 [ "v$ss_full" = "$v_ss" ] \
   || die "실제 문진 스키마 소스의 버전(v$ss_full)이 요청의 versions.survey_schema($v_ss)와 다르다. 라벨을 찍지 않는다"
 ss_actual="${ss_full%%.*}"
+eval "$("${PYTHON:-python3}" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/docker_env.py" --sh)"      # docker 환경 한 곳(scripts/docker_env.py): 사용자 ~/.docker에 기대지 않는다
 "$DOCKER" info >/dev/null 2>&1 || die "도커 데몬에 연결할 수 없다('$DOCKER info' 실패)"
 
 # 2) 빌드 컨텍스트는 임시 폴더에 만든다(source_dir와 의존 소스 트리를 더럽히지 않는다).

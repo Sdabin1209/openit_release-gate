@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +12,19 @@ from boundary_contracts.errors import BoundaryError
 from release_gate import (GateConfig, GateEngine, GatePolicy, SchemaSet, SurveySchema,
                           memory_registry, postgres_registry, sqlite_registry)
 from fakes import FakeModels, FakeQuestions, RULES
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from docker_env import docker_env  # noqa: E402
+
+_DOCKER_ENV: dict = {}
+
+
+def docker_environment() -> dict:
+    """docker를 부르는 시험이 쓰는 환경 한 곳(scripts/docker_env.py). 사용자 ~/.docker에 기대지 않는다. 한 번만 계산한다."""
+    if not _DOCKER_ENV:
+        _DOCKER_ENV.update(docker_env())
+    return dict(_DOCKER_ENV)
+
+POSTGRES_IMAGE = next(l.split("=", 1)[1].strip() for l in (Path(__file__).resolve().parents[1] / "db" / "Dockerfile").read_text(encoding="utf-8").splitlines() if l.startswith("ARG POSTGRES_IMAGE="))      # digest는 db/Dockerfile 한 곳
 
 ROOT = Path(__file__).resolve().parents[2]
 # 왜: 문진 스키마는 survey-service가 배포한 패키지(requirements.txt의 openit-survey-schema)에서 읽는다. 이웃 폴더 없이 시험이 돌게 하기 위해서다.

@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from boundary_contracts import validator
 
-from conftest import HANG_GUARD_SECONDS
+from conftest import HANG_GUARD_SECONDS, docker_environment
 from release_gate.components import backup_job
 
 NOW = lambda: "2026-11-04T00:00:00Z"      # 시계는 주입한다(ADR-0019)
@@ -23,6 +23,7 @@ BCRYPT = "$2b$04$v1.m1XctHrwmnT0eeQU/wev1aVRB13Id7e/AQb0474t8kgjb4vVM."
 
 
 def _sh(*a, **kw):
+    kw.setdefault("env", docker_environment())
     return subprocess.run(list(a), capture_output=True, text=True, timeout=HANG_GUARD_SECONDS, **kw)
 
 
@@ -85,7 +86,7 @@ def _restic_in_docker(workdirs, root_pem):
         for k in ("RESTIC_REPOSITORY", "RESTIC_PASSWORD_FILE"):
             args += ["-e", f"{k}={env[k]}"]
         args += [RESTIC_IMAGE, *cmd[1:]]
-        r = subprocess.run(args, capture_output=True, text=True, timeout=HANG_GUARD_SECONDS)
+        r = subprocess.run(args, capture_output=True, text=True, timeout=HANG_GUARD_SECONDS, env=docker_environment())
         return r
     return run
 

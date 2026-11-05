@@ -4,6 +4,9 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 proj="release-gate-pg-$(basename "$here" | tr -c 'a-zA-Z0-9\n' '-' | tr 'A-Z' 'a-z')"
+eval "$("python3" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/docker_env.py" --sh)"      # docker 환경 한 곳(scripts/docker_env.py): 사용자 ~/.docker에 기대지 않는다
+export POSTGRES_IMAGE="$(sed -n 's/^ARG POSTGRES_IMAGE=//p' "$here/db/Dockerfile")"      # digest는 db/Dockerfile 한 곳에만 있다
+[ -n "$POSTGRES_IMAGE" ] || { echo "db/Dockerfile에서 POSTGRES_IMAGE를 읽지 못했다" >&2; exit 1; }
 dc() { docker compose -p "$proj" -f "$here/compose.dev.yaml" "$@"; }
 case "${1:-}" in
   up)

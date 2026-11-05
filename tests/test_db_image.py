@@ -15,7 +15,7 @@ import psycopg
 import pytest
 from boundary_contracts import validator
 
-from conftest import HANG_GUARD_SECONDS
+from conftest import HANG_GUARD_SECONDS, POSTGRES_IMAGE, docker_environment
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPER_PW = "super-S3cret"
@@ -23,14 +23,15 @@ PW = {"gate": "owner-S3cret", "gate_dml": "dml-S3cret"}
 
 
 def _sh(*a, **kw):
+    kw.setdefault("env", docker_environment())
     return subprocess.run(list(a), capture_output=True, text=True, timeout=HANG_GUARD_SECONDS, **kw)
 
 
 def _ready():
-    return shutil.which("docker") is not None and shutil.which("openssl") is not None and _sh("docker", "image", "inspect", "postgres:16").returncode == 0
+    return shutil.which("docker") is not None and shutil.which("openssl") is not None and _sh("docker", "image", "inspect", POSTGRES_IMAGE).returncode == 0
 
 
-pytestmark = pytest.mark.skipif(not _ready(), reason="docker·openssl·postgres:16 이미지가 없다")
+pytestmark = pytest.mark.skipif(not _ready(), reason="docker·openssl·digest로 고정한 postgres 이미지(db/Dockerfile ARG POSTGRES_IMAGE)가 없다")
 
 DECL = {"engine": "postgresql", "major": 16, "port": 5432, "accounts": [
     {"name": "gate", "database": "gate", "privilege": "owner", "url_env": ["GATE_DATABASE_URL_FILE"]},

@@ -12,6 +12,8 @@ import tarfile
 import io
 from pathlib import Path
 
+from conftest import POSTGRES_IMAGE, docker_environment
+
 import pytest
 from boundary_contracts import validator
 
@@ -42,13 +44,13 @@ def fake_docker(tmp_path):
     """불리면 흔적을 남기고 실패하는 가짜 도커. 검증 단계에서 도커가 불리면 안 된다."""
     marker = tmp_path / "docker-called"
     f = tmp_path / "docker"
-    # info(데몬 확인)는 통과시키고 그 밖의 도커 호출(build 등)은 흔적을 남기고 실패한다
-    f.write_text(f'#!/bin/sh\ncase "$1" in info) exit 0;; esac\necho called >> {marker}\nexit 99\n')
+    # info(데몬 확인)와 context(docker 환경을 맞추는 scripts/docker_env.py의 엔드포인트 질의, 읽기뿐)는 통과시키고 그 밖의 도커 호출(build 등)은 흔적을 남기고 실패한다
+    f.write_text(f'#!/bin/sh\ncase "$1" in info|context) exit 0;; esac\necho called >> {marker}\nexit 99\n')
     f.chmod(0o755)
     return f, marker
 
 
-def run(tmp_path, req, docker="docker", extra_env=None):
+def run(tmp_path, req, docker="docker", extra_env=None):      # docker 환경은 scripts/docker_env.py 한 곳(스크립트가 스스로 맞춘다). 시험은 호출자의 환경 그대로 넘긴다
     p = tmp_path / "req.json"
     p.write_text(json.dumps(req))
     env = {**os.environ, "PYTHON": sys.executable, "DOCKER": str(docker), **(extra_env or {})}
@@ -187,7 +189,7 @@ def _extract(repo: str, tag: str, sub: str | None, dest: Path) -> Path:
 
 
 def _docker_ok():
-    return shutil.which("docker") and subprocess.run(["docker", "info"], capture_output=True).returncode == 0
+    return shutil.which("docker") and subprocess.run(["docker", "info"], capture_output=True, env=docker_environment()).returncode == 0
 
 
 @pytest.mark.skipif(not _docker_ok(), reason="도커 데몬이 없다")
@@ -207,7 +209,7 @@ def test_real_build_emits_build_image_result_with_labels_from_request(tmp_path):
             res = json.loads(last)
             validator("BuildImageResult").validate(res)
             ids.append(res["image_id"])
-            layers.append(subprocess.run(["docker", "image", "inspect", "-f", "{{json .RootFS.Layers}}", tag], capture_output=True, text=True).stdout)
+            layers.append(subprocess.run(["docker", "image", "inspect", "-f", "{{json .RootFS.Layers}}", tag], env=docker_environment(), capture_output=True, text=True).stdout)
         assert res["image"] == tag
         want = {"io.openit.service": "release-gate", "io.openit.revision": req["revision"],
                 "io.openit.contracts.boundary": PIN_BC, "io.openit.contracts.survey-schema": PIN_SS[1:].split(".")[0],
@@ -227,7 +229,7 @@ def test_real_build_emits_build_image_result_with_labels_from_request(tmp_path):
         # 같은 요청은 같은 이미지 내용(멱등). 이미지 ID는 설정의 생성 시각이 들어가 달라질 수 있어 층(내용)으로 비교한다(ADR-0015)
         assert layers[0] == layers[1], (ids, layers)
     finally:
-        subprocess.run(["docker", "rmi", "-f", tag], capture_output=True)
+        subprocess.run(["docker", "rmi", "-f", tag], capture_output=True, env=docker_environment())
 
 
 # --- variant db (D126): 영역 DB 이미지
@@ -251,8 +253,8 @@ def test_db_variant_with_an_invalid_declaration_is_refused_before_docker(tmp_pat
     assert not marker.exists()
 
 
-@pytest.mark.skipif(subprocess.run(["docker", "info"], capture_output=True).returncode != 0 or subprocess.run(["docker", "image", "inspect", "postgres:16"], capture_output=True).returncode != 0,
-                    reason="도커 데몬 또는 postgres:16 이미지가 없다")
+@pytest.mark.skipif(subprocess.run(["docker", "info"], capture_output=True, env=docker_environment()).returncode != 0 or subprocess.run(["docker", "image", "inspect", POSTGRES_IMAGE], capture_output=True, env=docker_environment()).returncode != 0,
+                    reason="도커 데몬 또는 digest로 고정한 postgres 이미지가 없다")
 def test_db_variant_builds_an_image_with_the_contract_labels(tmp_path):
     r = run(tmp_path, _db_req(tmp_path), "docker")
     try:
@@ -267,4 +269,4 @@ def test_db_variant_builds_an_image_with_the_contract_labels(tmp_path):
         assert decl == json.loads((ROOT / "deploy-database.json").read_text(encoding="utf-8"))      # 라벨은 리포의 선언 그대로다
         assert lab["io.openit.revision"] == "abc1234"
     finally:
-        subprocess.run(["docker", "rmi", "-f", _db_req(tmp_path)["image_tag"]], capture_output=True)
+        subprocess.run(["docker", "rmi", "-f", _db_req(tmp_path)["image_tag"]], capture_output=True, env=docker_environment())

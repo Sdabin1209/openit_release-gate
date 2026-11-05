@@ -3,7 +3,7 @@
 # 호스트 포트는 Docker가 고른다(여러 영역이 같은 서버에서 동시에 돌려도 충돌하지 않게). 주 버전 16은 운영과 같다.
 services:
   postgres:
-    image: postgres:16
+    image: ${POSTGRES_IMAGE:?scripts/dev-postgres.sh가 db/Dockerfile의 ARG POSTGRES_IMAGE(digest 고정, 한 곳)에서 읽어 준다}
     environment:
       POSTGRES_HOST_AUTH_METHOD: trust
       POSTGRES_DB: gate

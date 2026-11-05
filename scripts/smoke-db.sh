@@ -4,6 +4,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER="${DOCKER:-docker}"
+eval "$("${PYTHON:-python3}" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/docker_env.py" --sh)"      # docker 환경 한 곳(scripts/docker_env.py): 사용자 ~/.docker에 기대지 않는다
 [ -n "${GATE_BUILD_REQUEST:-}" ] || { echo "사용: GATE_BUILD_REQUEST=<variant db 요청 JSON> scripts/smoke-db.sh" >&2; exit 2; }
 "$DOCKER" info >/dev/null 2>&1 || { echo "오류: 도커 데몬에 연결할 수 없다" >&2; exit 1; }
 name="release-gate-db-smoke-$$"; sdir="$(mktemp -d)"
