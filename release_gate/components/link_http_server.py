@@ -186,7 +186,7 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
 
     # response_schema: 라이브러리가 2xx 응답을 내보내기 전에 계약으로 검증한다(R7). 목록은 봉투(ListEnvelope)를 여기서, 원소는 _list_body에서 검증한다.
     return [
-        Route("GET", "/v1/active-pointer", active_pointer, roles=R),
+        Route("GET", "/v1/active-pointer", active_pointer, roles=R, response_schema="ActivePointerItem"),   # R7: 감싸기까지 계약 3.4.18 로 검증
         Route("GET", "/v1/releases", releases, roles=R, response_schema="ListEnvelope"),
         Route("GET", "/v1/releases/{rid}", lambda q: ok(r.reader.get_release(q.params["rid"])), roles=R, response_schema="ReleaseManifest"),
         Route("GET", "/v1/releases/{rid}/bundle", bundle, roles=R),
