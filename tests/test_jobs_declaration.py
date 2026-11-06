@@ -66,3 +66,12 @@ def test_collector_checks_each_request_against_the_contract_before_sending(world
         assert e.value.code == "INVALID_RECORD" and bad.sent == []         # 계약을 어기는 요청은 보내지 않는다
     finally:
         col.candidate_selection.select = orig
+
+
+def test_every_declared_job_has_an_input_profile():
+    """잡 라벨과 주입 라벨의 연결 공백은 이미지를 만들기 전에 잡는다."""
+    inputs = json.loads((ROOT / "deploy-inputs.json").read_text(encoding="utf-8"))
+    validator("ContainerInputs").validate(inputs)
+    assert set(inputs["jobs"]) == {job["name"] for job in JOBS["jobs"]}
+    for profile in inputs["jobs"].values():
+        validator(profile["env_schema"])  # 존재하지 않는 계약 참조도 실패한다.

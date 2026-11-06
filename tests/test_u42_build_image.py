@@ -267,3 +267,22 @@ def test_db_variant_builds_an_image_with_the_contract_labels(tmp_path):
         assert lab["io.openit.revision"] == "abc1234"
     finally:
         subprocess.run(["docker", "rmi", "-f", _db_req(tmp_path)["image_tag"]], capture_output=True, env=docker_environment())
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra"])
+def test_job_input_profile_mismatch_is_rejected_before_dependencies_and_docker(tmp_path, fake_docker, mutation):
+    docker, marker = fake_docker
+    src = tmp_path / "src"
+    src.mkdir()
+    for name in ("requirements.txt", "requirements-libs.txt", "deploy-exposure.json", "deploy-jobs.json"):
+        shutil.copyfile(ROOT / name, src / name)
+    inputs = json.loads((ROOT / "deploy-inputs.json").read_text())
+    if mutation == "missing":
+        del inputs["jobs"]["judge"]
+    else:
+        inputs["jobs"]["unknown-job"] = inputs["jobs"]["collect"]
+    (src / "deploy-inputs.json").write_text(json.dumps(inputs))
+    r = run(tmp_path, {**BASE, "source_dir": str(src)}, docker)
+    assert r.returncode == 2, r.stderr
+    assert "잡 주입 선언 불일치" in r.stderr
+    assert not marker.exists()

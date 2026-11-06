@@ -12,6 +12,36 @@ req="${1:-}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # 왜 영역 자신의 .venv가 기본: 호출자가 이 영역의 환경(PYTHON)을 알아야 한다면 구조 규칙 1을 어긴다. 환경은 setup-env.sh가 만든다.
 if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"; elif [ -x "$here/.venv/bin/python" ]; then PY="$here/.venv/bin/python"; else PY="python3"; fi
+# 주입 선언(계약 ContainerInputs 3.5.0, 라벨 io.openit.inputs): 정본은 리포 안 JSON. 라벨로 달기 전에 계약으로 검증하고(R7), 빌드한 이미지의 실행 사용자와 대조한다.
+# 왜 대조하는가: 배치 영역은 선언의 숫자 uid:gid 로 파일·쓰기 권한을 준다. 이미지와 다르면 기동에서야 권한 오류가 난다(2026-11-06 DB 비밀 읽기 실패).
+inputs_label() {   # inputs_label <선언 파일> <이미지 이름> -> 한 줄 JSON(표준 출력)
+  "${PYTHON:-${PY:-python3}}" -c '
+import json, sys
+from boundary_contracts import validator
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+if d.get("image") != sys.argv[2]:
+    sys.exit("%s 의 image(%s)가 이미지 이름 %s 와 다르다" % (sys.argv[1], d.get("image"), sys.argv[2]))
+errs = list(validator("ContainerInputs").iter_errors(d))
+if errs:
+    sys.exit("%s 가 ContainerInputs 를 어긴다: " % sys.argv[1] + ", ".join("/" + "/".join(map(str, e.absolute_path)) + ":" + e.validator for e in errs[:5]))
+print(json.dumps(d, ensure_ascii=False, separators=(",", ":"), sort_keys=True))' "$1" "$2"
+}
+inputs_check() {   # inputs_check <이미지 태그> <inputs_label 출력>: 다르면 이미지를 지우고 실패
+  local u g cu
+  # 실행 사용자: 이미지 안 id 로 읽는다. id 가 없는 이미지(distroless)는 이미지 설정 User 가 숫자 uid:gid 일 때만 그 값을 쓴다(이름이면 판정하지 못해 실패)
+  if u=$("${DOCKER:-docker}" run --rm --network none --entrypoint id "$1" -u 2>/dev/null) && g=$("${DOCKER:-docker}" run --rm --network none --entrypoint id "$1" -g 2>/dev/null); then :
+  else
+    cu=$("${DOCKER:-docker}" image inspect "$1" --format '{{.Config.User}}' 2>/dev/null)
+    if [[ "$cu" =~ ^([0-9]+):([0-9]+)$ ]]; then u=${BASH_REMATCH[1]}; g=${BASH_REMATCH[2]}
+    else "${DOCKER:-docker}" rmi -f "$1" >/dev/null 2>&1; echo "build-image: 이미지 실행 사용자를 읽지 못했다(id 없음, User=$cu): $1" >&2; return 1; fi
+  fi
+  "${PYTHON:-${PY:-python3}}" -c '
+import json, sys
+d = json.loads(sys.argv[1]); u, g = int(sys.argv[2]), int(sys.argv[3])
+bad = sorted(k for s in ("roles", "jobs") for k, st in d[s].items() if (st["process"]["uid"], st["process"]["gid"]) != (u, g))
+sys.exit("주입 선언의 process 가 이미지 실행 사용자 %d:%d 와 다르다: %s" % (u, g, bad) if bad else 0)' "$2" "$u" "$g" \
+    || { "${DOCKER:-docker}" rmi -f "$1" >/dev/null 2>&1; echo "build-image: 주입 선언이 이미지와 다르다. 이미지를 지웠다: $1" >&2; return 1; }
+}
 DOCKER="${DOCKER:-docker}"
 
 # 0) variant db: 영역 DB 이미지(D126)는 다른 빌드(scripts/build-db-image.sh)다. 모르는 variant는 아래에서 거부한다
@@ -78,6 +108,16 @@ PY
 ) || exit 1
 [ "${#F[@]}" -eq 11 ] || die "요청을 읽지 못했다"
 src="${F[0]}" rev="${F[1]}" tag="${F[2]}" v_bc="${F[3]}" v_mr="${F[4]}" v_ss="${F[5]}" s_bc="${F[6]}" s_mr="${F[7]}" s_ss="${F[8]}" exposure="${F[9]}" jobs="${F[10]}"
+inputs="$(inputs_label "$src/deploy-inputs.json" release-gate)" || exit 2
+# 두 라벨은 같은 이미지의 잡 집합을 선언한다. 한쪽만 추가한 산출물은 게시하지 않는다.
+"$PY" -c '
+import json, sys
+inputs, jobs = map(json.loads, sys.argv[1:])
+expected = {job["name"] for job in jobs["jobs"]}
+actual = set(inputs["jobs"])
+if actual != expected:
+    sys.exit("잡 주입 선언 불일치: 누락=%s, 미선언=%s" % (sorted(expected - actual), sorted(actual - expected)))
+' "$inputs" "$jobs" || exit 2
 for d in "$src" "$s_bc" "$s_mr" "$s_ss"; do [ -d "$d" ] || die "디렉터리가 없다: $d"; done
 [ -f "$src/Dockerfile" ] || die "source_dir에 Dockerfile이 없다: $src"
 # 왜 실제 값에서 찍는다: 라벨은 이미지에 실제로 들어간 것이어야 한다(U50). 문진 스키마 패키지의 실제 버전은 복사할 소스 트리의 pyproject version이다
@@ -124,9 +164,10 @@ find "$ctx" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 # 3) 빌드. 라벨 값은 실제로 만든 wheel·문진 스키마 소스에서 온다(요청과 같음을 위에서 확인했다, U50).
 log "docker build: $tag"
-"$DOCKER" build -q -t "$tag" -f "$src/Dockerfile" --label "io.openit.exposure=$exposure" --label "io.openit.jobs=$jobs" \
+"$DOCKER" build -q -t "$tag" -f "$src/Dockerfile" --label "io.openit.exposure=$exposure" --label "io.openit.jobs=$jobs" --label "io.openit.inputs=$inputs" \
   --build-arg COMMIT="$rev" --build-arg BOUNDARY_VERSION="$act_bc" --build-arg SURVEY_SCHEMA_VERSION="$ss_actual" \
   --build-arg MODEL_RUNTIME_VERSION="$act_mr" "$ctx" >&2
+inputs_check "$tag" "$inputs" || exit 1
 
 # 4) 결과: docker가 준 ID와 이미지에 실제로 붙은 io.openit.* 라벨을 읽어 BuildImageResult로 낸다(내기 전에 계약으로 자기 검사).
 image_id="$("$DOCKER" image inspect -f '{{.Id}}' "$tag")"

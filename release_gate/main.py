@@ -37,6 +37,7 @@ from .wiring.registry import open_registry
 from .wiring.schema_set import SchemaSet
 from .wiring.survey import SurveySchema
 from .wiring.util import DEFAULT_REQUEST_DEADLINE_SECONDS, RequestDeadlines, SystemClock, ts, utc_now
+from boundary_contracts import format_checker as _bc_format_checker  # 형식(format) 검증기가 없으면 조용히 넘기지 않고 실패한다(계약 3.5.0)
 
 log = logging.getLogger("gate")
 EX_TEMPFAIL = 75
@@ -57,7 +58,7 @@ def env_violations(environ, *, serve: bool) -> list:
         schema.pop("allOf", None)
     env = {k: v for k, v in environ.items() if k.startswith("GATE_") or k == "PORT"}
     names = set()
-    for e in Draft202012Validator(schema).iter_errors(env):
+    for e in Draft202012Validator(schema, format_checker=_bc_format_checker(schema)).iter_errors(env):
         if not e.path and isinstance(e.instance, str) and e.instance in env:
             names.add(e.instance)             # propertyNames 위반: 인스턴스가 값이 아니라 변수 이름이다
         elif e.validator == "required":

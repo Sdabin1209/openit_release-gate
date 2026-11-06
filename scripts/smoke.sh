@@ -18,8 +18,9 @@ if ! "$DOCKER" info >/dev/null 2>&1; then
   exit 1
 fi
 name="release-gate-smoke-$$"
+data_volume="release-gate-smoke-data-$$"
 sdir="$(mktemp -d)"
-cleanup() { "$DOCKER" rm -f "$name" >/dev/null 2>&1 || true; rm -rf "$sdir"; }
+cleanup() { "$DOCKER" rm -f "$name" >/dev/null 2>&1 || true; "$DOCKER" volume rm "$data_volume" >/dev/null 2>&1 || true; rm -rf "$sdir"; }
 trap cleanup EXIT
 
 result="$(DOCKER="$DOCKER" bash "$here/scripts/build-image.sh" "$GATE_BUILD_REQUEST")" || { echo "FAIL: 이미지 빌드"; exit 1; }
@@ -28,7 +29,9 @@ tag="$(printf '%s\n' "$result" | tail -1 | "${PYTHON:-python3}" -c 'import json,
 printf 'survey-service=smoke-read' > "$sdir/read_tokens"; printf 'operator=smoke-write' > "$sdir/write_tokens"; chmod 755 "$sdir"; chmod 644 "$sdir"/*
 # 왜 이미지에서 읽나: GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION은 코드 기본값이 없고 deploy가 명시한다(계약 3.2.0 GateEnv). 스모크는 deploy 대신 이미지의 문진 스키마 값을 준다
 supported="$("$DOCKER" run --rm --entrypoint cat "$tag" /opt/contracts/survey-schema/CONTRACT_VERSION | tr -d '\r\n ')"
-"$DOCKER" run -d --name "$name" --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /data -e GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION="$supported" -p 127.0.0.1::8080 -v "$sdir:/run/secrets:ro" \
+# ContainerInputs declares /data persistent. Docker copies the image directory's
+# ownership into a fresh named volume; an unowned tmpfs hides that ownership.
+"$DOCKER" run -d --name "$name" --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true -v "$data_volume:/data" -e GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION="$supported" -p 127.0.0.1::8080 -v "$sdir:/run/secrets:ro" \
   -e GATE_READ_TOKENS_FILE=/run/secrets/read_tokens -e GATE_WRITE_TOKENS_FILE=/run/secrets/write_tokens "$tag" >/dev/null
 
 # 호스트 포트는 Docker가 배정한다(다른 영역의 스모크와 겹치지 않게 고정 포트를 쓰지 않는다)

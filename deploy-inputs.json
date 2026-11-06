@@ -1,0 +1,473 @@
+{
+  "schema_version": 1,
+  "image": "release-gate",
+  "read_only_root": true,
+  "exec_absolute_argv": true,
+  "role_env": null,
+  "roles": {
+    "default": {
+      "env_schema": "GateEnv",
+      "process": {
+        "uid": 10001,
+        "gid": 999
+      },
+      "files": [
+        {
+          "path_env": "SSL_CERT_FILE",
+          "path": "/etc/openit/pki/root_ca.crt",
+          "directory": false,
+          "kind": "ca-bundle",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_DATABASE_URL_FILE",
+          "path": "/run/secrets/db-gate-dsn",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_READ_TOKENS_FILE",
+          "path": "/run/secrets/gate-read-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_WRITE_TOKENS_FILE",
+          "path": "/run/secrets/gate-write-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_I3_TOKEN_FILE",
+          "path": "/run/secrets/model-registry-read-release-gate",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_I1_TOKEN_FILE",
+          "path": "/run/secrets/qa-read-release-gate",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        }
+      ],
+      "writable": [
+        {
+          "path": "/data",
+          "persist": true,
+          "written_by": {
+            "uid": 10001,
+            "gid": 999
+          }
+        },
+        {
+          "path": "/tmp",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 999
+          }
+        }
+      ],
+      "capabilities": [],
+      "sysctls": {}
+    }
+  },
+  "jobs": {
+    "backup": {
+      "env_schema": "GateBackupEnv",
+      "process": {
+        "uid": 10001,
+        "gid": 999
+      },
+      "files": [
+        {
+          "path_env": "SSL_CERT_FILE",
+          "path": "/etc/openit/pki/root_ca.crt",
+          "directory": false,
+          "kind": "ca-bundle",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "OPENIT_BACKUP_CREDENTIALS_FILE",
+          "path": "/run/secrets/backup-gate-credentials",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "OPENIT_BACKUP_REPO_PASSWORD_FILE",
+          "path": "/run/secrets/backup-gate-repo-password",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_DATABASE_URL_FILE",
+          "path": "/run/secrets/db-gate-dsn",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        }
+      ],
+      "writable": [
+        {
+          "path": "/data",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 999
+          }
+        },
+        {
+          "path": "/tmp",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 999
+          }
+        }
+      ],
+      "capabilities": [],
+      "sysctls": {}
+    },
+    "collect": {
+      "env_schema": "GateEnv",
+      "process": {
+        "uid": 10001,
+        "gid": 999
+      },
+      "files": [
+        {
+          "path_env": "SSL_CERT_FILE",
+          "path": "/etc/openit/pki/root_ca.crt",
+          "directory": false,
+          "kind": "ca-bundle",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_DATABASE_URL_FILE",
+          "path": "/run/secrets/db-gate-dsn",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_READ_TOKENS_FILE",
+          "path": "/run/secrets/gate-read-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_WRITE_TOKENS_FILE",
+          "path": "/run/secrets/gate-write-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_I3_TOKEN_FILE",
+          "path": "/run/secrets/model-registry-read-release-gate",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_I1_TOKEN_FILE",
+          "path": "/run/secrets/qa-read-release-gate",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        }
+      ],
+      "writable": [
+        {
+          "path": "/data",
+          "persist": true,
+          "written_by": {
+            "uid": 10001,
+            "gid": 999
+          }
+        },
+        {
+          "path": "/tmp",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 999
+          }
+        }
+      ],
+      "capabilities": [],
+      "sysctls": {}
+    },
+    "judge": {
+      "env_schema": "GateEnv",
+      "process": {
+        "uid": 10001,
+        "gid": 999
+      },
+      "files": [
+        {
+          "path_env": "SSL_CERT_FILE",
+          "path": "/etc/openit/pki/root_ca.crt",
+          "directory": false,
+          "kind": "ca-bundle",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_DATABASE_URL_FILE",
+          "path": "/run/secrets/db-gate-dsn",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_READ_TOKENS_FILE",
+          "path": "/run/secrets/gate-read-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_WRITE_TOKENS_FILE",
+          "path": "/run/secrets/gate-write-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_I3_TOKEN_FILE",
+          "path": "/run/secrets/model-registry-read-release-gate",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_I1_TOKEN_FILE",
+          "path": "/run/secrets/qa-read-release-gate",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        }
+      ],
+      "writable": [
+        {
+          "path": "/data",
+          "persist": true,
+          "written_by": {
+            "uid": 10001,
+            "gid": 999
+          }
+        },
+        {
+          "path": "/tmp",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 999
+          }
+        }
+      ],
+      "capabilities": [],
+      "sysctls": {}
+    },
+    "prune": {
+      "env_schema": "GateEnv",
+      "process": {
+        "uid": 10001,
+        "gid": 999
+      },
+      "files": [
+        {
+          "path_env": "SSL_CERT_FILE",
+          "path": "/etc/openit/pki/root_ca.crt",
+          "directory": false,
+          "kind": "ca-bundle",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_DATABASE_URL_FILE",
+          "path": "/run/secrets/db-gate-dsn",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_READ_TOKENS_FILE",
+          "path": "/run/secrets/gate-read-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_WRITE_TOKENS_FILE",
+          "path": "/run/secrets/gate-write-tokens",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_I3_TOKEN_FILE",
+          "path": "/run/secrets/model-registry-read-release-gate",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_I1_TOKEN_FILE",
+          "path": "/run/secrets/qa-read-release-gate",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        }
+      ],
+      "writable": [
+        {
+          "path": "/data",
+          "persist": true,
+          "written_by": {
+            "uid": 10001,
+            "gid": 999
+          }
+        },
+        {
+          "path": "/tmp",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 999
+          }
+        }
+      ],
+      "capabilities": [],
+      "sysctls": {}
+    },
+    "restore": {
+      "env_schema": "GateBackupEnv",
+      "process": {
+        "uid": 10001,
+        "gid": 999
+      },
+      "files": [
+        {
+          "path_env": "SSL_CERT_FILE",
+          "path": "/etc/openit/pki/root_ca.crt",
+          "directory": false,
+          "kind": "ca-bundle",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "OPENIT_BACKUP_CREDENTIALS_FILE",
+          "path": "/run/secrets/backup-gate-credentials",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "OPENIT_BACKUP_REPO_PASSWORD_FILE",
+          "path": "/run/secrets/backup-gate-repo-password",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        },
+        {
+          "path_env": "GATE_DATABASE_URL_FILE",
+          "path": "/run/secrets/db-gate-dsn",
+          "directory": false,
+          "kind": "secret",
+          "schema": null,
+          "required": true,
+          "opened_by": "start-process"
+        }
+      ],
+      "writable": [
+        {
+          "path": "/data",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 999
+          }
+        },
+        {
+          "path": "/tmp",
+          "persist": false,
+          "written_by": {
+            "uid": 10001,
+            "gid": 999
+          }
+        }
+      ],
+      "capabilities": [],
+      "sysctls": {}
+    }
+  }
+}

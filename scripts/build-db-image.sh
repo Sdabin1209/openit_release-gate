@@ -10,6 +10,36 @@ req="$1"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"; elif [ -x "$here/.venv/bin/python" ]; then PY="$here/.venv/bin/python"; else PY="python3"; fi
 DOCKER="${DOCKER:-docker}"
+# 주입 선언(계약 ContainerInputs 3.5.0, 라벨 io.openit.inputs): 정본은 리포 안 JSON. 라벨로 달기 전에 계약으로 검증하고(R7), 빌드한 이미지의 실행 사용자와 대조한다.
+# 왜 대조하는가: 배치 영역은 선언의 숫자 uid:gid 로 파일·쓰기 권한을 준다. 이미지와 다르면 기동에서야 권한 오류가 난다(2026-11-06 DB 비밀 읽기 실패).
+inputs_label() {   # inputs_label <선언 파일> <이미지 이름> -> 한 줄 JSON(표준 출력)
+  "${PYTHON:-${PY:-python3}}" -c '
+import json, sys
+from boundary_contracts import validator
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+if d.get("image") != sys.argv[2]:
+    sys.exit("%s 의 image(%s)가 이미지 이름 %s 와 다르다" % (sys.argv[1], d.get("image"), sys.argv[2]))
+errs = list(validator("ContainerInputs").iter_errors(d))
+if errs:
+    sys.exit("%s 가 ContainerInputs 를 어긴다: " % sys.argv[1] + ", ".join("/" + "/".join(map(str, e.absolute_path)) + ":" + e.validator for e in errs[:5]))
+print(json.dumps(d, ensure_ascii=False, separators=(",", ":"), sort_keys=True))' "$1" "$2"
+}
+inputs_check() {   # inputs_check <이미지 태그> <inputs_label 출력>: 다르면 이미지를 지우고 실패
+  local u g cu
+  # 실행 사용자: 이미지 안 id 로 읽는다. id 가 없는 이미지(distroless)는 이미지 설정 User 가 숫자 uid:gid 일 때만 그 값을 쓴다(이름이면 판정하지 못해 실패)
+  if u=$("${DOCKER:-docker}" run --rm --network none --entrypoint id "$1" -u 2>/dev/null) && g=$("${DOCKER:-docker}" run --rm --network none --entrypoint id "$1" -g 2>/dev/null); then :
+  else
+    cu=$("${DOCKER:-docker}" image inspect "$1" --format '{{.Config.User}}' 2>/dev/null)
+    if [[ "$cu" =~ ^([0-9]+):([0-9]+)$ ]]; then u=${BASH_REMATCH[1]}; g=${BASH_REMATCH[2]}
+    else "${DOCKER:-docker}" rmi -f "$1" >/dev/null 2>&1; echo "build-image: 이미지 실행 사용자를 읽지 못했다(id 없음, User=$cu): $1" >&2; return 1; fi
+  fi
+  "${PYTHON:-${PY:-python3}}" -c '
+import json, sys
+d = json.loads(sys.argv[1]); u, g = int(sys.argv[2]), int(sys.argv[3])
+bad = sorted(k for s in ("roles", "jobs") for k, st in d[s].items() if (st["process"]["uid"], st["process"]["gid"]) != (u, g))
+sys.exit("주입 선언의 process 가 이미지 실행 사용자 %d:%d 와 다르다: %s" % (u, g, bad) if bad else 0)' "$2" "$u" "$g" \
+    || { "${DOCKER:-docker}" rmi -f "$1" >/dev/null 2>&1; echo "build-image: 주입 선언이 이미지와 다르다. 이미지를 지웠다: $1" >&2; return 1; }
+}
 mapfile -t F < <("$PY" - "$req" <<'PY'
 import json, re, sys
 from boundary_contracts import validator
@@ -35,9 +65,11 @@ ctx="$(mktemp -d)"; trap 'rm -rf "$ctx"' EXIT
 cp -a "$src/db/." "$ctx/"
 cp -a "$src/deploy-database.json" "$ctx/database.json"
 log "docker build: $tag"
+inputs="$(inputs_label "$here/db/inputs.json" release-gate-db)" || die "db/inputs.json 이 계약 ContainerInputs 를 어긴다"
 "$DOCKER" build -q -t "$tag" -f "$ctx/Dockerfile" \
-  --label "io.openit.database=$decl" --label "io.openit.contracts.boundary=$v_bc" --label "io.openit.contracts.survey-schema=n/a" --label "io.openit.variant=db" \
+  --label "io.openit.database=$decl" --label "io.openit.inputs=$inputs" --label "io.openit.contracts.boundary=$v_bc" --label "io.openit.contracts.survey-schema=n/a" --label "io.openit.variant=db" \
   --build-arg COMMIT="$rev" "$ctx" >&2
+inputs_check "$tag" "$inputs" || exit 1
 image_id="$("$DOCKER" image inspect -f '{{.Id}}' "$tag")"
 labels="$("$DOCKER" image inspect -f '{{json .Config.Labels}}' "$tag")"
 "$PY" - "$tag" "$image_id" "$labels" <<'PY'

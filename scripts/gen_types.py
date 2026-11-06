@@ -32,6 +32,7 @@ from typing import Optional
 
 import boundary_contracts
 import jsonschema
+from boundary_contracts import format_checker as _bc_format_checker  # 형식(format) 검증기가 없으면 조용히 넘기지 않고 실패한다(계약 3.5.0)
 from boundary_contracts.errors import BoundaryError
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
@@ -57,7 +58,7 @@ def validate(name: str, record, *, code: str = "INVALID_RECORD", details: Option
     if v is None:
         if name not in _INTERNAL:
             raise BoundaryError("INVALID_RECORD", f"알 수 없는 내부 스키마: {name}")
-        v = _cache[("i", name)] = jsonschema.Draft202012Validator({"$ref": f"{name}.json"}, registry=_registry(_INTERNAL, ".json"))
+        v = _cache[("i", name)] = jsonschema.Draft202012Validator({"$ref": f"{name}.json"}, registry=_registry(_INTERNAL, ".json"), format_checker=_bc_format_checker({"$ref": f"{name}.json"}))
     msg = _message(name, v, record)
     if msg:
         raise BoundaryError(code, msg, details)
@@ -71,7 +72,7 @@ def validate_contract(name: str, record) -> None:
         docs = {p.name[: -len(".schema.json")]: boundary_contracts.load_schema(p.name[: -len(".schema.json")]) for p in sorted(d.glob("*.schema.json"))}
         if name not in docs:
             raise BoundaryError("INVALID_RECORD", f"알 수 없는 스키마: {name}")
-        v = _cache[("c", name)] = jsonschema.Draft202012Validator({"$ref": f"{name}.schema.json"}, registry=_registry(docs, ".schema.json"))
+        v = _cache[("c", name)] = jsonschema.Draft202012Validator({"$ref": f"{name}.schema.json"}, registry=_registry(docs, ".schema.json"), format_checker=_bc_format_checker({"$ref": f"{name}.schema.json"}))
     msg = _message(name, v, record)
     if msg:
         raise BoundaryError("INVALID_RECORD", msg)
