@@ -231,7 +231,7 @@ def test_approval_with_upstream_fault_records_nothing_and_can_be_retried(world, 
 
 def _job(world, monkeypatch, clients):
     if world.reg.store.kind == "memory":
-        pytest.skip("SQLite·PostgreSQL 레지스트리 전용(잡은 저장소를 열어 쓴다)")
+        raise AssertionError("SQLite·PostgreSQL 저장소에서만 부른다: 시험에 @pytest.mark.backends('sqlite', 'postgres') 가 빠졌다")
     monkeypatch.setenv("GATE_SURVEY_SCHEMA_DIR", str(gate_main_survey()))
     monkeypatch.setenv("GATE_MODEL_RUNTIME_VERSION", "0.1.0")
     monkeypatch.delenv("GATE_DATABASE_URL", raising=False)
@@ -248,6 +248,7 @@ def gate_main_survey():
 
 
 @pytest.mark.parametrize("mode", ["hang", "slow", "http500", "http503", "badjson"])
+@pytest.mark.backends('sqlite', 'postgres')
 def test_collect_job_defers_on_upstream_fault(world, fault, monkeypatch, capsys, mode):
     fault.mode = mode
     cfg = _job(world, monkeypatch, fault.clients())
@@ -258,6 +259,7 @@ def test_collect_job_defers_on_upstream_fault(world, fault, monkeypatch, capsys,
 
 
 @pytest.mark.parametrize("status", ["401", "403"])
+@pytest.mark.backends('sqlite', 'postgres')
 def test_collect_job_auth_failure_fails_visibly(world, fault, monkeypatch, capsys, status, tmp_path):
     fault.mode = status
     cfg = _job(world, monkeypatch, fault.clients())
@@ -269,6 +271,7 @@ def test_collect_job_auth_failure_fails_visibly(world, fault, monkeypatch, capsy
     assert world.reg.store.submission_ids() == []
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_collect_job_skips_broken_item_but_submits_the_rest_and_fails_visibly(world, monkeypatch, capsys):
     world.q.add("qs-main", 1)
     world.m.add("lora-a", "1", "LORA_A")
@@ -291,7 +294,7 @@ def test_collect_job_skips_broken_item_but_submits_the_rest_and_fails_visibly(wo
 
 def _file_store(world):
     if world.reg.store.kind == "memory":
-        pytest.skip("메모리 저장소는 파일을 쓰지 않는다")
+        raise AssertionError("파일 저장소에서만 부른다: 시험에 @pytest.mark.backends('sqlite', 'postgres') 가 빠졌다")
     return world.reg.store
 
 
@@ -300,6 +303,7 @@ def _approve_body(world, sid):
 
 
 @pytest.mark.parametrize("err", [errno.ENOSPC, errno.EROFS, errno.EACCES])
+@pytest.mark.backends('sqlite', 'postgres')
 def test_bundle_write_failure_is_503_and_leaves_no_trace(world, monkeypatch, err):
     store = _file_store(world)
     world.make_release()
@@ -329,6 +333,7 @@ def test_bundle_write_failure_is_503_and_leaves_no_trace(world, monkeypatch, err
     assert created and len(world.reg.reader.list_releases()[0]) == 2
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_publish_rename_failure_is_503_and_rolls_back(world, monkeypatch):
     store = _file_store(world)
     sid = world.reg.service.submit_candidate(world.subject(), requested_by_role="operator")["submission_id"]
@@ -344,6 +349,7 @@ def test_publish_rename_failure_is_503_and_rolls_back(world, monkeypatch):
     assert len(world.reg.reader.list_releases()[0]) == 1
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_orphan_release_directory_never_reads_as_release_and_does_not_block_retry(world, tmp_path):
     store = _file_store(world)
     sid = world.reg.service.submit_candidate(world.subject(), requested_by_role="operator")["submission_id"]

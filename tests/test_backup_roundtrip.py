@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import socket
 import sqlite3
 import subprocess
 import uuid
@@ -44,7 +43,9 @@ pytestmark = pytest.mark.skipif(not _have_images(), reason="docker·openssl 또�
 
 @pytest.fixture
 def store_server(tmp_path):
-    """TLS(사설 루트)와 기본 인증을 켠 restic rest-server. (https 주소, 루트 PEM 경로)를 돌려준다."""
+    """TLS(사설 루트)와 기본 인증을 켠 restic rest-server. (https 주소, 루트 PEM 경로, restic 이 붙을 망)을 돌려준다.
+    호스트 포트를 쓰지 않는다: restic 컨테이너를 rest-server 의 네트워크 공간(container:<이름>)에 붙여 127.0.0.1:8000 으로 부른다.
+    왜: 시험이 고른 호스트 포트는 Windows 예약 범위와 겹칠 수 있고(공통 규칙 '고정 포트 금지'), Docker 배정 포트는 host 망 컨테이너에서 닿지 않는다(Docker Desktop, 2026-11-07)"""
     certs = tmp_path / "certs"; certs.mkdir()
     _sh("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "root.key", "-out", "root.pem", "-days", "2", "-subj", "/CN=test-root", cwd=certs).check_returncode()
     _sh("openssl", "req", "-newkey", "rsa:2048", "-nodes", "-keyout", "srv.key", "-out", "srv.csr", "-subj", "/CN=localhost", cwd=certs).check_returncode()
@@ -56,30 +57,30 @@ def store_server(tmp_path):
     for f in certs.iterdir():
         f.chmod(0o644)
     certs.chmod(0o755)
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]
     name = "release-gate-rs-" + uuid.uuid4().hex[:8]
-    r = _sh("docker", "run", "-d", "--name", name, "-p", f"127.0.0.1:{port}:8000", "-v", f"{certs}:/certs:ro", "--entrypoint", "rest-server", REST_SERVER_IMAGE,
+    r = _sh("docker", "run", "-d", "--name", name, "-v", f"{certs}:/certs:ro", "--entrypoint", "rest-server", REST_SERVER_IMAGE,
             "--tls", "--tls-cert", "/certs/srv.pem", "--tls-key", "/certs/srv.key", "--htpasswd-file", "/certs/htpasswd", "--path", "/tmp/repos")
-    if r.returncode != 0:
+    if r.returncode != 0:   # 건너뛰지 않는다: 띄우지 못한 것은 시험 실패다(건너뛰면 왕복 시험이 비어 있는데도 통과로 센다, 교차검증)
         _sh("docker", "rm", "-f", name)
-        pytest.skip("rest-server 컨테이너를 띄우지 못했다")
+        raise AssertionError("rest-server 컨테이너를 띄우지 못했다: " + r.stderr[-300:])
     try:
-        for _ in range(100):      # 기동 확인: 횟수로 제한한다(시간을 재지 않는다)
-            if _sh("openssl", "s_client", "-connect", f"127.0.0.1:{port}", "-CAfile", str(certs / "root.pem"), "-brief", input="").returncode == 0 or \
-               _sh("docker", "logs", name).stderr.count("Starting server") + _sh("docker", "logs", name).stdout.count("Starting server"):
+        for _ in range(100):      # 기동 확인: 횟수로 제한한다(시간을 재지 않는다). 같은 공간의 restic 컨테이너로 TLS 접속을 확인한다
+            chk = _sh("docker", "run", "--rm", "--network", f"container:{name}", "--entrypoint", "sh", RESTIC_IMAGE, "-c", "nc -z 127.0.0.1 8000")
+            if chk.returncode == 0:
                 break
             subprocess.run(["sleep", "0.2"])
-        yield f"https://127.0.0.1:{port}/release-gate", certs / "root.pem"
+        else:
+            raise AssertionError("rest-server 가 127.0.0.1:8000 에서 받지 않는다: " + _sh("docker", "logs", name).stderr[-300:])
+        yield "https://127.0.0.1:8000/release-gate", certs / "root.pem", f"container:{name}"
     finally:
         _sh("docker", "rm", "-f", name)
 
 
-def _restic_in_docker(workdirs, root_pem):
+def _restic_in_docker(workdirs, root_pem, network):
     """restic 호출을 restic/restic 컨테이너로 보내는 실행기(호스트에 restic이 없어도 된다). 환경·경로는 같은 경로로 마운트한다."""
     def run(cmd, **kw):
         env = dict(kw.get("env") or {})
-        args = ["docker", "run", "--rm", "--network", "host", "--user", f"{__import__('os').getuid()}:{__import__('os').getgid()}",
+        args = ["docker", "run", "--rm", "--network", network, "--user", f"{__import__('os').getuid()}:{__import__('os').getgid()}",
                 "-v", f"{root_pem}:{root_pem}:ro", "-e", f"SSL_CERT_FILE={root_pem}", "-e", "HOME=/tmp"]
         for d in workdirs:
             args += ["-v", f"{d}:{d}"]
@@ -98,7 +99,7 @@ def _env(tmp_path, url, data_dir):
 
 
 def test_sqlite_backup_then_restore_job_round_trip_through_a_real_rest_server(tmp_path, monkeypatch, store_server):
-    url, root = store_server
+    url, root, net = store_server
     data = tmp_path / "data"; (data / "releases" / "r1").mkdir(parents=True)
     (data / "releases" / "r1" / "bundle.bin").write_bytes(b"adapter-bytes-123")
     db = sqlite3.connect(data / "registry.sqlite3"); db.execute("CREATE TABLE t(x)"); db.execute("INSERT INTO t VALUES ('행-1')"); db.commit(); db.close()
@@ -106,7 +107,7 @@ def test_sqlite_backup_then_restore_job_round_trip_through_a_real_rest_server(tm
     env = _env(tmp_path, url, data)
     monkeypatch.setenv("OPENIT_BACKUP_CREDENTIALS_FILE", env["OPENIT_BACKUP_CREDENTIALS_FILE"])
     restored = tmp_path / "restored-data"; restored.mkdir(); restored.chmod(0o777)
-    run = _restic_in_docker([tmp_path, data, restored], root)
+    run = _restic_in_docker([tmp_path, data, restored], root, net)
     out, rc = backup_job.run(env, runner=run, now=NOW)
     validator("BackupJobResult").validate(out)
     assert rc == 0 and out["status"] == "ok" and out["snapshot_id"] and out["bytes"] > 0, out
@@ -126,7 +127,7 @@ def test_sqlite_backup_then_restore_job_round_trip_through_a_real_rest_server(tm
     assert arc == 1 and again["error"]["code"] == "FAILED_PRECONDITION"
     # 특정 스냅숏 ID로도 되살릴 수 있다
     other = tmp_path / "restored-by-id"; other.mkdir(); other.chmod(0o777)
-    out3, rc3 = backup_job.restore(dict(env, GATE_DATA_DIR=str(other)), snapshot=out["snapshot_id"], runner=_restic_in_docker([tmp_path, data, other], root), now=NOW)
+    out3, rc3 = backup_job.restore(dict(env, GATE_DATA_DIR=str(other)), snapshot=out["snapshot_id"], runner=_restic_in_docker([tmp_path, data, other], root, net), now=NOW)
     assert rc3 == 0 and out3["snapshot_id"] == out["snapshot_id"]
     # 보존: 저장소는 append-only가 아니다. 같은 날 세 번째 백업을 하면 가운데 스냅숏은 forget --prune으로 지워진다
     # (restic의 보존 규칙은 기간마다 가장 오래된 것과 가장 새 것을 남긴다)
@@ -137,14 +138,14 @@ def test_sqlite_backup_then_restore_job_round_trip_through_a_real_rest_server(tm
 
 
 def test_wrong_credentials_are_a_retryable_75_and_leak_nothing(tmp_path, monkeypatch, store_server):
-    url, root = store_server
+    url, root, net = store_server
     data = tmp_path / "data"; data.mkdir()
     db = sqlite3.connect(data / "registry.sqlite3"); db.execute("CREATE TABLE t(x)"); db.commit(); db.close()
     monkeypatch.delenv("GATE_DATABASE_URL", raising=False); monkeypatch.delenv("GATE_DATABASE_URL_FILE", raising=False)
     env = _env(tmp_path, url, data)
     (tmp_path / "cred").write_text("gate:WRONG-password")
     monkeypatch.setenv("OPENIT_BACKUP_CREDENTIALS_FILE", env["OPENIT_BACKUP_CREDENTIALS_FILE"])
-    out, rc = backup_job.run(env, runner=_restic_in_docker([tmp_path, data], root), now=NOW)
+    out, rc = backup_job.run(env, runner=_restic_in_docker([tmp_path, data], root, net), now=NOW)
     assert rc == 75 and out["status"] == "failed" and "WRONG-password" not in json.dumps(out) and REPOPW not in json.dumps(out)
 
 
@@ -153,7 +154,7 @@ def test_postgres_backup_then_restore_job_round_trip(tmp_path, monkeypatch, stor
     from release_gate import GateConfig, postgres_registry
     from release_gate.wiring.schema_set import SchemaSet
     from release_gate.migrate import migrate_postgres
-    url, root = store_server
+    url, root, net = store_server
     reg = postgres_registry(pg_url, tmp_path / "reg", SchemaSet(), GateConfig(supported_runtime_contract_version=1, action_rules_version="r", model_runtime_version="0"))
     with psycopg.connect(pg_url, autocommit=True) as c:
         c.execute("INSERT INTO receipts(request_id, request_hash, record) VALUES ('rb-1','h','{\"k\":\"v\"}')")
@@ -163,7 +164,7 @@ def test_postgres_backup_then_restore_job_round_trip(tmp_path, monkeypatch, stor
     monkeypatch.setenv("OPENIT_BACKUP_CREDENTIALS_FILE", env["OPENIT_BACKUP_CREDENTIALS_FILE"])
     (tmp_path / "dburl").write_text(pg_url)
     monkeypatch.setenv("GATE_DATABASE_URL_FILE", str(tmp_path / "dburl")); monkeypatch.delenv("GATE_DATABASE_URL", raising=False)
-    run = _restic_in_docker([tmp_path, data], root)
+    run = _restic_in_docker([tmp_path, data], root, net)
     out, rc = backup_job.run(env, runner=run, now=NOW)
     assert rc == 0 and out["snapshot_id"], str(out.get("error"))
 

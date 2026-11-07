@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."   # 어느 폴더에서 실행해도 리포 루트 기준
 start=$SECONDS
 # 왜 printf로 직접 만든다: 실패해서 .venv가 없을 때도 보고를 내야 해서 파이썬에 기대지 않는다. 값은 모두 상수다.
-emit() { printf '{"area":"release-gate","status":"%s","exit_code":%d,"seconds":%d,"environment":{"kind":"python-venv","path":".venv","test_command":[".venv/bin/python","-m","pytest","-q"]}}\n' "$1" "$2" "$((SECONDS - start))"; }
+emit() { printf '{"area":"release-gate","status":"%s","exit_code":%d,"seconds":%d,"environment":{"kind":"python-venv","path":".venv","test_command":["bash","scripts/test-all.sh"]}}\n' "$1" "$2" "$((SECONDS - start))"; }
 trap 'rc=$?; if [ "$rc" -eq 0 ]; then emit ok 0; else emit fail "$rc"; fi' EXIT
 
 [ -d .venv ] || python3 -m venv .venv >&2

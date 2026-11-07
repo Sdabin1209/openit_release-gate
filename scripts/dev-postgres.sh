@@ -3,7 +3,7 @@
 # up은 접속 문자열을 표준 출력에 한 줄로 낸다: export TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)"
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-proj="release-gate-pg-$(basename "$here" | tr -c 'a-zA-Z0-9\n' '-' | tr 'A-Z' 'a-z')"
+proj="release-gate-pg-$(basename "$here" | tr -c 'a-zA-Z0-9\n' '-' | tr 'A-Z' 'a-z')"${DEV_PG_SUFFIX:+-$DEV_PG_SUFFIX}   # DEV_PG_SUFFIX: 실행마다 고유한 프로젝트(scripts/test-all.sh). 같은 PC 의 개발 트리·deploy 사본이 서로의 DB 를 내리지 않게 한다
 eval "$("python3" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/docker_env.py" --sh)"      # docker 환경 한 곳(scripts/docker_env.py): 사용자 ~/.docker에 기대지 않는다
 export POSTGRES_IMAGE="$(sed -n 's/^ARG POSTGRES_IMAGE=//p' "$here/db/Dockerfile")"      # digest는 db/Dockerfile 한 곳에만 있다
 [ -n "$POSTGRES_IMAGE" ] || { echo "db/Dockerfile에서 POSTGRES_IMAGE를 읽지 못했다" >&2; exit 1; }

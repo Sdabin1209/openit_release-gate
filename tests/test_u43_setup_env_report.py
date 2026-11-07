@@ -6,6 +6,7 @@ from __future__ import annotations
 from conftest import HANG_GUARD_SECONDS
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def test_progress_goes_to_stderr_not_stdout(report_run):
 def test_test_command_runs_the_area_tests_from_the_repo_root(report_run):
     rep = json.loads(report_run.stdout.strip().splitlines()[-1])
     cmd = rep["environment"]["test_command"]
-    assert (ROOT / cmd[0]).exists()
+    assert cmd[:2] == ["bash", "scripts/test-all.sh"] and (ROOT / cmd[1]).exists()   # PostgreSQL 포함 전체 시험(2026-11-07)
     # 전체 시험을 다시 도는 것은 이 시험 안에서 재귀가 되므로 수집만 한다. 같은 argv로 영역 시험이 수집된다.
-    r = subprocess.run(cmd + ["--collect-only", "-q"], cwd=ROOT, capture_output=True, text=True)
+    r = subprocess.run(cmd + ["--collect-only", "-q"], cwd=ROOT, capture_output=True, text=True, env={**os.environ, "TEST_DATABASE_URL": os.environ.get("TEST_DATABASE_URL") or "postgresql://unused@127.0.0.1:1/x"})   # 수집만: PostgreSQL 을 새로 띄우지 않는다
     assert r.returncode == 0 and "tests/test_u43_setup_env_report.py" in r.stdout, r.stdout[-500:] + r.stderr[-500:]

@@ -13,7 +13,7 @@ from conftest import SURVEY
 def job_env(world, tmp_path, monkeypatch):
     import release_gate.components.registry_store as st
     if isinstance(world.reg.store, st.MemoryStore):
-        pytest.skip("SQLite·PostgreSQL 레지스트리 전용")
+        raise AssertionError("잡 시험은 SQLite·PostgreSQL 저장소에서만 수집된다(conftest: job_env 를 쓰는 시험은 메모리 저장소 조합을 뺀다)")
     if world.reg.store.kind == "postgresql":   # 잡은 GATE_DATABASE_URL로 PostgreSQL을 고른다
         monkeypatch.delenv("GATE_DATABASE_URL_FILE", raising=False)
         monkeypatch.setenv("GATE_DATABASE_URL", world.reg.store._url)

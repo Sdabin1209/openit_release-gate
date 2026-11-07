@@ -244,9 +244,8 @@ def test_pointer_compare_and_swap_is_atomic(reg):
     assert not s.switch_pointer(1, dict(s.get_pointer(), pointer_version=3))   # 건너뛰기 금지
 
 
+@pytest.mark.backends('sqlite')
 def test_sqlite_read_only_reader_survives_without_service(world, tmp_path):
-    if not isinstance(world.reg.store, SqliteStore):
-        pytest.skip("SQLite 전용")
     rid = world.make_release()
     world.reg.service.activate(rid, requested_by_role="operator")
     from release_gate import open_release_reader
@@ -256,10 +255,9 @@ def test_sqlite_read_only_reader_survives_without_service(world, tmp_path):
     assert code(rd._store.switch_pointer, 1, {"pointer_version": 2}) == "PERMISSION_DENIED"
 
 
+@pytest.mark.backends('postgres')
 def test_postgres_persists_across_reopen(world, schemas, config):
     from release_gate import PostgresStore
-    if not isinstance(world.reg.store, PostgresStore):
-        pytest.skip("PostgreSQL 전용")
     rid = world.make_release()
     world.reg.service.activate(rid, requested_by_role="operator")
     from release_gate import postgres_registry
@@ -269,9 +267,8 @@ def test_postgres_persists_across_reopen(world, schemas, config):
     assert world.reg.store.kind == "postgresql"
 
 
+@pytest.mark.backends('sqlite')
 def test_sqlite_persists_across_reopen(world, schemas, config, tmp_path):
-    if not isinstance(world.reg.store, SqliteStore):
-        pytest.skip("SQLite 전용")
     rid = world.make_release()
     world.reg.service.activate(rid, requested_by_role="operator")
     from release_gate import sqlite_registry

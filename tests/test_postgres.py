@@ -92,17 +92,15 @@ def test_readyz_shows_kind_only_and_503_without_leak(world, caplog):
         srv.shutdown()
 
 
+@pytest.mark.backends('postgres')
 def test_postgres_reconnects_after_connection_loss(world):
-    if world.reg.store.kind != "postgresql":
-        pytest.skip("PostgreSQL 전용")
     world.reg.store._c.close()
     world.reg.store.ping()                                       # 끊긴 연결은 다시 연다
     assert world.reg.store.get_pointer() is None
 
 
+@pytest.mark.backends('postgres')
 def test_postgres_pointer_race_has_one_winner(world):
-    if world.reg.store.kind != "postgresql":
-        pytest.skip("PostgreSQL 전용")
     s, wins = world.reg.store, []
     def go(i):
         if s.switch_pointer(0, {"pointer_version": 1, "release_id": f"rel-{i}"}, (f"req-{i}", "h", {"i": i})):
@@ -116,9 +114,8 @@ def test_postgres_pointer_race_has_one_winner(world):
     assert len(s.pointer_history()) == 1
 
 
+@pytest.mark.backends('postgres')
 def test_job_output_has_no_connection_info(world, capsys, monkeypatch, tmp_path):
-    if world.reg.store.kind != "postgresql":
-        pytest.skip("PostgreSQL 전용")
     monkeypatch.setenv("GATE_SURVEY_SCHEMA_DIR", str(SURVEY))
     monkeypatch.setenv("GATE_MODEL_RUNTIME_VERSION", "0.1.0")
     monkeypatch.setenv("GATE_DATABASE_URL", world.reg.store._url)

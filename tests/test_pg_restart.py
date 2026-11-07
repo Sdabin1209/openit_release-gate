@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import socket
 import subprocess
 import threading
 import urllib.error
@@ -46,17 +45,23 @@ def _ready(url):
 
 
 def test_service_recovers_after_postgres_stop_and_start_without_app_restart(schemas, config, tmp_path):
-    with socket.socket() as sk:
-        sk.bind(("127.0.0.1", 0))
-        port = sk.getsockname()[1]
+    # 호스트 포트는 Docker 가 배정하고(공통 규칙 '고정 포트 금지'), 그 게시는 DB 와 따로 사는 네트워크 공간 컨테이너가 소유한다.
+    # 왜: 빈 HostPort 로 배정한 포트는 그 컨테이너를 stop/start 하면 바뀔 수 있다(Moby API). DB 만 재기동하면 공간과 게시 포트가 그대로라
+    # 앱의 접속 주소가 유지된다(Kubernetes pod 의 pause 와 같은 방식, 2026-11-07 교차검증)
     name = "release-gate-r41-" + uuid.uuid4().hex[:8]
-    r = _docker("run", "-d", "--name", name, "-e", "POSTGRES_HOST_AUTH_METHOD=trust", "-e", "POSTGRES_DB=gate",
-                "-p", f"127.0.0.1:{port}:5432", POSTGRES_IMAGE)
-    if r.returncode != 0:
-        pytest.skip("PostgreSQL 컨테이너를 띄우지 못했다")
-    url = f"postgresql://postgres@127.0.0.1:{port}/gate"
+    holder = name + "-net"
     srv = None
-    try:
+    try:   # 만든 컨테이너는 어떤 실패에서도 지운다(공간 컨테이너·DB 를 만드는 단계부터 정리 범위 안, 교차검증)
+        h = _docker("run", "-d", "--name", holder, "-p", "127.0.0.1::5432", "--entrypoint", "sleep", POSTGRES_IMAGE, "infinity")
+        assert h.returncode == 0, h.stderr[-300:]
+        pr = _docker("port", holder, "5432/tcp")
+        hit = [l for l in pr.stdout.splitlines() if l.startswith("127.0.0.1:")]
+        assert pr.returncode == 0 and hit, f"docker port 가 127.0.0.1 바인딩을 주지 않았다: {pr.stdout.strip()[:120]}"
+        port = int(hit[0].rsplit(":", 1)[1])
+        r = _docker("run", "-d", "--name", name, "-e", "POSTGRES_HOST_AUTH_METHOD=trust", "-e", "POSTGRES_DB=gate",
+                    "--network", f"container:{holder}", POSTGRES_IMAGE)
+        assert r.returncode == 0, "PostgreSQL 컨테이너를 띄우지 못했다: " + r.stderr[-300:]   # 건너뛰지 않는다(교차검증)
+        url = f"postgresql://postgres@127.0.0.1:{port}/gate"
         assert _ready(url)
         reg = postgres_registry(url, tmp_path / "registry", schemas, config)
         srv = GateHTTPServer(("127.0.0.1", 0), reg, read_tokens={"rt": "survey-service"}, write_tokens={"wt": "operator"},
@@ -77,3 +82,4 @@ def test_service_recovers_after_postgres_stop_and_start_without_app_restart(sche
         if srv is not None:
             srv.shutdown()
         _docker("rm", "-f", name)
+        _docker("rm", "-f", holder)

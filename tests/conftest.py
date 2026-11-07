@@ -229,3 +229,28 @@ class GateHTTPServer(_GateHTTPServer):
 def _supported_runtime_contract_version(monkeypatch):
     """GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION에는 코드 기본값이 없다(계약 3.2.0 GateEnv). 시험은 설치된 문진 스키마의 값을 명시해 준다."""
     monkeypatch.setenv("GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION", str(SurveySchema(SURVEY).contract_version))
+
+
+# 저장소 종류별 시험(2026-11-07): 해당하지 않는 저장소 조합은 시험 안에서 건너뛰지 않고 수집 단계에서 뺀다(deselect).
+# 왜: 건너뛰기는 '검증하지 않음'이라 영역 전체 시험의 건너뜀이 0 이어야 deploy 사전 점검이 통과로 센다. 빼기는 결과에 'deselected' 로 드러난다
+FILE_STORE_FIXTURES = {"job_env"}   # 이 fixture 를 쓰는 시험은 파일 저장소(SQLite·PostgreSQL)에서만 뜻이 있다
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "backends(*kinds): 이 시험이 뜻이 있는 저장소 종류(memory, sqlite, postgres). 나머지 reg 조합은 수집에서 뺀다")
+
+
+def pytest_collection_modifyitems(config, items):
+    keep, drop = [], []
+    for item in items:
+        kind = getattr(getattr(item, "callspec", None), "params", {}).get("reg")
+        allowed = None
+        m = item.get_closest_marker("backends")
+        if m:
+            allowed = set(m.args)
+        elif FILE_STORE_FIXTURES & set(getattr(item, "fixturenames", ())):
+            allowed = {"sqlite", "postgres"}
+        (drop if kind is not None and allowed is not None and kind not in allowed else keep).append(item)
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+        items[:] = keep

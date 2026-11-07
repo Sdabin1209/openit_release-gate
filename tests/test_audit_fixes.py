@@ -25,7 +25,7 @@ from conftest import SURVEY
 
 def _file_store(world):
     if world.reg.store.kind == "memory":
-        pytest.skip("파일 저장소(SQLite·PostgreSQL) 전용")
+        raise AssertionError("파일 저장소에서만 부른다: 시험에 @pytest.mark.backends('sqlite', 'postgres') 가 빠졌다")
     return world.reg.store
 
 
@@ -58,6 +58,7 @@ def _raw(port, data: bytes, read=True, timeout=HANG_GUARD_SECONDS):      # timeo
 
 # ---- A7: 큰 복사 동안 읽기가 막히지 않는다 ----
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_bundle_copy_does_not_hold_the_store_lock(world, monkeypatch):
     store = _file_store(world)
     sid = world.reg.service.submit_candidate(world.subject(), requested_by_role="operator")["submission_id"]
@@ -97,6 +98,7 @@ def test_bundle_copy_does_not_hold_the_store_lock(world, monkeypatch):
 
 # ---- G3: 활성화·번들 검증은 어댑터를 복사하지 않는다 ----
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_activation_and_bundle_verify_without_copying_adapters(world, monkeypatch):
     store = _file_store(world)
     rid = world.make_release()
@@ -116,6 +118,7 @@ def test_activation_and_bundle_verify_without_copying_adapters(world, monkeypatc
     assert buf.tell() > 0
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_in_place_verification_still_detects_tampering(world):
     store = _file_store(world)
     rid = world.make_release()
@@ -128,6 +131,7 @@ def test_in_place_verification_still_detects_tampering(world):
 
 # ---- G2: 목록은 접수 수와 무관하게 쿼리 수가 일정 ----
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_submission_list_has_no_n_plus_one(world):
     store = _file_store(world)
     for i in range(1, 16):
@@ -176,6 +180,7 @@ def test_retention_policy_rejects_unbounded_values(monkeypatch):
         RetentionPolicy(rejected_days=None)
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_prune_removes_old_rejected_keeps_approved_and_prunes_unused_bundles(world):
     store = _file_store(world)
     rels = []
@@ -215,6 +220,7 @@ def test_prune_removes_old_rejected_keeps_approved_and_prunes_unused_bundles(wor
     assert again["bundle_release_ids"] == [] and again["submission_ids"] == []
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_prune_purges_old_attempts(world):
     store = _file_store(world)
     store.record_attempt({"at": "2020-01-01T00:00:00Z", "status": 403, "role": "operator"})
@@ -349,6 +355,7 @@ def _releases(world, n):
     return [world.make_release(world.subject(qs=world.q.add("qs-main", i))) for i in range(1, n + 1)]
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_plan_then_activate_then_apply_never_prunes_the_active_release(world):
     """계획(dry-run) 뒤에 운영자가 대상 릴리스를 활성화하고 apply를 실행해도 활성 릴리스는 정리되지 않는다."""
     store = _file_store(world)
@@ -366,6 +373,7 @@ def test_plan_then_activate_then_apply_never_prunes_the_active_release(world):
     assert world.reg.reader.load_bundle(rels[1], dest=world.reg.store.root / "chk").manifest["release_id"] == rels[1]
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_keep_zero_still_protects_active_previous_and_unactivated_newest(world):
     store = _file_store(world)
     rels = _releases(world, 5)
@@ -377,6 +385,7 @@ def test_keep_zero_still_protects_active_previous_and_unactivated_newest(world):
     assert out["bundle_release_ids"] == [rels[1]]
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_no_pointer_yet_protects_every_approved_release(world):
     store = _file_store(world)
     rels = _releases(world, 3)
@@ -384,6 +393,7 @@ def test_no_pointer_yet_protects_every_approved_release(world):
     assert out["bundle_release_ids"] == [] and not any(store.is_pruned(r) for r in rels)
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_switch_to_a_pruned_release_is_refused_in_the_same_transaction(world):
     store = _file_store(world)
     rels = _releases(world, 3)
@@ -396,6 +406,7 @@ def test_switch_to_a_pruned_release_is_refused_in_the_same_transaction(world):
     assert e.value.code == "FAILED_PRECONDITION" and store.get_pointer() == cur
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_concurrent_prune_and_activate_never_leave_pointer_on_pruned_release(world):
     store = _file_store(world)
     rels = _releases(world, 6)
@@ -440,6 +451,7 @@ def test_concurrent_prune_and_activate_never_leave_pointer_on_pruned_release(wor
 
 # ---- L급: 임시 디렉터리 정리, 깊은 JSON, Loop join ----
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_purge_stale_tmp_keeps_dirs_with_recent_writes_inside(world):
     store = _file_store(world)
     base = store.root / "releases"
@@ -503,6 +515,7 @@ def _switch_attempt(store, rid):
     assert e.value.code == "FAILED_PRECONDITION" and store.get_pointer() == cur
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_prune_failing_midway_leaves_pruning_and_next_prune_finishes(world, monkeypatch):
     store, rid = _setup_prune_target(world)
     base = store.root / "releases" / rid
@@ -528,6 +541,7 @@ def test_prune_failing_midway_leaves_pruning_and_next_prune_finishes(world, monk
     assert store.prune_unprotected(rid, 0) == 0         # 끝난 뒤 재호출은 멱등
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_prune_interrupted_after_marker_is_resumed(world):
     """PRUNING 표시만 쓰고 프로세스가 죽은 상태(삭제 전)를 흉내 낸다."""
     store, rid = _setup_prune_target(world)
@@ -539,6 +553,7 @@ def test_prune_interrupted_after_marker_is_resumed(world):
     assert not (base / "adapters").exists() and (base / "PRUNED").exists() and not (base / "PRUNING").exists()
 
 
+@pytest.mark.backends('sqlite', 'postgres')
 def test_legacy_pruned_marker_with_leftover_adapters_is_cleaned(world):
     """이전 방식이 PRUNED만 쓰고 죽은 상태: 어댑터가 남아 있으면 다시 지운다."""
     store, rid = _setup_prune_target(world)
