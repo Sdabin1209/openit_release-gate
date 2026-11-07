@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import socket
 import subprocess
 import uuid
 from pathlib import Path
@@ -76,19 +75,24 @@ def _start(tmp: Path, mutate=None):
         d.chmod(0o755)
         for f in d.iterdir():
             f.chmod(0o600)      # 배포가 마운트한 파일은 root 소유 0600일 수 있다: 진입점이 postgres가 읽을 사본을 만든다
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]
     name = "release-gate-db-test-" + uuid.uuid4().hex[:8]
     r = _sh("docker", "run", "-d", "--name", name,
             "--read-only", "--tmpfs", "/tmp", "--tmpfs", "/run", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
-            *[v for cap in ("CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID") for v in ("--cap-add", cap)], "-p", f"127.0.0.1:{port}:5432", "-v", f"{certs}:/certs:ro", "-v", f"{secrets}:/run/secrets/db:ro",
+            *[v for cap in ("CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID") for v in ("--cap-add", cap)], "-p", "127.0.0.1::5432", "-v", f"{certs}:/certs:ro", "-v", f"{secrets}:/run/secrets/db:ro",
             "-v", f"{tmp / 'superpw'}:/run/secrets/super:ro", "-e", "POSTGRES_PASSWORD_FILE=/run/secrets/super", tag)
     assert r.returncode == 0, r.stderr[-300:]
-    db = Db(name, port, certs / "root.pem")
-
+    # 호스트 포트는 Docker 가 배정한다(공통 규칙 '고정 포트 금지'). 시험이 빈 포트를 골라 넘기면 Windows 호스트의 예약 범위와 겹쳐 bind 가 거부될 수 있다(2026-11-07 E2E 사전 점검)
     def cleanup():
         _sh("docker", "rm", "-f", name)
         _sh("docker", "rmi", "-f", tag)
+    pr = _sh("docker", "port", name, "5432/tcp")
+    # 127.0.0.1 바인딩 줄을 고른다(IPv6 줄이 먼저 오거나 포트가 다를 수 있다). 조회가 실패해도 만든 컨테이너·이미지를 지운다(교차검증)
+    hit = [l for l in pr.stdout.splitlines() if l.startswith("127.0.0.1:")]
+    if pr.returncode != 0 or not hit:
+        cleanup()
+        raise AssertionError(f"docker port 가 127.0.0.1 바인딩을 주지 않았다: {pr.stdout.strip()[:120]} {pr.stderr[-200:]}")
+    port = int(hit[0].rsplit(":", 1)[1])
+    db = Db(name, port, certs / "root.pem")
     try:
         for _ in range(240):      # 기동 확인: 횟수로 제한한다(시간을 재지 않는다)
             try:
