@@ -107,9 +107,8 @@
         "GET"
       ],
       "auth": {
-        "kind": "machine-token"
+        "kind": "denied"
       },
-      "upstream_token": "gate-read-model-serving",
       "user_header": "strip",
       "streaming": true
     },

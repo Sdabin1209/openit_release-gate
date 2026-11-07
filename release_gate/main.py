@@ -12,6 +12,7 @@ import argparse
 import importlib
 import importlib.metadata
 import json
+from datetime import datetime, timezone
 import logging
 import os
 import signal
@@ -50,27 +51,29 @@ def _env(name: str, default: str | None = None) -> str:
     return v
 
 
-def env_violations(environ, *, serve: bool) -> list:
-    """GATE_ 접두 변수와 PORT를 계약 GateEnv로 검증하고 어긴 변수의 **이름만** 돌려준다(값은 비밀일 수 있어 싣지 않는다).
-    serve는 토큰 필수 조건(allOf)까지, 잡(collect/judge/prune)은 토큰을 읽지 않으므로 propertyNames·형식·필수 변수만 본다(GateEnv x-note)."""
-    schema = dict(load_schema("GateEnv"))
-    if not serve:
-        schema.pop("allOf", None)
-    env = {k: v for k, v in environ.items() if k.startswith("GATE_") or k == "PORT"}
+ENV_SCHEMA = {"serve": "GateEnv", "collect": "GateJobEnv", "judge": "GateJobEnv", "prune": "GateJobEnv", "backup": "GateBackupEnv", "restore": "GateBackupEnv"}
+
+
+def env_violations(environ, *, cmd: str = "serve") -> list:
+    """이 명령의 계약 환경 스키마(serve=GateEnv, 잡=GateJobEnv, 백업·복구=GateBackupEnv, 계약 4.0.0)로 검증하고 어긴 변수의 **이름만** 돌려준다(값은 비밀일 수 있어 싣지 않는다).
+    4.0.0: 잡을 GateEnv 로 검증하면서 allOf 를 지우던 우회를 없앴다(선언한 잡 Env 그대로 검증)."""
+    from boundary_contracts import validator as _contract_validator
+    name = ENV_SCHEMA.get(cmd, "GateEnv")
+    prefixes = ("GATE_", "OPENIT_") if name == "GateBackupEnv" else ("GATE_",)
+    env = {k: v for k, v in environ.items() if k.startswith(prefixes) or k == "PORT"}
     names = set()
-    for e in Draft202012Validator(schema, format_checker=_bc_format_checker(schema)).iter_errors(env):
+    for e in _contract_validator(name).iter_errors(env):
         if not e.path and isinstance(e.instance, str) and e.instance in env:
             names.add(e.instance)             # propertyNames 위반: 인스턴스가 값이 아니라 변수 이름이다
         elif e.validator == "required":
             names.add(e.message.split("'")[1])
         elif e.path:
             names.add(str(e.path[0]))
-        else:                                  # allOf/anyOf: 읽기·쓰기 토큰 둘 중 하나가 없다
+        else:                                  # allOf/anyOf: 읽기·쓰기 토큰 둘 중 하나가 없다(serve)
             for need in ("GATE_READ_TOKENS", "GATE_WRITE_TOKENS"):
                 if need not in env and need + "_FILE" not in env:
                     names.add(f"{need}(또는 {need}_FILE)")
     return sorted(names)
-
 
 def _csv(name: str) -> list[str]:
     """비밀 목록(NAME_FILE 우선, 없으면 NAME 환경 변수)을 쉼표로 나눈다."""
@@ -101,49 +104,15 @@ def runtime_version() -> "str | None":
 _SECRET_KEY_PARTS = ("token", "secret", "password", "passwd", "credential", "apikey", "api_key", "authorization", "private_key")
 
 
-def _check_inline_secrets(value, path: str) -> None:
-    """비밀을 읽지 않고 인라인 비밀만 거부한다(검사는 _resolve_options와 같은 규칙)."""
-    if isinstance(value, dict) and set(value) not in ({"secret"}, {"env"}):
-        for k, v in value.items():
-            if any(p in str(k).lower() for p in _SECRET_KEY_PARTS) and isinstance(v, str):
-                _resolve_options({k: v}, path)
-            _check_inline_secrets(v, f"{path}.{k}")
-    elif isinstance(value, list):
-        for i, v in enumerate(value):
-            _check_inline_secrets(v, f"{path}[{i}]")
-
-
-def _resolve_options(value, path: str = "options"):
-    """설정의 옵션에서 비밀을 푼다. 비밀 이름만 받는다: {"secret": "NAME"} 또는 {"env": "NAME"} -> read_secret(NAME).
-    비밀처럼 보이는 키(token, secret, password ...)에 값이 직접 적혀 있으면 시작을 거부한다. 오류에는 키 경로만 싣고 값은 싣지 않는다."""
-    if isinstance(value, dict):
-        if set(value) in ({"secret"}, {"env"}):
-            name = value.get("secret", value.get("env"))
-            if not isinstance(name, str) or not name:
-                raise SystemExit(f"설정 {path}: 비밀 이름은 비어 있지 않은 문자열이어야 한다. 비밀은 NAME_FILE로 준다")
-            got = read_secret(name)
-            if got is None:
-                raise SystemExit(f"설정 {path}: 비밀 {name}(또는 {name}_FILE)이(가) 없다. 비밀은 NAME_FILE로 준다")
-            return got
-        out = {}
-        for k, v in value.items():
-            low = str(k).lower()
-            if any(p in low for p in _SECRET_KEY_PARTS) and isinstance(v, str):
-                raise SystemExit(f"설정 {path}.{k}: 비밀 값을 설정 파일에 직접 적을 수 없다. "
-                                 f'비밀은 NAME_FILE로 주고 설정에는 {{"secret": "NAME"}}만 쓴다')
-            out[k] = _resolve_options(v, f"{path}.{k}")
-        return out
-    if isinstance(value, list):
-        return [_resolve_options(v, f"{path}[{i}]") for i, v in enumerate(value)]
-    return value
-
-
-def make(spec: str | None, options: dict | None = None):
-    """'module:callable'을 불러 options를 키워드 인자로 호출한다. 옵션의 비밀은 이름으로만 받는다."""
-    if not spec:
-        return None
-    mod, _, fn = spec.partition(":")
-    return getattr(importlib.import_module(mod), fn)(**_resolve_options(options or {}))
+def client_from_settings(build, settings: dict | None):
+    """계약 HttpClientSettings(4.0.0, D135) 로 계약 클라이언트를 만든다. 설정이 없으면 build 가 GATE_I1_*·GATE_I3_* 환경 변수를 읽는다.
+    왜 구현 경로(factory 문자열)를 받지 않나: 설정이 영역 내부 모듈 경로를 알게 되고 시험 대역 주입 칸이 됐다(구조 규칙 1). 시험은 _neighbors 의 인자로 대역을 넣는다."""
+    if not settings:
+        return build()
+    tok = read_secret(settings["token_secret"])
+    if not tok:
+        raise SystemExit(f"비밀 {settings['token_secret']}(_FILE)이 없다")
+    return build(base_url=settings["base_url"], token=tok, timeout=settings.get("timeout_seconds"))
 
 
 def _safe_error(e) -> str:
@@ -166,16 +135,18 @@ def load_config(path: str | None) -> dict:
         if any(any(p in str(e.path[-1]).lower() for p in _SECRET_KEY_PARTS) for e in errs if e.path):
             hint = '. 비밀 값을 설정 파일에 직접 적을 수 없다: 비밀은 NAME_FILE로 주고 설정에는 {"secret": "NAME"}만 쓴다'
         raise SystemExit("설정 파일 형식 오류(GateJobConfig): " + "; ".join(_safe_error(e) for e in errs[:5]) + hint)
-    # 스키마는 옵션 최상위 키의 인라인 비밀만 표현한다. 중첩된 곳은 코드가 막는다(스키마 설명). 비밀 값은 읽지 않고 키 이름만 검사
-    for k in ("i1_options", "i3_options"):   # 시작 때 바로 거부한다(비밀 값은 읽지 않고 키 이름만 검사)
-        _check_inline_secrets(cfg.get(k) or {}, k)
     return cfg
 
 
+NEIGHBORS = None   # 시험 대역 주입 지점: (I1, I3) 튜플을 넣으면 설정 대신 쓴다(제품 설정에는 대역 칸이 없다, D135)
+
+
 def _neighbors(cfg: dict):
-    i1 = make(cfg.get("i1_factory") or os.environ.get("GATE_I1_FACTORY"), cfg.get("i1_options"))
-    i3 = make(cfg.get("i3_factory") or os.environ.get("GATE_I3_FACTORY"), cfg.get("i3_options"))
-    return i1, i3
+    if NEIGHBORS is not None:
+        return NEIGHBORS
+    from .components.link_models import http_model_registry
+    from .components.link_questions import http_question_reader
+    return client_from_settings(http_question_reader, cfg.get("i1")), client_from_settings(http_model_registry, cfg.get("i3"))
 
 
 def _role_overrides() -> dict:
@@ -362,10 +333,7 @@ def serve() -> None:
     status = make_status(policy, judging, config, reg, engine, loop, retention)
     # 후보 수집은 여기서 돌리지 않는다. 스케줄러가 `collect`를 부른다(D39).
     loop.start()
-    read_tokens = _tokens("GATE_READ_TOKENS", False)
-    single = read_secret("GATE_READ_TOKEN")
-    if single:  # 이전 설정과의 호환: 역할 이름 없는 단일 읽기 토큰
-        read_tokens[single] = "reader"
+    read_tokens = _tokens("GATE_READ_TOKENS", False)   # 4.0.0: 이전 호환 단일 토큰 GATE_READ_TOKEN 은 없앴다
     if not read_tokens:
         raise SystemExit("비밀 GATE_READ_TOKENS(또는 GATE_READ_TOKENS_FILE)이(가) 필요하다")
     srv = GateHTTPServer((bind_host(), port), reg, read_tokens=read_tokens,
@@ -415,7 +383,7 @@ def collect(cfg: dict) -> int:
     _, _, _, reg = _build(cfg)
     questions, models = _neighbors(cfg)
     if questions is None or models is None:
-        raise SystemExit("i1_factory와 i3_factory(또는 GATE_I1_FACTORY, GATE_I3_FACTORY)가 필요하다")
+        raise SystemExit("I1·I3 클라이언트가 필요하다(설정 i1·i3 또는 GATE_I1_URL·GATE_I3_URL 과 토큰)")
     w = cfg.get("watch") or {}
     c = CandidateCollector(questions, models, reg.service, question_set_ids=w.get("question_sets") or None,
                            lora_a_ids=w.get("lora_a") or None, lora_b_ids=w.get("lora_b") or None)
@@ -442,7 +410,7 @@ def judge(cfg: dict) -> int:
     policy = GatePolicy.from_file(cfg.get("policy_file") or os.environ.get("GATE_POLICY_FILE"))
     questions, models = _neighbors(cfg)
     if questions is None or models is None:
-        raise SystemExit("i1_factory와 i3_factory가 필요하다")
+        raise SystemExit("I1·I3 클라이언트가 필요하다(설정 i1·i3 또는 GATE_I1_URL·GATE_I3_URL 과 토큰)")
     ds = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry()).process_pending()
     emit({"job": "judge", "status": "ok", "decisions": [d["decision_id"] for d in ds]})
     return 0
@@ -470,11 +438,19 @@ def main(argv: list[str] | None = None) -> int:
     sp.choices["prune"].add_argument("--dry-run", action="store_true", help="지우지 않고 대상만 낸다")
     a = p.parse_args(argv)
     # 기동 때 환경 변수 선언 검증(계약 GateEnv, U73). 어긴 변수는 이름만 적고 종료 코드 2(설정 오류)
-    bad = env_violations(os.environ, serve=a.cmd == "serve")
+    bad = env_violations(os.environ, cmd=a.cmd)
     if bad:
-        msg = "환경 변수 선언(GateEnv) 위반: " + ", ".join(bad)
+        msg = f"환경 변수 선언({ENV_SCHEMA.get(a.cmd, 'GateEnv')}) 위반: " + ", ".join(bad)
         if a.cmd == "serve":
             print(msg, file=sys.stderr)
+        elif a.cmd in ("backup", "restore"):
+            # 백업·복구의 출력 계약은 BackupJobResult(실패 = stdout JSON 한 줄 + 종료 코드 1, 계약 4.0.0): 잡 결과(GateJobResult) 모양으로 내지 않는다
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            out = {"status": "failed", "snapshot_id": None, "bytes": 0, "started_at": now, "finished_at": now,
+                   "error": {"code": "INVALID_RECORD", "message": msg, "retryable": False}}
+            validator("BackupJobResult").validate(out)
+            print(json.dumps(out, ensure_ascii=False), flush=True)
+            return 1
         else:
             _failed(a.cmd, "INVALID_RECORD", msg)
         return 2

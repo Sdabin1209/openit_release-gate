@@ -11,9 +11,9 @@ def submit(world, subject=None):
     return world.reg.service.submit_candidate(subject or world.subject(), requested_by_role="operator")
 
 
-def test_contract_package_is_major_3():
+def test_supported_major_follows_installed_contract():
     import release_gate
-    assert PIPELINE_SCHEMA_VERSION.split(".")[0] == "3" and release_gate.SUPPORTED_PIPELINE_MAJOR == 3
+    assert release_gate.SUPPORTED_PIPELINE_MAJOR == int(PIPELINE_SCHEMA_VERSION.split(".")[0]) == 4      # 계약 4.0.0
 
 
 def test_release_copies_system_prompt_from_package(world, tmp_path):
@@ -89,9 +89,11 @@ def test_tampered_system_prompt_in_stored_bundle_is_integrity_error(world, tmp_p
     assert e.value.code == "INTEGRITY_ERROR"
 
 
-def test_contract_compat_accepts_any_minor_of_major_3(world):
-    """CONTRACT_COMPAT는 MAJOR만 비교하므로(추가형 MINOR) 같은 MAJOR 3의 3.0·3.1 매니페스트를 모두 받는다."""
-    for i, psv in enumerate(("3.0", "3.1")):
+def test_contract_compat_accepts_any_minor_of_installed_major(world):
+    """CONTRACT_COMPAT는 MAJOR만 비교하므로(추가형 MINOR) 설치된 계약 MAJOR(4.0.0 부터 4)의 x.0·x.1 매니페스트를 모두 받는다."""
+    from boundary_contracts import PIPELINE_SCHEMA_VERSION
+    major = PIPELINE_SCHEMA_VERSION.split(".")[0]
+    for i, psv in enumerate((f"{major}.0", f"{major}.1")):
         a = world.m.add(f"lora-a{i}", "v1", "LORA_A", pipeline_schema_version=psv)
         b = world.m.add(f"lora-b{i}", "v1", "LORA_B", pipeline_schema_version=psv)
         sub = world.reg.service.submit_candidate(world.subject(a=a, b=b), requested_by_role="operator")

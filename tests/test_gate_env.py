@@ -13,31 +13,31 @@ OK = {"GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION": "1", "GATE_READ_TOKENS": f"surv
 
 
 def test_valid_env_has_no_violations_for_serve_and_jobs():
-    assert gate_main.env_violations(OK, serve=True) == []
-    assert gate_main.env_violations(OK, serve=False) == []
+    assert gate_main.env_violations(OK, cmd="serve") == []
+    assert gate_main.env_violations(OK, cmd="collect") == []
 
 
 def test_supported_version_is_required_for_serve_and_jobs():
     env = {k: v for k, v in OK.items() if k != "GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION"}
-    assert gate_main.env_violations(env, serve=True) == ["GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION"]
-    assert gate_main.env_violations(env, serve=False) == ["GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION"]
+    assert gate_main.env_violations(env, cmd="serve") == ["GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION"]
+    assert gate_main.env_violations(env, cmd="collect") == ["GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION"]
 
 
 def test_unknown_gate_name_and_bad_format_are_named_but_values_are_not():
     env = {**OK, "GATE_NOT_DECLARED": SECRET, "PORT": "99999", "GATE_POLL_SECONDS": "abc"}
-    assert gate_main.env_violations(env, serve=True) == ["GATE_NOT_DECLARED", "GATE_POLL_SECONDS", "PORT"]
+    assert gate_main.env_violations(env, cmd="serve") == ["GATE_NOT_DECLARED", "GATE_POLL_SECONDS", "PORT"]
 
 
 def test_names_without_the_prefix_are_not_looked_at():
-    assert gate_main.env_violations({**OK, "SOMETHING_ELSE": "x"}, serve=True) == []
+    assert gate_main.env_violations({**OK, "SOMETHING_ELSE": "x"}, cmd="serve") == []
 
 
 def test_serve_requires_tokens_but_jobs_do_not():
     env = {"GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION": "1"}
-    bad = gate_main.env_violations(env, serve=True)
+    bad = gate_main.env_violations(env, cmd="serve")
     assert bad == ["GATE_READ_TOKENS(또는 GATE_READ_TOKENS_FILE)", "GATE_WRITE_TOKENS(또는 GATE_WRITE_TOKENS_FILE)"]
-    assert gate_main.env_violations(env, serve=False) == []
-    assert gate_main.env_violations({**env, "GATE_READ_TOKENS_FILE": "/run/secrets/r", "GATE_WRITE_TOKENS_FILE": "/run/secrets/w"}, serve=True) == []
+    assert gate_main.env_violations(env, cmd="collect") == []
+    assert gate_main.env_violations({**env, "GATE_READ_TOKENS_FILE": "/run/secrets/r", "GATE_WRITE_TOKENS_FILE": "/run/secrets/w"}, cmd="serve") == []
 
 
 def _clear(monkeypatch):

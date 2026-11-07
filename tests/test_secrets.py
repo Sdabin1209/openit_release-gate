@@ -98,35 +98,28 @@ def test_server_never_echoes_secrets(world, caplog):
 INLINE = "INLINE-SECRET-ddd444"
 
 
-def _cfg(tmp_path, opts):
+def _cfg(tmp_path, i1):
     f = tmp_path / "cfg.json"
-    f.write_text(json.dumps({"i1_factory": "release_gate.factories:http_question_reader", "i1_options": opts}))
+    f.write_text(json.dumps({"i1": i1}))
     return str(f)
 
 
 def test_inline_secret_in_config_rejected_without_value(tmp_path):
-    for opts in ({"base_url": "http://x", "token": INLINE}, {"base_url": "http://x", "api_key": INLINE},
-                 {"base_url": "http://x", "headers": {"Authorization": INLINE}}):
+    # 계약 4.0.0 HttpClientSettings: 토큰 값 칸이 없다(token_secret 이름만). 값을 적으면 모르는 키로 거부되고 메시지에 값이 없다
+    for i1 in ({"kind": "http", "base_url": "https://question-authoring", "token_secret": "GATE_I1_TOKEN", "token": INLINE},
+               {"kind": "http", "base_url": "https://question-authoring", "token_secret": INLINE}):
         with pytest.raises(SystemExit) as e:
-            gate_main.load_config(_cfg(tmp_path, opts))
-        msg = str(e.value)
-        assert INLINE not in msg and "NAME_FILE" in msg
+            gate_main.load_config(_cfg(tmp_path, i1))
+        assert INLINE not in str(e.value)
 
 
-def test_make_rejects_inline_secret_without_value():
-    with pytest.raises(SystemExit) as e:
-        gate_main.make("release_gate.factories:http_question_reader", {"base_url": "http://x", "token": INLINE})
-    assert INLINE not in str(e.value) and "token" in str(e.value)
-
-
-def test_secret_name_in_config_resolves_via_read_secret(tmp_path, monkeypatch):
+def test_token_secret_resolves_via_read_secret(tmp_path, monkeypatch):
     f = tmp_path / "tok"; f.write_text(I1)
     monkeypatch.setenv("MY_TOK_FILE", str(f))
-    cfg = gate_main.load_config(_cfg(tmp_path, {"base_url": "http://x", "token": {"secret": "MY_TOK"}}))
-    assert gate_main._resolve_options(cfg["i1_options"])["token"] == I1
-    monkeypatch.setenv("OTHER_TOK", "env-val-eee555")
-    assert gate_main._resolve_options({"token": {"env": "OTHER_TOK"}})["token"] == "env-val-eee555"
-    monkeypatch.delenv("NOPE_TOK", raising=False)
+    seen = {}
+    gate_main.client_from_settings(lambda **kw: seen.update(kw), {"kind": "http", "base_url": "https://question-authoring", "token_secret": "MY_TOK", "timeout_seconds": 7})
+    assert seen == {"base_url": "https://question-authoring", "token": I1, "timeout": 7}
+    monkeypatch.delenv("NOPE_TOK", raising=False); monkeypatch.delenv("NOPE_TOK_FILE", raising=False)
     with pytest.raises(SystemExit) as e:
-        gate_main._resolve_options({"token": {"secret": "NOPE_TOK"}})
-    assert "NOPE_TOK_FILE" in str(e.value)
+        gate_main.client_from_settings(lambda **kw: None, {"kind": "http", "base_url": "https://question-authoring", "token_secret": "NOPE_TOK"})
+    assert "NOPE_TOK" in str(e.value)

@@ -126,7 +126,10 @@ class FakeModels:
         if runtime_contract_version is None:      # 기본은 설치된 문진 스키마의 정수 버전
             from survey_schema import available_versions
             runtime_contract_version = max(available_versions())
-        sc = {"prompt_template": "v1", "decoding": {"mode": "constrained"}, "max_attempts": 2}
+        # 계약 ServingConfig 를 지키는 값(4.0.0 부터 ModelPackageManifest.serving_config 는 ServingConfig 로 검증된다)
+        sc = {"prompt_template_version": "prompt-4", "decoding": {"constraint_mode": "constrained", "temperature": 0, "seed": 1000, "max_tokens": 512},
+              "max_attempts": 2, "constraint": {"backend": "fake", "backend_version": "1", "supported_features": ["$defs", "$ref", "additionalProperties", "anyOf", "enum", "items", "properties", "required", "type"], "relax_policy_version": "relax-3"},
+              "output_contract": 1, "protection_policy_version": "protect-2"}
         m = {"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "package_id": package_id, "version": version, "role": role,
              "created_at": created_at, "runtime_contract_version": runtime_contract_version,
              "base_model": {"id": base[0], "revision": base[1]}, "adapter_hash": canonical.directory_hash(d),

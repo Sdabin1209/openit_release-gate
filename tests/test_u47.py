@@ -65,15 +65,14 @@ def test_question_bank_route_is_not_exposed_to_people_or_anonymous_callers():
     assert all(r["auth"]["kind"] in ("denied", "machine-token") for r in hit)
 
 
-def test_machine_token_route_covers_exactly_the_inference_server_reads():
-    # U67: 추론 서버가 읽는 경로(활성 포인터, 릴리스 읽기 핸들)는 machine-token 하나에 모이고 읽기(GET)만이다. 계약 Exposure 스키마로 검증된다
+def test_inference_server_read_route_is_not_public():
+    # U67·계약 4.0.0: 추론 서버가 읽는 경로(활성 포인터, 릴리스 읽기)는 공개 입구에 내지 않는다(auth denied, machine-token 은 4.0.0 에서 없어졌다).
+    # 영역 게이트웨이는 이 경로를 서비스로 넘기고 서비스 토큰 대조는 이 서비스가 한다(RUNTIME R3.23). 읽기(GET)만이다
     table = json.loads(EXPOSURE.read_text(encoding="utf-8"))
     validator("Exposure").validate(table)
-    m = [r for r in table["routes"] if r["auth"]["kind"] == "machine-token"]
-    assert len(m) == 1 and m[0]["methods"] == ["GET"] and "roles" not in m[0]["auth"]
-    assert sorted(m[0]["paths"]) == ["/v1/active-pointer", "/v1/releases/*"]
-    assert m[0]["user_header"] == "strip"
-    assert m[0]["upstream_token"] == "gate-read-model-serving"      # deploy가 이미 쓰는 비밀 이름(D122). 이름을 둘 만들지 않는다
+    m = [r for r in table["routes"] if sorted(r["paths"]) == ["/v1/active-pointer", "/v1/releases/*"]]
+    assert len(m) == 1 and m[0]["methods"] == ["GET"] and m[0]["auth"] == {"kind": "denied"}
+    assert m[0]["user_header"] == "strip" and "upstream_token" not in m[0]
 
 
 # ---- GateExt ----

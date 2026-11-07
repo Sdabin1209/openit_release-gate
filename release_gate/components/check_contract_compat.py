@@ -9,8 +9,9 @@ from boundary_contracts.errors import BoundaryError
 from ..types.validators import validate, validate_contract
 
 KIND = "CONTRACT_COMPAT"
-# 왜 3: 이 게이트가 읽을 수 있는 경계 계약 MAJOR(boundary-contracts v3.x, D109). 다른 MAJOR의 레코드는 반려한다.
-SUPPORTED_PIPELINE_MAJOR = 3
+# 이 게이트가 읽을 수 있는 경계 계약 MAJOR = 설치된 계약 패키지의 MAJOR(4.0.0 부터 숫자를 박지 않는다: 3 으로 박혀 있어 계약 판을 올리면 모든 후보를 반려했다). 다른 MAJOR의 레코드는 반려한다.
+from boundary_contracts import PIPELINE_SCHEMA_VERSION as _PSV
+SUPPORTED_PIPELINE_MAJOR = int(_PSV.split(".")[0])
 
 
 def _major(v: str) -> int:

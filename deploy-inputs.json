@@ -156,7 +156,7 @@
       "sysctls": {}
     },
     "collect": {
-      "env_schema": "GateEnv",
+      "env_schema": "GateJobEnv",
       "process": {
         "uid": 10001,
         "gid": 999
@@ -239,7 +239,7 @@
       "sysctls": {}
     },
     "judge": {
-      "env_schema": "GateEnv",
+      "env_schema": "GateJobEnv",
       "process": {
         "uid": 10001,
         "gid": 999
@@ -322,7 +322,7 @@
       "sysctls": {}
     },
     "prune": {
-      "env_schema": "GateEnv",
+      "env_schema": "GateJobEnv",
       "process": {
         "uid": 10001,
         "gid": 999
