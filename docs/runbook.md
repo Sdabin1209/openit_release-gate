@@ -29,7 +29,7 @@ GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh          # BuildImageRequest �
 | `GATE_REQUEST_DEADLINE_SECONDS` | 사람용(`/v1/*`) 요청 하나의 서버 쪽 전체 마감(기본 170.0초, D120·D125, ADR-0020). 넘기면 503 UNAVAILABLE이고 같은 요청을 다시 보내면 된다 |
 | `GATE_RETAIN_KEEP_RELEASES`, `GATE_RETAIN_REJECTED_DAYS`, `GATE_RETAIN_ATTEMPTS_DAYS` | 보존(기본 3, 90, 365). 무기한 값은 거부. `python -m release_gate prune [--dry-run]`를 스케줄러가 주기로 부른다(서버는 스스로 지우지 않음). docs/adr/0009 |
 | `GATE_I1_TIMEOUT`, `GATE_I3_TIMEOUT` | I1·I3 HTTP 읽기 timeout(초, 소켓 읽기 단위). 기본 10(이전 30). 장애 동작은 boundary.md 장애 영향 |
-| `GATE_I1_FACTORY`, `GATE_I3_FACTORY` | `module:callable`(설정 파일의 `i1_factory`, `i3_factory`가 우선). 둘 다 있어야 판정이 켜진다. HTTP 클라이언트는 `release_gate.factories:http_question_reader`, `release_gate.factories:http_model_registry`(`boundary_contracts.clients`, 설치된 boundary-contracts에서 확인). 이 둘은 `GATE_I1_URL`, `GATE_I3_URL`(선택 `*_TIMEOUT`)과 비밀 `GATE_I1_TOKEN`, `GATE_I3_TOKEN`(`*_FILE` 우선)을 읽는다 |
+| `GATE_I1_URL`, `GATE_I3_URL` | I1(문항 저장소)·I3(모델 레지스트리) 주소. 둘 다 있어야 판정이 켜진다. 비밀 `GATE_I1_TOKEN`, `GATE_I3_TOKEN`(`*_FILE` 우선)과 선택 `*_TIMEOUT` 을 함께 읽는다. 클라이언트는 `boundary_contracts.clients` 이고 설정에 공장(`module:callable`)은 두지 않는다(계약 4.0.0 D135) |
 | `GATE_POLL_SECONDS`, `PORT` | 주기(기본 60), 포트(기본 8080) |
 | `GATE_HOST` | 서버 바인드 주소(선택, 기본 0.0.0.0, 계약 3.4.2 GateEnv). TLS 사이드카 뒤의 배치는 deploy가 127.0.0.1을 준다 |
 
@@ -45,7 +45,7 @@ curl -H "Authorization: Bearer $READ" https://gate/v1/submissions/$SID/review-re
 curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'","decision":"APPROVE","approver_role":"release-approver","reason":"지표 검토함","report_hash":"sha256:…"}' http://gate:8080/v1/approvals
 ```
 
-승인 대기 목록은 `GET /v1/submissions?status=AWAITING_APPROVAL`(읽기 토큰)로 본다. `/readyz`의 `awaiting_approval`은 개수다. 승인 결정은 `GATE_I1_FACTORY`, `GATE_I3_FACTORY`가 연결되어 있어야 한다(어댑터를 받아 릴리스에 묶는다). 연결이 없으면 503이다. 승인 결정 때 I3가 안 되면 아무것도 기록되지 않으므로 같은 요청을 다시 보낸다.
+승인 대기 목록은 `GET /v1/submissions?status=AWAITING_APPROVAL`(읽기 토큰)로 본다. `/readyz`의 `awaiting_approval`은 개수다. 승인 결정은 `GATE_I1_URL`·`GATE_I3_URL` 과 토큰이 있어야 한다(어댑터를 받아 릴리스에 묶는다). 연결이 없으면 503이다. 승인 결정 때 I3가 안 되면 아무것도 기록되지 않으므로 같은 요청을 다시 보낸다.
 
 ## gate_policy (선택)
 

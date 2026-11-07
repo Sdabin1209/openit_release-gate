@@ -28,9 +28,7 @@
       ],
       "env": [
         "GATE_I1_URL",
-        "GATE_I3_URL",
-        "GATE_I1_FACTORY",
-        "GATE_I3_FACTORY"
+        "GATE_I3_URL"
       ],
       "timeout_seconds": 600
     },
@@ -62,9 +60,7 @@
       ],
       "env": [
         "GATE_I1_URL",
-        "GATE_I3_URL",
-        "GATE_I1_FACTORY",
-        "GATE_I3_FACTORY"
+        "GATE_I3_URL"
       ],
       "timeout_seconds": 1800
     },

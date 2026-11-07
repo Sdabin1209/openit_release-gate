@@ -386,3 +386,18 @@ def test_approver_id_in_body_is_refused_even_when_it_matches_the_header(world, s
     att = world.reg.store.list_attempts()[0]
     assert att["user"] == "gw-user-7" and att["status"] == 400 and att["code"] == "INVALID_RECORD"      # 거부된 시도도 행위자와 함께 남는다
     assert hcall(server, "/v1/approvals", {k: v for k, v in body.items() if k != "approver_id"}, "wa", {"X-Openit-User": "gw-user-7"})[0] == 201
+
+
+def test_metrics_is_served_without_auth_and_counts_rejections(server):
+    # 계약 openapi release-gate GET /metrics(security 없음, RUNTIME R10.1·R10.11). 4.0.4 커버리지 점검 2층에서 빠진 경로였다
+    def sample(text, name):
+        return int(next(l.split()[1] for l in text.splitlines() if l.startswith(name + " ")))
+    code, ctype, before = raw(server, "/metrics", "ignored")       # 토큰이 있어도 보지 않는다(R10.11)
+    assert code == 200 and ctype.startswith("text/plain")
+    n0 = sample(before.decode(), "release_gate_auth_rejected_total")
+    assert call(server, "/v1/releases", token="wrong-token")[0] in (401, 403)
+    code, _, after = raw(server, "/metrics", "ignored")
+    assert code == 200 and sample(after.decode(), "release_gate_auth_rejected_total") == n0 + 1
+    assert sample(after.decode(), "release_gate_inflight_requests") >= 0
+    code, _, body = raw(server, "/metrics?x=1", "ignored")          # 계약: x-query-schema None
+    assert code == 400 and json.loads(body)["code"] == "INVALID_RECORD"

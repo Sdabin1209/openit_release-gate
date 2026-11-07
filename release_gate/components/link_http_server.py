@@ -135,7 +135,7 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
         if user is None:
             raise _unauth("사람 행위자(X-Openit-User)가 게이트웨이 토큰과 함께 와야 한다")
         if engine is None:
-            raise BoundaryError("UNAVAILABLE", "승인 결정에는 I1·I3 연결이 필요하다(GATE_I1_FACTORY, GATE_I3_FACTORY)")
+            raise BoundaryError("UNAVAILABLE", "승인 결정에는 I1·I3 연결이 필요하다(GATE_I1_URL, GATE_I3_URL)")
         rec, created = engine.decide(req.body, token_role=req.role[2:], approver_id=user)
         return Response(201 if created else 200, rec)
 
@@ -218,6 +218,7 @@ class GateApp:
         self.read_tokens, self.write_tokens = dict(read_tokens), dict(write_tokens)
         self._last_status: dict = {}
         self._inflight, self._inflight_lock = 0, threading.Lock()
+        self._counters = {"auth_rejected": 0, "unavailable": 0}     # /metrics(RUNTIME R10.1·R10.11): 프로세스 안 누적값만. DB 를 부르지 않아 저장소가 멈춰도 200
         self._local = threading.local()      # 요청을 처리하는 스레드마다 읽어 둔 본문(시도 기록의 대상 ID용)
         routes = build_routes(registry, engine, frozenset(self.read_tokens.values()), frozenset(self.write_tokens.values()), self._stream)
         cfg = registry.service.config
@@ -310,9 +311,28 @@ class GateApp:
             with self._inflight_lock:
                 self._inflight -= 1
 
+    def metrics_text(self) -> bytes:
+        """Prometheus 텍스트 형식 0.0.4. 계약 openapi release-gate GET /metrics(인증 없음, 내부망 전용: deploy-exposure.json 에 경로가 없어 공개 입구로 닿지 않는다)."""
+        with self._inflight_lock:
+            inflight, c = self._inflight, dict(self._counters)
+        lines = []
+        for name, help_ in (("auth_rejected", "rejected requests (401/403)"), ("unavailable", "503 UNAVAILABLE responses (excluding /readyz)")):
+            lines += [f"# HELP release_gate_{name}_total {help_}", f"# TYPE release_gate_{name}_total counter", f"release_gate_{name}_total {c[name]}"]
+        lines += ["# HELP release_gate_inflight_requests requests being handled", "# TYPE release_gate_inflight_requests gauge", f"release_gate_inflight_requests {inflight}"]
+        return ("\n".join(lines) + "\n").encode()
+
     def _call(self, environ, start_response):
         method = environ.get("REQUEST_METHOD", "GET")
         path = environ.get("PATH_INFO", "")
+        if path == "/metrics" and method == "GET":
+            if environ.get("QUERY_STRING") or (environ.get("CONTENT_LENGTH") or "0") not in ("", "0"):
+                # 계약 openapi: x-query-schema None, x-body-absent. 쿼리·본문이 있으면 다른 경로처럼 400 INVALID_RECORD
+                body = json.dumps(BoundaryError("INVALID_RECORD", "/metrics 는 쿼리와 본문을 받지 않는다").to_record(PIPELINE_SCHEMA_VERSION), ensure_ascii=False).encode()
+                start_response("400 Bad Request", [("Content-Type", "application/json"), ("Content-Length", str(len(body)))])
+                return [body]
+            body = self.metrics_text()      # 인증을 보지 않는다: 접근 통제는 망이다(R10.11, R6.2). ops-feedback·survey-service 와 같은 방식
+            start_response("200 OK", [("Content-Type", "text/plain; version=0.0.4; charset=utf-8"), ("Cache-Control", "no-store"), ("Content-Length", str(len(body)))])
+            return [body]
         raw = b""
         try:
             n = int(environ.get("CONTENT_LENGTH") or 0)
@@ -337,6 +357,11 @@ class GateApp:
             # 계약 RUNTIME R8.1·R3: 서버 내부 오류는 503 UNAVAILABLE이다(CR-0010 닫힘)
             status, headers = 503, {"Content-Type": "application/json"}
             body = json.dumps(BoundaryError("UNAVAILABLE", "내부 오류").to_record(PIPELINE_SCHEMA_VERSION), ensure_ascii=False).encode()
+        with self._inflight_lock:
+            if status in (401, 403):
+                self._counters["auth_rejected"] += 1
+            elif status == 503 and path != "/readyz":
+                self._counters["unavailable"] += 1
         try:
             self._log(environ, status)
         except Exception:      # noqa: BLE001 - RUNTIME R10.5: 로그를 쓰지 못해도(표준 출력이 막힘) 요청의 출력은 바뀌지 않는다
