@@ -32,7 +32,8 @@ COPY wheels ./wheels
 COPY survey-schema /opt/contracts/survey-schema
 COPY release-gate ./release-gate
 # model-runtime wheel이 컨텍스트에 있으면 함께 설치한다. 서비스는 설치된 버전을 읽어 매니페스트에 쓴다.
-RUN pip install --no-deps ./wheels/*.whl ./release-gate && rm -rf /src
+RUN pip install --no-deps ./wheels/*.whl ./release-gate && rm -rf /src \
+ && python -c "import survey_schema"   # 계약 검증이 문진 스키마 패키지를 읽는다: 빠지면 빌드에서 멈춘다(질문지 응답 503, 2026-11-08)
 
 USER gate
 WORKDIR /data

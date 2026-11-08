@@ -141,7 +141,8 @@ link_line="$(sed -n 's#^git+\(ssh://[^@ ]*@[^@ ]*\.git\)@\(v[0-9][0-9.]*\)[[:spa
 log "clone: openit-link (${link_line##* })"
 git clone -q --depth 1 --branch "${link_line##* }" "${link_line%% *}" "$ctx/_link-src" >&2 || die "openit-link를 받지 못했다(GitHub SSH 접근 확인): $link_line"
 link_src="$ctx/_link-src"
-for lib in boundary:"$s_bc" model_runtime:"$s_mr" link:"$link_src"; do
+# 왜 문진 스키마 패키지도 wheel 로: 질문지 응답(I4 question-bank)을 계약으로 검증할 때 계약 패키지가 survey_schema 패키지에서 문진 스키마를 읽는다(boundary_contracts.schema_sources). 없으면 응답마다 참조 해석 실패로 503 이 된다(데모 2026-11-08)
+for lib in boundary:"$s_bc" model_runtime:"$s_mr" link:"$link_src" survey_schema:"$s_ss"; do
   name="${lib%%:*}"; from="${lib#*:}"; work="$ctx/_src-$name"
   log "wheel: $name ($from)"
   cp -a "$from" "$work"
