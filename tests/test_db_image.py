@@ -80,7 +80,7 @@ def _start(tmp: Path, mutate=None):
             f.chmod(0o644)      # 비root(999) 컨테이너는 호스트 사용자 소유 0600 파일을 못 읽는다. 배포는 선언(ContainerInputs files)의 uid 로 읽게 주고, 시험은 같은 효과를 읽기 권한으로 낸다. 서버 키 사본(0600)은 진입점이 만든다
     name = "release-gate-db-test-" + uuid.uuid4().hex[:8]
     r = _sh("docker", "run", "-d", "--name", name,
-            "--read-only", "--tmpfs", "/tmp", "--tmpfs", "/run", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+            "--read-only", "--tmpfs", "/tmp", "--tmpfs", "/run:uid=999,gid=999", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
 "-p", "127.0.0.1::5432", "-v", f"{certs}:/certs:ro", "-v", f"{secrets}:/run/secrets/db:ro",
             "-v", f"{tmp / 'superpw'}:/run/secrets/super:ro", "-e", "POSTGRES_PASSWORD_FILE=/run/secrets/super", tag)
     assert r.returncode == 0, r.stderr[-300:]
@@ -256,7 +256,6 @@ def test_connection_rules_tls_only_scram_only_no_superuser_over_the_network(db):
 @pytest.mark.parametrize("what,mutate,check", [
     ("PUBLIC CONNECT 회수를 뺀다", lambda n, t: t.replace("REVOKE ALL ON DATABASE $db FROM PUBLIC;", "") if n == "init-openit.sh" else t, check_public_cannot_connect),
     ("인증서 재읽기 감시를 뺀다", lambda n, t: t.replace('  ) &\n', '  ) >/dev/null 2>&1 && true\n', 1).replace('while sleep 5; do', 'while false; do') if n == "docker-entrypoint-openit.sh" else t, check_renewed_certificate_is_served),
-    ("USER 줄을 뺀다", lambda n, t: t.replace("USER postgres\n", "", 1) if n == "Dockerfile" else t, check_runs_as_declared_non_root),
     ("hostssl을 host로 바꾼다", lambda n, t: t.replace('f"hostssl ', 'f"host ') if n == "gen.py" else t, check_tls_and_scram_only),
 ])
 def test_mutations_make_the_assertions_fail(tmp_path, what, mutate, check):
@@ -266,3 +265,28 @@ def test_mutations_make_the_assertions_fail(tmp_path, what, mutate, check):
             check(d)
     finally:
         cleanup()
+
+
+def test_removing_the_user_line_makes_the_image_user_differ_from_the_declaration(tmp_path):
+    """변이: Dockerfile 에서 USER 줄을 빼면 이미지가 root 로 돈다. 그러면 기동도 못 하므로(capability 없음) 기동 시험 대신 이미지의 실행 사용자를 선언과 대조한다.
+    scripts/build-db-image.sh 의 inputs_check 가 같은 대조로 빌드를 거부한다."""
+    decl = json.loads((ROOT / "db" / "inputs.json").read_text(encoding="utf-8"))["roles"]["default"]["process"]
+    want = f"{decl['uid']}:{decl['gid']}"
+
+    def user_of(mutate):
+        ctx = tmp_path / ("m" if mutate else "o"); ctx.mkdir()
+        for f in (ROOT / "db").iterdir():
+            t = f.read_text(encoding="utf-8")
+            (ctx / f.name).write_text(t.replace("USER postgres\n", "", 1) if mutate and f.name == "Dockerfile" else t, encoding="utf-8")
+        (ctx / "database.json").write_text(json.dumps(DECL), encoding="utf-8")
+        tag = "release-gate-db-user-test:" + uuid.uuid4().hex[:8]
+        try:
+            assert _sh("docker", "build", "-q", "-t", tag, str(ctx)).returncode == 0
+            u = _sh("docker", "run", "--rm", "--entrypoint", "id", tag, "-u").stdout.strip()
+            g = _sh("docker", "run", "--rm", "--entrypoint", "id", tag, "-g").stdout.strip()
+            return f"{u}:{g}"
+        finally:
+            _sh("docker", "rmi", "-f", tag)
+
+    assert user_of(False) == want
+    assert user_of(True) != want

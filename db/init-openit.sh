@@ -3,7 +3,7 @@
 # 계정: LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION, 연결 상한 계정마다 30. owner는 자기 데이터베이스를 소유하고(스키마 변경),
 # dml은 CONNECT·USAGE·표 SELECT/INSERT/UPDATE/DELETE·시퀀스 USAGE/SELECT와 owner가 나중에 만드는 표·시퀀스에 대한 기본 권한만 갖는다. PUBLIC의 CONNECT는 회수한다.
 set -euo pipefail
-SECRETS=/run/openit-secrets
+SECRETS=/tmp/openit-secrets
 LIMIT=30      # 계정당 연결 상한: 서비스 일꾼 8 + 잡 + /readyz 확인에 여유를 둔 시작값이다. 측정 안 함(ADR-0024). 서버 전체 max_connections=40 안에서 두 계정이 겹치지 않게 한다
 psql_s() { psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -X -q "$@"; }
 pw_of() { tr -d '\r\n' < "$SECRETS/$1"; }

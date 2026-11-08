@@ -52,7 +52,7 @@ cap_drop ALL 상태에서 root 감시자가 postgres에 직접 신호를 보내�
 
 - 상태: 채택. 이전: 이미지가 root(uid 0)로 시작해 공식 진입점이 postgres로 내렸고, 선언(db/inputs.json)도 uid 0과 capability 5개(CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID)를 적었다.
 - 맥락: 공통 규칙은 비root 실행을 요구한다. DB 이미지만 root로 시작하는 것은 예외로 둘 근거가 없었다(대장 #8).
-- 결정: `db/Dockerfile`에 `USER postgres`(공식 이미지의 postgres는 999:999, `id postgres`로 확인). 선언의 process·writable written_by는 999:999, capabilities는 비운다. 진입점은 chown·`-o postgres`·`gosu`를 쓰지 않는다(이미 postgres이고 capability가 없다). 읽기 전용 루트의 tmpfs `/run`이 이미지의 소켓 폴더를 가리므로 진입점이 `/run/postgresql`을 만든다.
+- 결정: `db/Dockerfile`에 `USER postgres`(공식 이미지의 postgres는 999:999, `id postgres`로 확인). 선언의 process·writable written_by는 999:999, capabilities는 비운다. 진입점은 chown·`-o postgres`·`gosu`를 쓰지 않는다(이미 postgres이고 capability가 없다). TLS 사본·비밀 임시 사본은 모두에게 쓰기 가능한 `/tmp`에 둔다. 소켓 폴더 `/run/postgresql`은 공식 진입점의 psql이 기본 위치만 보므로(PGHOST를 비운다) 옮기지 못하고 진입점이 만든다: 그러려면 배치가 `/run`을 선언대로 uid 999가 쓰게 마운트해야 한다(docker tmpfs 옵션 `uid=999,gid=999`). deploy가 이를 따르는지는 이 리포가 확인하지 못했다.
 - 왜: 표준 관행은 공식 postgres 이미지를 `--user`/`USER`로 비root 실행하는 것이다(공식 진입점이 root가 아니면 chown·gosu를 건너뛴다). 선언과 이미지의 uid:gid 대조(`scripts/build-db-image.sh`)가 USER 누락을 빌드에서 막는다.
 - 버린 대안: root 유지 + capability 선언(공통 규칙 위반), uid를 임의 값으로 바꾸기(공식 이미지의 데이터·권한 가정이 깨짐).
 - 결과: 배포가 마운트하는 인증서·비밀 파일은 선언의 uid(999)가 읽을 수 있어야 한다(이전에는 root가 DAC_OVERRIDE로 읽었다). 이미 있는 데이터 볼륨은 postgres 소유라 그대로 쓴다. 시험(tests/test_db_image.py)은 cap_add 없이 읽기 전용 루트로 띄우고, USER 줄을 뺀 변이가 실패하는지 본다.
