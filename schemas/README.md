@@ -51,3 +51,4 @@
 | 18 | main.py (진입점) | 환경 변수의 필수·범위(`_seconds` > 0, `_opt_int` ≥ 최소, 보존 일수, `역할=토큰` 형식) | 설정 읽기다(업무 컴포넌트가 아니다). 설정 파일은 계약 GateJobConfig로 검증한다 |
 | 19 | link_questions, link_models | 이웃 클라이언트 생성 함수의 URL·토큰 존재 | 설정 읽기(연결 정보)다. 값은 환경 변수와 비밀 파일에서 온다 |
 | 20 | gate_policy | 정책 파일을 읽을 수 있음(경로가 있는데 없거나 못 읽으면 시작 거부, fail-closed) | 파일 입출력이다. 읽은 내용의 모양은 계약 GatePolicy로 검증한다 |
+| 21 | schemas ApprovalDraftInput·DecisionDraft·ReleaseBuildInput | 영역이 발급하는 ID의 접두사(`sub-`, `gd-`, `rel-`) | 발급 형식은 이 영역의 내부 규칙이다(계약 Id는 모양 한계만 정한다). Id 모양 자체는 `x-contract: _common#/$defs/Id` 로 계약에 위임하고 복사하지 않는다(계약 5.0.0, D117). `approval_record`의 `submission_id[4:]`는 `^sub-.` 접두사에 기대며 시험(`ApprovalDraftInput`)이 지킨다 |

@@ -56,10 +56,21 @@ def test_http_only_in_link_components():
 
 def test_every_schema_has_valid_and_invalid_examples_and_results_match():
     docs = {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in SCHEMAS.glob("*.json")}
-    reg = Registry().with_resources([(f"{n}.json", Resource.from_contents(d, default_specification=DRAFT202012)) for n, d in docs.items()])
     assert docs
+    # 왜 생성된 validate 를 쓰나: x-contract(계약 타입 위임, D117)는 표준 검증기가 모르는 키라 건너뛴다. 제품이 쓰는 검증 함수 그대로 본다
+    from boundary_contracts.errors import BoundaryError
+    from release_gate.types.validators import validate
+
+    class _V:
+        def __init__(self, name): self.name = name
+
+        def iter_errors(self, value):
+            try:
+                validate(self.name, value)
+            except BoundaryError as e:
+                yield e
     for name in docs:
-        v = jsonschema.Draft202012Validator({"$ref": f"{name}.json"}, registry=reg)
+        v = _V(name)
         good = sorted((SCHEMAS / "examples").glob(f"{name}.valid*.json"))
         bad = sorted((SCHEMAS / "examples").glob(f"{name}.invalid*.json"))
         assert good and bad, f"{name}: 통과·거부 예시가 모두 있어야 한다"

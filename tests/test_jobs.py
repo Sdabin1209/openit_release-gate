@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from boundary_contracts.errors import BoundaryError
 
 from release_gate import main as gate_main
 from conftest import SURVEY
@@ -73,7 +74,7 @@ def test_judge_once(job_env, capsys, monkeypatch, tmp_path):
 def test_broken_config_file_fails(tmp_path):
     f = tmp_path / "bad.json"
     f.write_text("{ 깨짐")
-    with pytest.raises(ValueError):
+    with pytest.raises(BoundaryError):      # 계약 strict_json 이 INVALID_RECORD 로 올린다(CONVENTIONS 10절)
         gate_main.load_config(str(f))
 
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..components import retention
-from ..components.registry_store import MemoryStore, ReleaseFiles, SqliteStore
+from ..components.registry_store import MemoryStore, ReleaseFiles, SqliteStore, assert_no_legacy_records
 from ..components.release_reader import ReleaseReaderImpl, write_bundle_tar
 from ..config import GateConfig
 from .schema_set import SchemaSet
@@ -32,6 +32,14 @@ def _config_ok(config: GateConfig) -> None:
     validate("GateConfig", config.record())
 
 
+def _no_legacy(store) -> None:
+    try:
+        assert_no_legacy_records(store)
+    except BaseException:
+        store.close()      # 거부하면 연 연결·파일을 닫고 나간다
+        raise
+
+
 def memory_registry(schemas: SchemaSet, config: GateConfig, clock: Clock = utc_now) -> Registry:
     """메모리 구현(가짜 구현). 이웃 영역이 혼자 시험할 때 쓴다. 오류, 멱등성, 해시 검증은 실제 구현과 같다."""
     _config_ok(config)
@@ -42,6 +50,7 @@ def memory_registry(schemas: SchemaSet, config: GateConfig, clock: Clock = utc_n
 def sqlite_registry(root: str | Path, schemas: SchemaSet, config: GateConfig, clock: Clock = utc_now) -> Registry:
     _config_ok(config)
     s = SqliteStore(root)
+    _no_legacy(s)
     return Registry(s, ReleaseReaderImpl(s), GateServiceImpl(s, schemas, config, clock))
 
 
@@ -52,6 +61,7 @@ def postgres_registry(url: str, root: str | Path, schemas: SchemaSet, config: Ga
     _config_ok(config)
     from ..components.registry_store import PostgresStore
     s = PostgresStore(url, root, scheduler=SystemClock(), **timeouts)
+    _no_legacy(s)
     return Registry(s, ReleaseReaderImpl(s), GateServiceImpl(s, schemas, config, clock))
 
 
@@ -65,4 +75,6 @@ def open_registry(root: str | Path, schemas: SchemaSet, config: GateConfig, cloc
 
 def open_release_reader(root: str | Path) -> ReleaseReaderImpl:
     """읽기 전용 I4. 게이트 서비스가 멈춰 있어도 레지스트리 파일만 있으면 읽힌다."""
-    return ReleaseReaderImpl(SqliteStore(root, read_only=True))
+    s = SqliteStore(root, read_only=True)
+    _no_legacy(s)
+    return ReleaseReaderImpl(s)

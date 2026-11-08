@@ -15,6 +15,7 @@ import argparse
 import importlib
 import importlib.metadata
 import json
+from boundary_contracts import strict_json
 from datetime import datetime, timezone
 import logging
 import os
@@ -129,7 +130,7 @@ def load_config(path: str | None) -> dict:
     if not path:
         return {}
     with open(path, encoding="utf-8") as f:
-        cfg = json.load(f)
+        cfg = strict_json.loads(f.read())      # 계약 JSON 공통 규칙(CONVENTIONS 10절)
     # 왜: 형식의 정본은 계약의 GateJobConfig 스키마다(모르는 키 거부, 비밀은 {"secret": NAME}). 손으로 키를 검사하지 않는다(R7)
     errs = sorted(validator("GateJobConfig").iter_errors(cfg), key=lambda e: list(e.path))
     if errs:

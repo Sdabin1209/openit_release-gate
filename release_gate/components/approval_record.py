@@ -25,6 +25,7 @@ def draft(inp: dict) -> dict:
     body = inp["body"]
     validate_contract("ApprovalRequest", body)
     rec = {k: v for k, v in body.items() if k != "report_hash"}
+    # 왜 [4:] 가 안전한가: ApprovalDraftInput.submission_id 가 `^sub-.` 를 강제한다(접수가 만든 ID 접두사, 영역 내부 규칙). 앞 4자를 떼고 "ap-" 를 붙이면 계약 Id(최대 128자)보다 항상 1자 짧다
     rec.update({"pipeline_schema_version": PIPELINE_SCHEMA_VERSION, "approval_id": "ap-" + inp["submission_id"][4:],
                 "approver_id": inp["approver_id"], "approver_role": inp["token_role"], "decided_at": inp["decided_at"]})
     if inp.get("current_report_hash") is not None:

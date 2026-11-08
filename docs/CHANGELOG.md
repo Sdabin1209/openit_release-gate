@@ -1,5 +1,14 @@
 # 변경 이력
 
+## (미배포) 계약 5.0.0 반영(브랜치 contract-5)
+
+- 계약 고정 v5.0.0(`requirements.txt`, `pyproject` 범위 `boundary-contracts>=5,<6`·`openit-link>=0.6,<0.7`). link v0.6.0·문진 스키마 survey-schema-v5.0.0·model-runtime v0.13.0 고정은 태그 게시 뒤에 맞춘다(그 전에는 link v0.5.4 가 계약 v4.0.5 를 요구해 `setup-env.sh` 설치가 의존 충돌로 실패한다).
+- ID 패턴 사본 삭제: `IdString`·`ApprovalDraftInput.approver_id`·`DecisionDraft.approval.{approval_id,approver_id}` 는 `x-contract: _common#/$defs/Id` 로 계약에 위임한다(생성된 `validate` 가 계약 검증기로 본다).
+- 검증 오류에 값을 싣지 않는다(INTERFACES I7): `validate_contract` 는 계약 `validate`(details 는 위반 위치·종류만), 내부 검증과 문진 스키마 검증은 경로와 위반 종류만 낸다. 그래서 평가 사유의 문구가 `ModelPackageManifest 계약 위반 1건` 처럼 칸 이름 없이 나온다.
+- 계약 JSON 공통 규칙: 정책 파일·잡 설정 파일·I3 평가 보고서 본문을 `strict_json.loads` 로 읽는다(NaN·1e999·중복 키·깊이 64·1 MiB 거부). 잘못된 파일은 `ValueError` 대신 `BoundaryError(INVALID_RECORD)` 다. 내부 검증도 `check_json_value` 를 먼저 건다.
+- 4.x 저장 데이터가 남은 환경은 조용히 섞이지 않는다: 저장소를 열 때 표마다 가장 오래된 레코드의 `pipeline_schema_version` MAJOR 가 설치된 계약과 다르면 `FAILED_PRECONDITION` 으로 시작을 거부한다(서비스·잡·읽기 전용 I4 모두, `tests/test_legacy_records.py`). 이전은 하지 않는다(새 환경 전제).
+- 시험: rollback `ext` 가 깊이 64를 넘으면 실제 HTTP 에서 400 INVALID_RECORD(`test_rollback_with_deeply_nested_ext_is_400_not_500`), `SUPPORTED_PIPELINE_MAJOR == 5`.
+
 ## (미배포) 전수 점검(sweep-1222): 롤백 요청 해시의 역할, 낡은 문서·주석 정정
 
 - **동작 차이(DB 이미지)**: `release-gate-db`가 root(uid 0)가 아니라 postgres(999:999)로 돈다(ADR-0024 2026-11-08). `io.openit.inputs` 선언의 process·written_by는 999:999, capabilities는 비었다. 배포는 `/certs`·`/run/secrets/db`·`POSTGRES_PASSWORD_FILE`을 uid 999가 읽게 주어야 한다. 기존 데이터 볼륨은 그대로 쓴다.

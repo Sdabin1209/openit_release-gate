@@ -13,7 +13,7 @@ def submit(world, subject=None):
 
 def test_supported_major_follows_installed_contract():
     import release_gate
-    assert release_gate.SUPPORTED_PIPELINE_MAJOR == int(PIPELINE_SCHEMA_VERSION.split(".")[0]) == 4      # 계약 4.0.0
+    assert release_gate.SUPPORTED_PIPELINE_MAJOR == int(PIPELINE_SCHEMA_VERSION.split(".")[0]) == 5      # 계약 5.0.0
 
 
 def test_release_copies_system_prompt_from_package(world, tmp_path):
@@ -47,7 +47,7 @@ def test_package_without_system_prompt_is_rejected(world):
     m["content_hash"] = canonical.content_hash(m)
     submit(world, world.subject(a=m))
     d = world.engine().process_pending()[0]
-    assert d["result"] == "REJECT" and "system_prompt" in " | ".join(d["reject_reasons"])
+    assert d["result"] == "REJECT" and "ModelPackageManifest 계약 위반" in " | ".join(d["reject_reasons"])      # 계약 validate 는 위반한 값·칸 이름을 싣지 않는다(INTERFACES I7)
 
 
 def test_prompt_hash_mismatch_blocks_release(world):
@@ -90,7 +90,7 @@ def test_tampered_system_prompt_in_stored_bundle_is_integrity_error(world, tmp_p
 
 
 def test_contract_compat_accepts_any_minor_of_installed_major(world):
-    """CONTRACT_COMPAT는 MAJOR만 비교하므로(추가형 MINOR) 설치된 계약 MAJOR(4.0.0 부터 4)의 x.0·x.1 매니페스트를 모두 받는다."""
+    """CONTRACT_COMPAT는 MAJOR만 비교하므로(추가형 MINOR) 설치된 계약 MAJOR(5.0.0 부터 5)의 x.0·x.1 매니페스트를 모두 받는다."""
     from boundary_contracts import PIPELINE_SCHEMA_VERSION
     major = PIPELINE_SCHEMA_VERSION.split(".")[0]
     for i, psv in enumerate((f"{major}.0", f"{major}.1")):

@@ -34,6 +34,7 @@ import boundary_contracts
 import jsonschema
 from boundary_contracts import format_checker as _bc_format_checker  # 형식(format) 검증기가 없으면 조용히 넘기지 않고 실패한다(계약 3.5.0)
 from boundary_contracts.errors import BoundaryError
+from boundary_contracts.strict_json import check_json_value
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 
@@ -46,10 +47,27 @@ def _registry(docs: dict, suffix: str) -> Registry:
 
 
 def _message(name: str, v, record) -> str:
+    # 왜 e.message 를 안 쓰나: jsonschema 메시지는 위반한 값을 싣고(INTERFACES I7), 오류 응답·로그에 그대로 나간다. 경로와 위반 종류만 싣는다
     errs = sorted(v.iter_errors(record), key=lambda e: list(e.path))
+    errs += list(_external_errors(_INTERNAL[name], record))
     if not errs:
         return ""
-    return f"{name} 스키마 위반: " + "; ".join(f"{'/'.join(map(str, e.path)) or '.'}: {e.message}" for e in errs[:5])
+    return f"{name} 스키마 위반: " + "; ".join(f"{'/'.join(map(str, getattr(e, 'path', ()))) or '.'}: {getattr(e, 'validator', None) or 'x-contract'} 위반" for e in errs[:5])
+
+
+def _external_errors(node, value):
+    """x-contract 가 붙은 자리는 계약 검증기가 본다(계약 타입을 영역이 복사하지 않는다, D117). properties·items·같은 파일 안 중첩만 따라간다."""
+    if not isinstance(node, dict):
+        return
+    if "x-contract" in node:
+        yield from boundary_contracts.validator(node["x-contract"]).iter_errors(value)
+    if isinstance(value, dict):
+        for k, sub in (node.get("properties") or {}).items():
+            if k in value:
+                yield from _external_errors(sub, value[k])
+    elif isinstance(value, list) and isinstance(node.get("items"), dict):
+        for item in value:
+            yield from _external_errors(node["items"], item)
 
 
 def validate(name: str, record, *, code: str = "INVALID_RECORD", details: Optional[dict] = None) -> None:
@@ -59,23 +77,15 @@ def validate(name: str, record, *, code: str = "INVALID_RECORD", details: Option
         if name not in _INTERNAL:
             raise BoundaryError("INVALID_RECORD", f"알 수 없는 내부 스키마: {name}")
         v = _cache[("i", name)] = jsonschema.Draft202012Validator({"$ref": f"{name}.json"}, registry=_registry(_INTERNAL, ".json"), format_checker=_bc_format_checker({"$ref": f"{name}.json"}))
+    check_json_value(record)      # 계약 JSON 공통 규칙(NaN·±2^53 밖 정수·깊이 64): 계약 검증기와 같은 보장을 내부 검사에도
     msg = _message(name, v, record)
     if msg:
         raise BoundaryError(code, msg, details)
 
 
 def validate_contract(name: str, record) -> None:
-    """boundary-contracts 계약 타입 검사. 위반이면 INVALID_RECORD."""
-    v = _cache.get(("c", name))
-    if v is None:
-        d = boundary_contracts.schema_dir()
-        docs = {p.name[: -len(".schema.json")]: boundary_contracts.load_schema(p.name[: -len(".schema.json")]) for p in sorted(d.glob("*.schema.json"))}
-        if name not in docs:
-            raise BoundaryError("INVALID_RECORD", f"알 수 없는 스키마: {name}")
-        v = _cache[("c", name)] = jsonschema.Draft202012Validator({"$ref": f"{name}.schema.json"}, registry=_registry(docs, ".schema.json"), format_checker=_bc_format_checker({"$ref": f"{name}.schema.json"}))
-    msg = _message(name, v, record)
-    if msg:
-        raise BoundaryError("INVALID_RECORD", msg)
+    """boundary-contracts 계약 타입 검사(계약 validate: 오류에 값을 싣지 않는다). 위반이면 INVALID_RECORD."""
+    boundary_contracts.validate(name, record)
 '''
 
 

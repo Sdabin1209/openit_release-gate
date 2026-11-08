@@ -75,6 +75,9 @@ def test_registry_helper_passes_the_timeouts_to_the_store(monkeypatch, schemas, 
     class Rec:
         def __init__(self, url, root, **kw):
             seen.update(kw)
+
+        def _q(self, sql, args=()):      # 4.x 레코드 점검(assert_no_legacy_records)이 읽는다: 빈 저장소
+            return []
     monkeypatch.setattr(registry_store, "PostgresStore", Rec)
     postgres_registry(SECRET_URL, tmp_path / "d", schemas, config, connect_timeout=1, statement_timeout=2, probe_timeout=3)
     from release_gate.wiring.util import SystemClock

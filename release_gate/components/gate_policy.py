@@ -10,6 +10,8 @@ D53: 출고는 사람이 정한다. 정책에는 통과 임계치가 없다. 자
 from __future__ import annotations
 
 import json
+from boundary_contracts import strict_json
+from boundary_contracts.errors import BoundaryError
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -61,9 +63,9 @@ class GatePolicy:
         if not text:
             return cls.default()
         try:
-            d = json.loads(text)
-        except ValueError as e:
-            raise PolicyError(f"gate_policy가 JSON이 아니다: {e}") from e
+            d = strict_json.loads(text)      # 계약 JSON 공통 규칙(NaN·1e999·중복 키·깊이 64·1 MiB 거부, CONVENTIONS 10절)
+        except (ValueError, BoundaryError) as e:      # strict_json 은 BoundaryError(INVALID_RECORD)로 올린다
+            raise PolicyError(f"gate_policy가 JSON이 아니다: {getattr(e, 'message', e)}") from e
         validate_policy(d)
         return cls.from_dict(d)
 

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+from boundary_contracts import strict_json
 import copy
 import os
 from typing import Optional
@@ -125,11 +126,11 @@ class ModelsLink:
             d["report_problems"].append(f"{role}: 평가 보고서 {m['eval_report_ref']}를 읽지 못했다({e.code})")
             return
         try:
-            rep = json.loads(raw)
+            rep = strict_json.loads(raw)      # 이웃(I3)이 준 본문: 계약 JSON 공통 규칙
             if not isinstance(rep, dict):
                 raise ValueError("객체가 아니다")
-        except (ValueError, TypeError) as e:
-            d["report_problems"].append(f"{role}: 평가 보고서가 JSON이 아니다({e})")
+        except (ValueError, TypeError, BoundaryError) as e:
+            d["report_problems"].append(f"{role}: 평가 보고서가 JSON이 아니다({getattr(e, 'message', e)})")
             return
         try:
             validate_contract("EvaluationReport", rep)

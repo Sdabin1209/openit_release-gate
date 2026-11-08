@@ -183,3 +183,22 @@ def test_bad_header_format_is_rejected(world, server):
     rid = world.make_release()
     assert post(server, "/v1/activate", {"release_id": rid}, "wo", "bad user!")[0] == 400
     assert post(server, "/v1/activate", {"release_id": rid}, "wq", None)[0] == 403       # 권한 없는 역할은 헤더 이전에 403
+
+
+def _nested(depth: int) -> dict:
+    v: dict = {}
+    for _ in range(depth):
+        v = {"a": v}
+    return v
+
+
+@pytest.mark.parametrize("depth", [70, 1500])
+def test_rollback_with_deeply_nested_ext_is_400_not_500(world, server, depth):
+    """계약 JSON 공통 규칙(깊이 64, CONVENTIONS 10절): ext 가 깊으면 요청 해시(canonical)까지 가기 전에 HTTP 400 이다. 1500 은 canonical 재귀 한계(1000)를 넘는다(RecursionError 가 500 이 되던 경로, 실제 HTTP)."""
+    r1 = world.make_release()
+    r2 = world.make_release(world.subject(qs=world.q.add("qs-main", 2)))
+    post(server, "/v1/activate", {"release_id": r2}, "wo", "alice")
+    body = dict(admin_rollback_body("rb-deep", r2, r1), ext=_nested(depth))
+    st, e = post(server, "/v1/rollback", body, "wo", "bob")
+    assert st == 400 and e["code"] == "INVALID_RECORD", (st, e)
+    assert post(server, "/v1/rollback", dict(body, ext=_nested(5)), "wo", "bob")[0] == 200      # 얕은 ext 는 통과(같은 경로가 정상 동작)

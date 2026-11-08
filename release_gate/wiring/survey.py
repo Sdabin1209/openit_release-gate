@@ -20,4 +20,5 @@ class SurveySchema:
         self._qb = jsonschema.Draft202012Validator(doc, format_checker=_bc_format_checker(doc))
 
     def validate_question_bank(self, bank: dict) -> list[str]:
-        return [f"{'/'.join(map(str, e.path)) or '.'}: {e.message}" for e in self._qb.iter_errors(bank)][:5]
+        # 왜 e.message 가 아니라 위반 종류: jsonschema 메시지는 위반한 값을 싣고 판정 사유로 응답·로그에 나간다(INTERFACES I7)
+        return [f"{'/'.join(map(str, e.path)) or '.'}: {e.validator} 위반" for e in self._qb.iter_errors(bank)][:5]

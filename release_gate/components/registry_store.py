@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
-from boundary_contracts import canonical
+from boundary_contracts import PIPELINE_SCHEMA_VERSION, canonical
 from boundary_contracts.errors import BoundaryError
 
 from ..types.validators import validate
@@ -1284,3 +1284,21 @@ class PostgresStore(ReleaseFiles, Store):
             c.execute("INSERT INTO receipts(request_id, request_hash, record) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",
                       (request_id, request_hash, json.dumps(receipt, ensure_ascii=False)))
         return self.get_receipt(request_id)
+
+
+_RECORD_TABLES = ("submissions", "decisions", "releases", "pointer_history", "approvals", "receipts")
+
+
+def assert_no_legacy_records(store) -> None:
+    """계약 5.0.0 '새 환경 전제'(CHANGELOG): 설치된 계약과 다른 MAJOR 의 레코드가 저장소에 있으면 조용히 섞지 않고 시작을 거부한다.
+    왜 표마다 가장 오래된 한 줄만: 한 환경은 한 MAJOR 로 시작해 쌓이므로 옛 데이터가 있다면 가장 오래된 줄에 있다(전체 훑기는 기동을 늘린다). 측정 안 함."""
+    major = PIPELINE_SCHEMA_VERSION.split(".")[0]
+    for table in _RECORD_TABLES:
+        order = "pointer_version" if table == "pointer_history" else ("request_id" if table == "receipts" else ("submission_id" if table == "approvals" else "seq"))
+        rows = store._q(f"SELECT record FROM {table} ORDER BY {order} LIMIT 1")
+        if not rows:
+            continue
+        got = str(json.loads(rows[0][0]).get("pipeline_schema_version", ""))
+        if got.split(".")[0] != major:
+            raise BoundaryError("FAILED_PRECONDITION",
+                                f"저장소 표 {table} 에 계약 MAJOR {got or '없음'} 의 레코드가 있다(설치된 계약 MAJOR {major}). 4.x 데이터는 이전하지 않는다: 새 저장소로 시작한다")
