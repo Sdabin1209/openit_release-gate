@@ -137,7 +137,7 @@
       "writable": [
         {
           "path": "/data",
-          "persist": false,
+          "persist": true,
           "written_by": {
             "uid": 10001,
             "gid": 999
@@ -451,7 +451,7 @@
       "writable": [
         {
           "path": "/data",
-          "persist": false,
+          "persist": true,
           "written_by": {
             "uid": 10001,
             "gid": 999

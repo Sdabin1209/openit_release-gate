@@ -75,3 +75,14 @@ def test_every_declared_job_has_an_input_profile():
     assert set(inputs["jobs"]) == {job["name"] for job in JOBS["jobs"]}
     for profile in inputs["jobs"].values():
         validator(profile["env_schema"])  # 존재하지 않는 계약 참조도 실패한다.
+
+
+@pytest.mark.parametrize("job", JOBS["jobs"], ids=lambda j: j["name"])
+def test_a_job_that_needs_gate_data_declares_data_as_persistent(job):
+    """2026-11-08 E2E 단계 9 회귀: 잡이 gate-data(릴리스 묶음 releases/)를 필요로 하면 주입 선언의 /data 는 유지 경로(persist, 이름 있는 볼륨)다.
+    persist=false 로 두면 배치 쪽은 tmpfs 로 줄 수 있고, 그러면 백업은 묶음 파일을 빠뜨리고 복구는 되살린 묶음을 컨테이너와 함께 잃는다.
+    (실제로 tmpfs /data 는 root 755 로 주어져 비root 잡이 .backup-stage 를 만들지 못했다: PermissionError)"""
+    inputs = json.loads((ROOT / "deploy-inputs.json").read_text(encoding="utf-8"))
+    data = [w for w in inputs["jobs"][job["name"]]["writable"] if w["path"] == "/data"]
+    if "gate-data" in job.get("needs", []):
+        assert data and data[0]["persist"] is True
