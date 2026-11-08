@@ -45,6 +45,9 @@ class Db:
         return psycopg.connect(host="localhost", port=self.port, dbname=db, user=user, password=password or PW.get(user, ""),
                                sslmode=sslmode, sslrootcert=str(self.root), connect_timeout=5, autocommit=True)
 
+    def exec(self, *argv):
+        return _sh("docker", "exec", self.name, *argv)
+
     def psql_super(self, sql):
         r = _sh("docker", "exec", "-e", f"PGPASSWORD={SUPER_PW}", self.name, "psql", "-U", "postgres", "-d", "postgres", "-At", "-c", sql)
         assert r.returncode == 0, r.stderr[-300:]
@@ -74,11 +77,11 @@ def _start(tmp: Path, mutate=None):
     for d in (certs, secrets):
         d.chmod(0o755)
         for f in d.iterdir():
-            f.chmod(0o600)      # 배포가 마운트한 파일은 root 소유 0600일 수 있다: 진입점이 postgres가 읽을 사본을 만든다
+            f.chmod(0o644)      # 비root(999) 컨테이너는 호스트 사용자 소유 0600 파일을 못 읽는다. 배포는 선언(ContainerInputs files)의 uid 로 읽게 주고, 시험은 같은 효과를 읽기 권한으로 낸다. 서버 키 사본(0600)은 진입점이 만든다
     name = "release-gate-db-test-" + uuid.uuid4().hex[:8]
     r = _sh("docker", "run", "-d", "--name", name,
             "--read-only", "--tmpfs", "/tmp", "--tmpfs", "/run", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
-            *[v for cap in ("CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID") for v in ("--cap-add", cap)], "-p", "127.0.0.1::5432", "-v", f"{certs}:/certs:ro", "-v", f"{secrets}:/run/secrets/db:ro",
+"-p", "127.0.0.1::5432", "-v", f"{certs}:/certs:ro", "-v", f"{secrets}:/run/secrets/db:ro",
             "-v", f"{tmp / 'superpw'}:/run/secrets/super:ro", "-e", "POSTGRES_PASSWORD_FILE=/run/secrets/super", tag)
     assert r.returncode == 0, r.stderr[-300:]
     # 호스트 포트는 Docker 가 배정한다(공통 규칙 '고정 포트 금지'). 시험이 빈 포트를 골라 넘기면 Windows 호스트의 예약 범위와 겹쳐 bind 가 거부될 수 있다(2026-11-07 E2E 사전 점검)
@@ -112,6 +115,16 @@ def _start(tmp: Path, mutate=None):
 
 
 # --- 단언(변이 시험이 같은 함수를 부른다)
+def check_runs_as_declared_non_root(db):
+    """컨테이너 프로세스의 uid:gid 가 선언(db/inputs.json process)과 같고 root 가 아니다(공통 규칙, ContainerInputs D134). 서버(postmaster)와 데이터 폴더 소유도 같다."""
+    decl = json.loads((ROOT / "db" / "inputs.json").read_text(encoding="utf-8"))["roles"]["default"]
+    want = f"{decl['process']['uid']}:{decl['process']['gid']}"
+    got = db.exec("id", "-u").stdout.strip() + ":" + db.exec("id", "-g").stdout.strip()
+    assert got == want and not got.startswith("0:"), f"실행 사용자 {got} 가 선언 {want} 와 다르거나 root 다"
+    owner = db.exec("stat", "-c", "%u:%g", "/var/lib/postgresql/data").stdout.strip()
+    assert owner == want, f"데이터 폴더 소유 {owner} 가 선언 {want} 와 다르다"
+
+
 def check_public_cannot_connect(db):
     acl = db.psql_super("SELECT coalesce(datacl::text, '') FROM pg_database WHERE datname = 'gate'")
     assert not re.search(r"(^\{|,)=", acl), acl      # PUBLIC(이름이 빈) 항목이 없다
@@ -141,6 +154,18 @@ def test_operating_declaration_is_valid_and_matches_the_gate_env_name():
     env = validator("GateEnv").schema["properties"]
     assert all(n in env for a in decl["accounts"] for n in a["url_env"])      # url_env는 이 영역 Env 스키마에 있는 이름이다
     assert decl["engine"] == "postgresql" and decl["major"] == 16
+
+
+def test_image_runs_as_the_declared_non_root_user(db):
+    check_runs_as_declared_non_root(db)
+
+
+def test_declaration_is_non_root_without_capabilities():
+    decl = json.loads((ROOT / "db" / "inputs.json").read_text(encoding="utf-8"))["roles"]["default"]
+    ids = {(decl["process"]["uid"], decl["process"]["gid"])} | {(w["written_by"]["uid"], w["written_by"]["gid"]) for w in decl["writable"]}
+    assert len(ids) == 1 and 0 not in next(iter(ids)), ids
+    assert decl["capabilities"] == []      # root 가 아니면 chown·권한 우회가 필요 없다
+    assert re.search(r"^USER postgres$", (ROOT / "db" / "Dockerfile").read_text(encoding="utf-8"), re.M)
 
 
 def test_owner_connects_over_verify_full_and_changes_the_schema(db):
@@ -231,6 +256,7 @@ def test_connection_rules_tls_only_scram_only_no_superuser_over_the_network(db):
 @pytest.mark.parametrize("what,mutate,check", [
     ("PUBLIC CONNECT 회수를 뺀다", lambda n, t: t.replace("REVOKE ALL ON DATABASE $db FROM PUBLIC;", "") if n == "init-openit.sh" else t, check_public_cannot_connect),
     ("인증서 재읽기 감시를 뺀다", lambda n, t: t.replace('  ) &\n', '  ) >/dev/null 2>&1 && true\n', 1).replace('while sleep 5; do', 'while false; do') if n == "docker-entrypoint-openit.sh" else t, check_renewed_certificate_is_served),
+    ("USER 줄을 뺀다", lambda n, t: t.replace("USER postgres\n", "", 1) if n == "Dockerfile" else t, check_runs_as_declared_non_root),
     ("hostssl을 host로 바꾼다", lambda n, t: t.replace('f"hostssl ', 'f"host ') if n == "gen.py" else t, check_tls_and_scram_only),
 ])
 def test_mutations_make_the_assertions_fail(tmp_path, what, mutate, check):

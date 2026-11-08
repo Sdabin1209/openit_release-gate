@@ -19,5 +19,8 @@ COPY init-openit.sh /docker-entrypoint-initdb.d/10-openit-init.sh
 # 왜 scram: initdb가 만드는 데이터 폴더의 pg_hba.conf에도 trust가 남지 않게 한다(실제 접속 규칙은 /etc/openit/pg_hba.conf)
 ENV POSTGRES_INITDB_ARGS="--auth-local=scram-sha-256 --auth-host=scram-sha-256"
 HEALTHCHECK --interval=10s --timeout=3s --retries=12 CMD pg_isready -q
+# 왜 USER postgres: 공통 규칙 'root 가 아닌 사용자'. 공식 이미지의 postgres 는 999:999 이고(image id 로 확인) 선언(db/inputs.json)의 process·written_by 와 같아야 한다.
+# scripts/build-db-image.sh 가 이 줄이 없어 uid 0 이면 선언과 대조해 빌드를 거부한다(tests/test_db_image.py 변이 시험)
+USER postgres
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint-openit.sh"]
 CMD ["postgres"]
