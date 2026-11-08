@@ -2,7 +2,7 @@
 
 ## (미배포) 전수 점검(sweep-1222): 롤백 요청 해시의 역할, 낡은 문서·주석 정정
 
-- **동작 차이**: `POST /v1/rollback`이 본문 `requested_by_role`을 토큰 역할로 덮어쓸 때 내부 접두사(`w:`)가 붙은 값(`w:operator`)으로 덮었다. 접두사를 뗀 역할(`operator`)로 덮는다. 요청 해시(`request_hash`)가 이 본문으로 계산되므로, 이 변경 이전에 같은 `request_id`로 저장된 롤백 영수증은 같은 요청을 다시 보내면 CONFLICT(`같은 request_id에 다른 요청`)가 된다(새 `request_id`로 보내면 된다. 미배포 단계라 저장된 영수증은 시험 데이터뿐이다).
+- **동작 차이**: `POST /v1/rollback`이 본문 `requested_by_role`을 토큰 역할로 덮어쓸 때 내부 접두사(`w:`)가 붙은 값(`w:operator`)으로 덮었다. 접두사를 뗀 역할(`operator`)로 덮는다. 요청 해시(`request_hash`)가 이 본문으로 계산되므로, 이 변경 이전에 같은 `request_id`로 저장된 롤백 영수증은 같은 요청을 다시 보내면 멱등 재생이 아니라 HTTP 409 CONFLICT(`같은 request_id에 다른 요청`)가 된다(확인: `tests/test_actor.py::test_resend_of_receipt_stored_before_the_fix_is_conflict`. 새 `request_id`로 보내면 된다. 수정 자체는 `test_http_rollback_request_hash_uses_unprefixed_role_body`가 지킨다. 미배포 단계라 저장된 영수증은 시험 데이터뿐이다).
 - 문서·주석을 현재 코드에 맞췄다: runbook의 잡 설정 예시(`i1_factory`·`i1_options` 폐기, `i1`·`i3`의 `token_secret`), 없어진 `GATE_READ_TOKEN_FILE`, 정식 시험 명령(`scripts/test-all.sh`), design.md의 `report_hash` 설명과 접수 역할, boundary.md의 계약 MAJOR·`/metrics`·잡 목록, components.md의 백업·복구 컴포넌트 행, 복사해 두었던 이웃·계약 버전 숫자(STATUS, components.md, schemas/README), `Store`·`ReleaseFiles`의 docstring 위치, db/init-openit.sh 주석, ADR-0013·0023의 빠진 항목(대안·결과·맥락).
 - 안 쓰는 import 제거(main.py, decision_builder.py). 설치처를 특정하는 표현("병원 규정")을 "설치처 규정"으로.
 

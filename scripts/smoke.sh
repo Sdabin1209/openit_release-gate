@@ -41,7 +41,8 @@ supported="$("$DOCKER" run --rm --entrypoint cat "$tag" /opt/contracts/survey-sc
 port="$("$DOCKER" port "$name" 8080/tcp | head -1 | tr -d '\r' | sed 's/.*://')"
 [ -n "$port" ] || { echo "FAIL: 포트 배정 실패"; exit 1; }
 ok=""
-for _ in $(seq 1 30); do
+# 왜 300회: 기동 대기는 판정이 아니라 멈춤 방지다(tests/conftest.py HANG_GUARD_SECONDS 와 같은 값, 이전 30은 근거 없는 값, 측정하지 않았다)
+for _ in $(seq 1 300); do
   if curl -fsS "http://127.0.0.1:$port/healthz" >/dev/null 2>&1; then ok=1; break; fi
   sleep 1
 done

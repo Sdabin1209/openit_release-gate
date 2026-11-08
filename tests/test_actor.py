@@ -123,6 +123,31 @@ def test_rollback_body_without_role_is_accepted(world, server):
     assert post(server, "/v1/rollback", body, "wo", "bob") == (200, rc)                   # 재전송은 같은 영수증(멱등)
 
 
+def test_http_rollback_request_hash_uses_unprefixed_role_body(world, server):
+    """HTTP 로 낸 롤백의 요청 해시는 접두사 없는 역할('operator') 본문으로 계산한 값이다(2026-11-08 전수 점검 수정: 토큰 내부 접두사 'w:operator' 를 본문에 섞던 결함).
+    같은 요청을 서비스 API 로 직접 내면(해시가 다르면 CONFLICT) 같은 영수증이어야 한다. 변이: link_http_server.rollback 의 req.role[2:] 를 req.role 로 되돌리면 실패한다."""
+    r1 = world.make_release()
+    r2 = world.make_release(world.subject(qs=world.q.add("qs-main", 2)))
+    post(server, "/v1/activate", {"release_id": r2}, "wo", "alice")
+    body = admin_rollback_body("rb-h", r2, r1)
+    st, rc = post(server, "/v1/rollback", body, "wo", "bob")
+    assert st == 200 and rc["status"] == "APPLIED", rc
+    direct = world.reg.service.request_rollback(dict(body, requested_by_role="operator"), requested_by_role="operator", requested_by="bob")
+    assert direct == rc
+
+
+def test_resend_of_receipt_stored_before_the_fix_is_conflict(world, server):
+    """수정 전 영수증(본문에 'w:operator' 가 든 해시)을 가진 같은 request_id 를 다시 보내면 멱등이 아니라 409 CONFLICT 다(CHANGELOG·runbook 에 적은 동작). 새 request_id 로 보내면 된다."""
+    r1 = world.make_release()
+    r2 = world.make_release(world.subject(qs=world.q.add("qs-main", 2)))
+    post(server, "/v1/activate", {"release_id": r2}, "wo", "alice")
+    body = admin_rollback_body("rb-old", r2, r1)
+    world.reg.service.request_rollback(dict(body, requested_by_role="w:operator"), requested_by_role="operator", requested_by="bob")   # 옛 코드가 저장한 모양
+    st, e = post(server, "/v1/rollback", body, "wo", "bob")
+    assert st == 409 and e["code"] == "CONFLICT", (st, e)
+    assert post(server, "/v1/rollback", dict(body, request_id="rb-old-2"), "wo", "bob")[0] == 200
+
+
 def test_rollback_token_role_overrides_body_role(world, server):
     r1 = world.make_release()
     r2 = world.make_release(world.subject(qs=world.q.add("qs-main", 2)))

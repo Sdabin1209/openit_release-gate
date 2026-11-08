@@ -29,7 +29,8 @@ chmod -R a+rX "$sdir"
   -v "$sdir/certs/root.pem:/root.pem:ro" -e POSTGRES_PASSWORD_FILE=/run/secrets/super "$tag" >/dev/null
 account="$("${PYTHON:-python3}" -c 'import json,sys; a=json.load(open(sys.argv[1]))["accounts"][0]; print(a["name"], a["database"])' "$here/deploy-database.json")"
 set -- $account; user="$1"; dbname="$2"
-ok=0; for _ in $(seq 1 120); do
+# 왜 300회(약 300초 이상): 기동 대기는 판정이 아니라 영원히 멈추지 않게 하는 장치다. 이전 120은 근거 없는 값이라 부하에서 걸릴 수 있다. 값은 tests/conftest.py HANG_GUARD_SECONDS(=300, 정상 경로의 수만 배)와 같게 둔다. 측정하지 않았다
+ok=0; for _ in $(seq 1 300); do
   if "$DOCKER" exec -e PGPASSWORD="$(cat "$sdir/secrets/$user")" "$name" psql "host=localhost dbname=$dbname user=$user sslmode=verify-full sslrootcert=/root.pem" -Atc 'select 1' >/dev/null 2>&1; then ok=1; break; fi
   sleep 1
 done

@@ -16,11 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _run(cmd, tmp_path, extra=None):
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("GATE_", "OPENIT_"))}
+    # 왜 최소 환경: 상속한 환경 전체를 자식에게 넘기면 시험이 정하지 않은 값(다른 GATE_*·OPENIT_*·비밀)이 섞인다(RUNTIME R9.1). 필요한 이름만 담는다:
+    # PATH(실행 파일 탐색), PYTHONPATH(있으면: 가상환경 밖 설치 경로), 문자 인코딩(오류 문구가 한국어), 나머지는 아래 시험이 정한 GATE_* 뿐이다
+    env = {"PYTHONIOENCODING": "utf-8", **{k: os.environ[k] for k in ("PATH", "PYTHONPATH") if k in os.environ}}
     (tmp_path / "rt").write_text("svc=read-tok"); (tmp_path / "wt").write_text("operator=write-tok")      # serve 의 환경 검증(GateEnv)을 지나 이웃 검사까지 가게 한다
     env.update({"GATE_READ_TOKENS_FILE": str(tmp_path / "rt"), "GATE_WRITE_TOKENS_FILE": str(tmp_path / "wt")})
     env.update({"GATE_DATA_DIR": str(tmp_path), "GATE_SURVEY_SCHEMA_DIR": str(__import__("conftest").SURVEY), "GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION": "1", "GATE_MODEL_RUNTIME_VERSION": "v0.0.0", **(extra or {})})
-    return subprocess.run([sys.executable, "-m", "release_gate", cmd], capture_output=True, text=True, env=env, cwd=ROOT, timeout=HANG_GUARD_SECONDS)
+    return subprocess.run([sys.executable, "-m", "release_gate", cmd], capture_output=True, text=True, encoding="utf-8", env=env, cwd=ROOT, timeout=HANG_GUARD_SECONDS)
 
 
 @pytest.mark.parametrize("cmd", ["serve", "collect", "judge"])

@@ -93,7 +93,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 
 - 정책 적용: 정책 JSON(선택)을 갱신하고 서비스를 재시작한다.
 - 후보 수동 제출: `POST /v1/submissions` (쓰기 토큰). 같은 조합은 기존 접수를 돌려준다.
-- 활성화: `POST /v1/activate`. 롤백: `POST /v1/rollback`(`RollbackRequest`). 현재 포인터: `GET /v1/active-pointer`.
+- 활성화: `POST /v1/activate`. 롤백: `POST /v1/rollback`(`RollbackRequest`). 같은 `request_id`·같은 본문은 같은 영수증을 돌려준다(멱등). 본문이 다르면 409 CONFLICT다. 2026-11-08 수정 전에 저장된 롤백 영수증(요청 해시에 내부 접두사 `w:operator`가 섞였다)과 같은 `request_id`로 다시 보내도 409다: 새 `request_id`로 보낸다(CHANGELOG). 현재 포인터: `GET /v1/active-pointer`.
 - 제출이 `AWAITING_APPROVAL`에 오래 머무름: 승인자가 보고서를 보고 결정해야 한다(`/readyz`의 `awaiting_approval`). 자동 검사에서 멈춤(`RECEIVED`)이면 I1·I3 연결과 로그를 본다.
 - INTEGRITY_ERROR(로그 error 수준): 릴리스 묶음 파일이 변조되었거나 손상되었다. 그 릴리스를 활성화하지 말고, 활성이면 이전 PASS 릴리스로 롤백 요청한 뒤 레지스트리 백업에서 복구한다.
 
