@@ -7,6 +7,7 @@ import re
 import shutil
 import ssl
 import subprocess
+from minimal_env import minimal_env
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -50,7 +51,7 @@ def test_postgres_sslmode_in_the_secret_url_is_passed_through():
 @pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl 명령이 없다")
 def test_private_root_is_trusted_through_ssl_cert_file_only(tmp_path, monkeypatch):
     def sh(*a):
-        subprocess.run(a, cwd=tmp_path, check=True, capture_output=True, timeout=HANG_GUARD_SECONDS)
+        subprocess.run(a, cwd=tmp_path, check=True, capture_output=True, timeout=HANG_GUARD_SECONDS, env=minimal_env())
     sh("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "root.key", "-out", "root.pem", "-days", "2", "-subj", "/CN=test-root")
     sh("openssl", "req", "-newkey", "rsa:2048", "-nodes", "-keyout", "srv.key", "-out", "srv.csr", "-subj", "/CN=localhost")
     (tmp_path / "ext").write_text("subjectAltName=IP:127.0.0.1\nbasicConstraints=CA:FALSE\n")

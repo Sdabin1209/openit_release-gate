@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from minimal_env import minimal_env
 import threading
 import urllib.error
 import urllib.request
@@ -40,7 +41,7 @@ def _ready(url):
             psycopg.connect(url, connect_timeout=1).close()
             return True
         except psycopg.Error:
-            subprocess.run(["sleep", "0.3"])
+            subprocess.run(["sleep", "0.3"], env=minimal_env())
     return False
 
 

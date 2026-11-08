@@ -7,6 +7,7 @@ import json
 import shutil
 import sqlite3
 import subprocess
+from minimal_env import minimal_env
 import uuid
 from pathlib import Path
 
@@ -68,7 +69,7 @@ def store_server(tmp_path):
             chk = _sh("docker", "run", "--rm", "--network", f"container:{name}", "--entrypoint", "sh", RESTIC_IMAGE, "-c", "nc -z 127.0.0.1 8000")
             if chk.returncode == 0:
                 break
-            subprocess.run(["sleep", "0.2"])
+            subprocess.run(["sleep", "0.2"], env=minimal_env())
         else:
             raise AssertionError("rest-server 가 127.0.0.1:8000 에서 받지 않는다: " + _sh("docker", "logs", name).stderr[-300:])
         yield "https://127.0.0.1:8000/release-gate", certs / "root.pem", f"container:{name}"

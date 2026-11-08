@@ -4,6 +4,8 @@ import io, os, subprocess, tarfile, tempfile
 from functools import lru_cache
 from pathlib import Path
 
+from minimal_env import minimal_env
+
 ROOT = Path(__file__).resolve().parents[1]
 WS = Path(os.environ.get("WORKSPACE_DIR") or ROOT.parent)
 
@@ -12,12 +14,12 @@ WS = Path(os.environ.get("WORKSPACE_DIR") or ROOT.parent)
 def pinned_tree(repo: str, tag: str, path: str = "") -> Path:
     dest = Path(tempfile.mkdtemp(prefix=f"deps-{repo}-"))
     local = WS / repo
-    r = subprocess.run(["git", "-C", str(local), "archive", tag] + ([path] if path else []), capture_output=True) if local.is_dir() else None
+    r = subprocess.run(["git", "-C", str(local), "archive", tag] + ([path] if path else []), capture_output=True, env=minimal_env()) if local.is_dir() else None
     if r is not None and r.returncode == 0:
         tarfile.open(fileobj=io.BytesIO(r.stdout)).extractall(dest, filter="data")
         return dest / path if path else dest
     url = f"git@github.com:Sdabin1209/openit_{repo}.git"
-    c = subprocess.run(["git", "clone", "-q", "--depth", "1", "--branch", tag, url, str(dest / "clone")], capture_output=True, text=True)
+    c = subprocess.run(["git", "clone", "-q", "--depth", "1", "--branch", tag, url, str(dest / "clone")], capture_output=True, text=True, env=minimal_env("SSH_AUTH_SOCK"))      # ssh 에이전트 소켓만 더한다(git+ssh 받기)
     if c.returncode != 0:
         raise RuntimeError(f"{repo} {tag} 를 옆 폴더({local})에서도 {url} 에서도 꺼내지 못했다: {c.stderr.strip()[-200:]}")
     return dest / "clone" / path if path else dest / "clone"

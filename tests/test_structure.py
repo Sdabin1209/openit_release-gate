@@ -5,6 +5,7 @@ import ast
 import json
 import re
 import subprocess
+from minimal_env import minimal_env
 import sys
 from pathlib import Path
 
@@ -83,7 +84,7 @@ def test_every_schema_has_valid_and_invalid_examples_and_results_match():
 def test_types_match_regenerated_output():
     tool = ROOT / ".venv-tools" / "bin" / "python"
     assert tool.exists(), "타입 생성 도구가 없다: python3 -m venv .venv-tools && .venv-tools/bin/pip install -r requirements-tools.txt"
-    r = subprocess.run([str(tool), str(ROOT / "scripts" / "gen_types.py"), "--check"], capture_output=True, text=True)
+    r = subprocess.run([str(tool), str(ROOT / "scripts" / "gen_types.py"), "--check"], capture_output=True, text=True, env=minimal_env())
     assert r.returncode == 0, r.stdout + r.stderr
 
 

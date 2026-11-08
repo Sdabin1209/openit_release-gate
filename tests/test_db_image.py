@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 import subprocess
+from minimal_env import minimal_env
 import uuid
 from pathlib import Path
 
@@ -106,7 +107,7 @@ def _start(tmp: Path, mutate=None):
             except psycopg.Error:
                 if _sh("docker", "inspect", "-f", "{{.State.Running}}", name).stdout.strip() != "true":
                     break      # 컨테이너가 죽었으면 더 기다리지 않고 로그를 보인다
-                subprocess.run(["sleep", "0.5"])
+                subprocess.run(["sleep", "0.5"], env=minimal_env())
         # 진단을 먼저 남긴다: 컨테이너 상태(실행 여부·종료 코드·OOM·오류)와 로그 끝(비밀은 로그에 없다: 암호는 파일로만 간다)
         st = _sh("docker", "inspect", "-f", "running={{.State.Running}} status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} err={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}", name)
         logs = _sh("docker", "logs", name)
@@ -210,7 +211,7 @@ def test_the_service_migrates_and_stores_through_the_owner_url_with_verify_full(
 
 def _served_serial(port):
     r = subprocess.run(["bash", "-c", f"openssl s_client -starttls postgres -connect 127.0.0.1:{port} </dev/null 2>/dev/null | openssl x509 -noout -serial"],
-                       capture_output=True, text=True, timeout=HANG_GUARD_SECONDS)
+                       capture_output=True, text=True, timeout=HANG_GUARD_SECONDS, env=minimal_env())
     return r.stdout.strip()
 
 
@@ -227,7 +228,7 @@ def check_renewed_certificate_is_served(db):
     for _ in range(HANG_GUARD_SECONDS):      # 확인 주기(5초)보다 충분히 길게, 공통 매달림 감시 상수(conftest)로: 횟수로 제한한다
         if _served_serial(db.port) != before:
             break
-        subprocess.run(["sleep", "1"])
+        subprocess.run(["sleep", "1"], env=minimal_env())
     assert _served_serial(db.port) == "serial=5EED", "갱신된 인증서를 다시 읽지 않았다"
     with db.connect("gate") as c:      # 새 인증서로도 verify-full 접속이 된다(같은 루트가 서명)
         assert c.execute("SELECT 1").fetchone() == (1,)

@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+from minimal_env import minimal_env
 import sys
 import tarfile
 import io
@@ -52,7 +53,7 @@ def fake_docker(tmp_path):
 def run(tmp_path, req, docker="docker", extra_env=None):      # docker 환경은 scripts/docker_env.py 한 곳(스크립트가 스스로 맞춘다). 시험은 호출자의 환경 그대로 넘긴다
     p = tmp_path / "req.json"
     p.write_text(json.dumps(req))
-    env = {**os.environ, "PYTHON": sys.executable, "DOCKER": str(docker), **(extra_env or {})}
+    env = minimal_env("SSH_AUTH_SOCK", PYTHON=sys.executable, DOCKER=str(docker), **(extra_env or {}))      # ssh: build-image 가 openit-link 를 git+ssh 로 받는다
     return subprocess.run(["bash", str(SCRIPT), str(p)], capture_output=True, text=True, env=env, cwd=ROOT)
 
 
@@ -138,7 +139,7 @@ def test_missing_or_invalid_exposure_file_fails_the_build(tmp_path, fake_docker)
 
 def test_missing_request_file_fails(tmp_path):
     r = subprocess.run(["bash", str(SCRIPT), str(tmp_path / "nope.json")], capture_output=True, text=True, cwd=ROOT,
-                       env={**os.environ, "PYTHON": sys.executable})
+                       env=minimal_env(PYTHON=sys.executable))
     assert r.returncode != 0 and "build-image:" in r.stderr
 
 
@@ -195,7 +196,7 @@ def test_real_build_emits_build_image_result_with_labels_from_request(tmp_path):
     mr = _extract("model-runtime", PIN_MR, None, tmp_path / "mr")
     ss = _extract("survey-service", "survey-schema-" + PIN_SS, "schema", tmp_path / "ss")
     tag = f"release-gate-u42test:{os.getpid()}"
-    req = {**BASE, "image_tag": tag, "revision": subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip(),
+    req = {**BASE, "image_tag": tag, "revision": subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True, text=True, env=minimal_env()).stdout.strip(),
            "dependency_sources": {"boundary": str(bc), "model_runtime": str(mr), "survey_schema": str(ss)}}
     ids, layers = [], []
     try:

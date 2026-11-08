@@ -165,6 +165,6 @@ def test_turn_engine_is_gone_from_code_and_requirements():
     import subprocess
     root = Path(__file__).resolve().parent.parent
     out = subprocess.run(["git", "grep", "-n", "-i", "-E", "turn_engine|turn-engine", "--", "release_gate", "scripts", "Dockerfile", "requirements*.txt", "deploy-exposure.json"],
-                         cwd=root, capture_output=True, text=True).stdout
+                         cwd=root, capture_output=True, text=True, env=__import__("minimal_env").minimal_env()).stdout
     # 설명 주석(왜 없는지)은 허용하지 않는다: 남아 있으면 지운다
     assert out.strip() == "", out
