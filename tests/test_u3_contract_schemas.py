@@ -75,16 +75,19 @@ def test_every_job_output_matches_job_result(job_env, capsys):
     V("GateJobResult").validate(_last_json(capsys.readouterr().out))
 
 
-def test_config_error_prints_failed_json_and_exit_1(job_env, capsys, tmp_path, monkeypatch):
-    monkeypatch.setattr(gate_main, "NEIGHBORS", None)      # job_env 가 넣은 시험 대역을 빼고 실제 설정 경로를 탄다
-    for k in ("GATE_I1_URL", "GATE_I3_URL", "GATE_I1_TOKEN", "GATE_I3_TOKEN", "GATE_I1_TOKEN_FILE", "GATE_I3_TOKEN_FILE"):
-        monkeypatch.delenv(k, raising=False)      # I1·I3 설정이 없다(필수라 시작을 거부한다, 계약 4.0.0 D135)
+def test_config_error_prints_failed_json_and_exit_1(capsys, tmp_path, monkeypatch):
+    # 왜 job_env 를 안 쓰나: 그 fixture 는 _neighbors 에 시험 대역을 꽂는다. 여기는 이웃 설정이 없는 실제 경로(필수라 시작을 거부, 계약 4.0.0 D135)를 본다
+    monkeypatch.setattr(gate_main, "NEIGHBORS", None)
+    for k in ("GATE_I1_URL", "GATE_I3_URL", "GATE_I1_TOKEN", "GATE_I3_TOKEN", "GATE_I1_TOKEN_FILE", "GATE_I3_TOKEN_FILE", "GATE_DATABASE_URL", "GATE_DATABASE_URL_FILE"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GATE_SURVEY_SCHEMA_DIR", str(__import__("conftest").SURVEY))
+    monkeypatch.setenv("GATE_MODEL_RUNTIME_VERSION", "0.1.0")
     f = tmp_path / "c.json"
-    f.write_text(json.dumps({"data_dir": job_env["data_dir"]}))
+    f.write_text(json.dumps({"data_dir": str(tmp_path / "data")}))
     assert gate_main.main(["collect", "--config", str(f)]) == 1
     r = _last_json(capsys.readouterr().out)
     V("GateJobResult").validate(r)
-    assert r["status"] == "failed" and r["job"] == "collect"
+    assert r["status"] == "failed" and r["job"] == "collect" and "GATE_I1_URL" in r["reason"]
 
 
 def test_invalid_config_file_prints_failed_json(capsys):
