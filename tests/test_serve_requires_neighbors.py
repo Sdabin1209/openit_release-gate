@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import HANG_GUARD_SECONDS
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -18,7 +20,7 @@ def _run(cmd, tmp_path, extra=None):
     (tmp_path / "rt").write_text("svc=read-tok"); (tmp_path / "wt").write_text("operator=write-tok")      # serve 의 환경 검증(GateEnv)을 지나 이웃 검사까지 가게 한다
     env.update({"GATE_READ_TOKENS_FILE": str(tmp_path / "rt"), "GATE_WRITE_TOKENS_FILE": str(tmp_path / "wt")})
     env.update({"GATE_DATA_DIR": str(tmp_path), "GATE_SURVEY_SCHEMA_DIR": str(__import__("conftest").SURVEY), "GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION": "1", "GATE_MODEL_RUNTIME_VERSION": "v0.0.0", **(extra or {})})
-    return subprocess.run([sys.executable, "-m", "release_gate", cmd], capture_output=True, text=True, env=env, cwd=ROOT, timeout=60)
+    return subprocess.run([sys.executable, "-m", "release_gate", cmd], capture_output=True, text=True, env=env, cwd=ROOT, timeout=HANG_GUARD_SECONDS)
 
 
 @pytest.mark.parametrize("cmd", ["serve", "collect", "judge"])

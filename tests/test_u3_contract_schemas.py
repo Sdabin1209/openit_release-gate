@@ -76,7 +76,9 @@ def test_every_job_output_matches_job_result(job_env, capsys):
 
 
 def test_config_error_prints_failed_json_and_exit_1(job_env, capsys, tmp_path, monkeypatch):
-    monkeypatch.setattr(gate_main, "_neighbors", lambda cfg: (None, None))   # I1·I3 클라이언트가 없는 설정
+    monkeypatch.setattr(gate_main, "NEIGHBORS", None)      # job_env 가 넣은 시험 대역을 빼고 실제 설정 경로를 탄다
+    for k in ("GATE_I1_URL", "GATE_I3_URL", "GATE_I1_TOKEN", "GATE_I3_TOKEN", "GATE_I1_TOKEN_FILE", "GATE_I3_TOKEN_FILE"):
+        monkeypatch.delenv(k, raising=False)      # I1·I3 설정이 없다(필수라 시작을 거부한다, 계약 4.0.0 D135)
     f = tmp_path / "c.json"
     f.write_text(json.dumps({"data_dir": job_env["data_dir"]}))
     assert gate_main.main(["collect", "--config", str(f)]) == 1
