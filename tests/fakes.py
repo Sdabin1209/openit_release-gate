@@ -14,7 +14,7 @@ def make_bank(version: int = 1, tag: str = "a", set_id: str = "qs-main") -> dict
     return {"question_set_id": set_id, "title": f"{set_id} 문진표", "version": version, "session_settings": {
         "risk_phrases": [], "confirm_limit": 2, "unrecognized_streak_limit": 3, "ask_limit": 3,
         "fixed_sentences": [{"key": k, "sentence": f"{k} 안내"} for k in ("RISK_NOTICE", "CALL_STAFF", "RESUME", "SURVEY_STOPPED")], "guide_list": []},
-        "questions": [{"question_id": "q1", "name": f"문항-{tag}", "order": 0, "prerequisite": None,
+        "questions": [{"question_id": "Q1", "name": f"문항-{tag}", "order": 0, "prerequisite": None,
                        "question_sentence": "어디가 불편하세요?", "refusal_explanation": "답이 필요합니다",
                        "guide_sentences": [], "affected_followups": [],
                        "policy": {"question_limit": 3, "unknown_accept_after": 2, "refusal_accept_after": 2},

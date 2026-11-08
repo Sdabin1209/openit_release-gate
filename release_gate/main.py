@@ -24,7 +24,7 @@ import sys
 import threading
 import time
 
-from boundary_contracts import read_secret, validator
+from boundary_contracts import read_secret, secret_format_problems, validator
 from boundary_contracts.errors import BoundaryError
 
 from .components.gate_policy import GatePolicy, PolicyError
@@ -174,6 +174,10 @@ def _gate_config(survey: SurveySchema) -> GateConfig:
 def _tokens(name: str, required: bool) -> dict:
     """<이름>=역할=토큰,역할=토큰 -> {토큰: 역할}."""
     out = {}
+    raw = read_secret(name) or ""
+    # 왜 계약 검사: 토큰 목록의 형식은 계약이 정한다(secret_format_problems, 5.0.1). 값은 오류에 싣지 않는다
+    if raw.strip() and secret_format_problems("role_token_list", raw.strip()):
+        raise SystemExit(f"{name} 형식: 역할=토큰,역할=토큰")
     for item in _csv(name):
         role, _, tok = item.partition("=")
         if not role or not tok:

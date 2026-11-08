@@ -11,7 +11,7 @@ from fakes import make_bank
 from release_gate.components import check_question_structure as cs
 
 
-def _bank(version, *, qid="q1", slots=("s1",), tag="a"):
+def _bank(version, *, qid="Q1", slots=("s1",), tag="a"):
     b = make_bank(version, tag)
     q = b["questions"][0]
     q["question_id"] = qid
@@ -49,7 +49,7 @@ def test_new_version_with_the_same_structure_goes_to_approval(world):
     assert w["state"] == "AWAITING_APPROVAL" and _compat(w)["result"] == "PASS" and "구조 일치" in _compat(w)["detail"]
 
 
-@pytest.mark.parametrize("changed", [dict(qid="q2"), dict(slots=("s1", "s2")), dict(slots=("s9",))])
+@pytest.mark.parametrize("changed", [dict(qid="Q2"), dict(slots=("s1", "s2")), dict(slots=("s9",))])
 def test_different_question_or_slot_ids_are_rejected_with_check_failed(world, changed):
     trained = world.q.add("qs-main", 1, _bank(1))
     new = world.q.add("qs-main", 2, _bank(2, **changed))
@@ -63,7 +63,7 @@ def test_different_question_or_slot_ids_are_rejected_with_check_failed(world, ch
 
 
 def test_candidate_equal_to_any_listed_trained_set_passes(world):
-    t1 = world.q.add("qs-old", 1, _bank(1, qid="q9"))
+    t1 = world.q.add("qs-old", 1, _bank(1, qid="Q9"))
     t2 = world.q.add("qs-main", 1, _bank(1))
     new = world.q.add("qs-main", 2, _bank(2))
     _, w = _run(world, new, [t1, t2], "any")
@@ -110,4 +110,4 @@ def test_component_reports_only_the_difference_names():
                             "trained_banks": {"LORA_A": [{"ref": {"id": "x"}, "bank": base}]}},
                   "params": {}, "versions": {"supported_runtime_contract_version": 1, "survey_contract_version": 1,
                                              "action_rules_version": "r", "model_runtime_version": "0"}})
-    assert out["result"] == "FAIL" and "q1.s2" in out["detail"] and "후보에만 있음" in out["detail"]
+    assert out["result"] == "FAIL" and "Q1.s2" in out["detail"] and "후보에만 있음" in out["detail"]

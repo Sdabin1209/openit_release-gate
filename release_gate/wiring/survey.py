@@ -4,9 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import jsonschema
+from boundary_contracts import schema_validator
 from boundary_contracts.errors import BoundaryError
-from boundary_contracts import format_checker as _bc_format_checker  # 형식(format) 검증기가 없으면 조용히 넘기지 않고 실패한다(계약 3.5.0)
 
 
 class SurveySchema:
@@ -17,7 +16,8 @@ class SurveySchema:
             doc = json.loads((root / "schemas" / "QuestionBank.json").read_text(encoding="utf-8"))
         except (OSError, ValueError) as e:
             raise BoundaryError("UNAVAILABLE", f"문진 스키마를 읽을 수 없다: {root}: {e}") from e
-        self._qb = jsonschema.Draft202012Validator(doc, format_checker=_bc_format_checker(doc))
+        # 왜 schema_validator: 문진 스키마 5.0.0 은 계약 안정 URI $ref 를 가져 표준 검증기로는 풀리지 않는다. 계약 registry·format_checker·비유한 수 거부를 함께 건다(계약 5.0.1)
+        self._qb = schema_validator(doc)
 
     def validate_question_bank(self, bank: dict) -> list[str]:
         # 왜 e.message 가 아니라 위반 종류: jsonschema 메시지는 위반한 값을 싣고 판정 사유로 응답·로그에 나간다(INTERFACES I7)
