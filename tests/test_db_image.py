@@ -107,8 +107,10 @@ def _start(tmp: Path, mutate=None):
                 if _sh("docker", "inspect", "-f", "{{.State.Running}}", name).stdout.strip() != "true":
                     break      # 컨테이너가 죽었으면 더 기다리지 않고 로그를 보인다
                 subprocess.run(["sleep", "0.5"])
+        # 진단을 먼저 남긴다: 컨테이너 상태(실행 여부·종료 코드·OOM·오류)와 로그 끝(비밀은 로그에 없다: 암호는 파일로만 간다)
+        st = _sh("docker", "inspect", "-f", "running={{.State.Running}} status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} err={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}", name)
         logs = _sh("docker", "logs", name)
-        raise AssertionError("DB가 뜨지 않았다: " + (logs.stderr + logs.stdout)[-800:])
+        raise AssertionError("DB가 뜨지 않았다: " + st.stdout.strip() + "\n" + (logs.stderr + logs.stdout)[-3000:])
     except BaseException:
         cleanup()
         raise
