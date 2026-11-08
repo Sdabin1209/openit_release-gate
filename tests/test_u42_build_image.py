@@ -108,8 +108,8 @@ def test_default_python_is_the_area_own_venv_not_the_callers(tmp_path, fake_dock
     docker, marker = fake_docker
     p = tmp_path / "req.json"
     p.write_text(json.dumps(CASES["unknown-key"]))
-    env = {k: v for k, v in os.environ.items() if k != "PYTHON"}
-    env.update({"DOCKER": str(docker), "PATH": "/usr/bin:/bin"})        # 호출자의 python(boundary_contracts가 없는 시스템 python)만 보이는 환경
+    # 왜 허용 목록: 제외 목록(`k != "PYTHON"`)은 R9.1 위반이다. PYTHON 은 허용 목록에 없어 자연히 빠진다(codex C2 검토, 2026-11-09)
+    env = minimal_env(DOCKER=str(docker), PATH="/usr/bin:/bin")        # 호출자의 python(boundary_contracts가 없는 시스템 python)만 보이는 환경
     r = subprocess.run(["bash", str(SCRIPT), str(p)], capture_output=True, text=True, env=env, cwd=tmp_path)
     assert r.returncode != 0 and "BuildImageRequest를 어긴다" in r.stderr, r.stderr      # 계약을 읽어 검증까지 갔다
     assert not marker.exists()
@@ -287,3 +287,14 @@ def test_job_input_profile_mismatch_is_rejected_before_dependencies_and_docker(t
     assert r.returncode == 2, r.stderr
     assert "잡 주입 선언 불일치" in r.stderr
     assert not marker.exists()
+
+
+def test_minimal_env_passes_docker_connection_names_and_drops_others(monkeypatch):
+    # 왜: docker 연결 이름이 허용 목록에서 빠지면 비기본 엔진에서 조용히 깨진다. 그 밖의 이름은 넘지 않는다(R9.1, codex C2 검토, 2026-11-09). 값은 가짜다
+    names = ["DOCKER_CONFIG", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "SSH_AUTH_SOCK"]
+    for n in names:
+        monkeypatch.setenv(n, "fake")
+    monkeypatch.setenv("NOT_ALLOWED_NAME", "fake")
+    env = minimal_env()
+    assert all(env.get(n) == "fake" for n in names)
+    assert "NOT_ALLOWED_NAME" not in env

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 
-ALLOWED = ("PATH", "HOME", "LANG", "TMPDIR", "DOCKER_CONFIG", "DOCKER_HOST")
+# 왜 DOCKER_*·SSH_AUTH_SOCK: docker 연결(컨텍스트·TLS·ssh 엔진)에 필요한 이름이라 명시 허용한다(codex C2 검토, 2026-11-09)
+ALLOWED = ("PATH", "HOME", "LANG", "TMPDIR", "DOCKER_CONFIG", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "SSH_AUTH_SOCK")
 
 
 def minimal_env(*names: str, **extra: str) -> dict:
