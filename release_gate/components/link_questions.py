@@ -3,7 +3,7 @@
 작업 둘: latest_reviewed(ids) -> QuestionInventory (감시할 문항 세트의 검수 완료 최신 버전),
 read_subject(question_set) -> SubjectQuestions (문항 세트 내용과 검수 기록).
 UNAVAILABLE과 인증 실패는 그대로 올린다(인증 실패는 내용의 문제가 아니라 반려 판정을 남기지 않는다, FAULT_POLICY 9).
-`http_question_reader`는 설정의 팩토리 이름(`release_gate.factories:http_question_reader`)이 가리키는 HTTP 클라이언트 생성기다(docs/runbook.md).
+`http_question_reader`는 I1 HTTP 클라이언트 생성기다. 설정(GateJobConfig i1)이 있으면 main.client_from_settings가 인자로, 없으면 환경 변수로 만든다(설정에 팩토리 이름은 없다, 계약 4.0.0 D135, docs/runbook.md).
 """
 from __future__ import annotations
 

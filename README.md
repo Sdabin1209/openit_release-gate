@@ -24,10 +24,10 @@ HTTP 경로(boundary.md 기준): 쓰기는 `POST /v1/submissions`, `/v1/approval
 | --- | --- |
 | `schemas/` | 영역 내부 타입의 JSON Schema(타입 하나에 파일 하나)와 `examples/`(통과·거부 예시). 받아들이는 조건의 정본. 스키마 밖 조건은 `schemas/README.md` |
 | `release_gate/types/` | `schemas/`에서 **생성**한 코드 타입과 검증 함수(`validators.py`). 손으로 고치지 않는다. 생성 명령은 4절 |
-| `release_gate/components/` | 컴포넌트마다 파일 하나(업무 18개, 저장소 1개, 통신 3개). 서로를 가져오지 않는다. 표는 `docs/components.md` |
+| `release_gate/components/` | 컴포넌트마다 파일 하나(업무 19개, 저장소 1개, 통신 3개). 서로를 가져오지 않는다. 표는 `docs/components.md` |
 | `release_gate/wiring/` | 연결·주입: 어느 출력을 어느 입력에 넘길지(판정 엔진, I5 서비스, 수집기, 자동 검사 등록부), 저장소·시계·이웃 주입 |
 | `deploy-exposure.json`, `deploy-jobs.json` | 이미지가 선언하는 노출(라벨 `io.openit.exposure`)과 잡(라벨 `io.openit.jobs`). build-image가 계약으로 검증해 단다 |
-| `release_gate/main.py`, `config.py`, `migrate.py`, `migrations/`, `factories/` | 진입점(`serve` / `collect` / `judge` / `prune`), 설정, DB 마이그레이션, 팩토리 공개 이름(`release_gate.factories:http_question_reader`). 업무 규칙 없음 |
+| `release_gate/main.py`, `config.py`, `migrate.py`, `migrations/`, `factories/` | 진입점(`serve` / `collect` / `judge` / `prune` / `backup` / `restore`), 설정, DB 마이그레이션, 이웃 클라이언트 생성 함수의 공개 이름(`release_gate.factories`, 설정이 가리키는 이름이 아니다). 업무 규칙 없음 |
 | `tests/` | 적합성(memory·sqlite·postgres), HTTP, 비밀, 수집·정책, 계약 v2 시험. `fakes.py`가 이웃 대역 |
 | `scripts/` | `build-image.sh`(영역 빌드 진입점, 계약 BuildImageRequest), `smoke.sh`(스모크) |
 | `Dockerfile`, `requirements.txt`, `requirements.lock` | 이미지와 태그 고정 의존 |
@@ -51,8 +51,9 @@ model-lab(I3) ──────────┴─> 수집기/제출(I5) ─> �
 ```sh
 # 1) 설치 (멱등, 핀: requirements.txt, requirements.lock, requirements-libs.txt). 표준 출력 마지막 줄은 계약 SetupEnvReport(시험 명령 포함), 진행 기록은 표준 오류
 bash scripts/setup-env.sh && . .venv/bin/activate
-# 2) 시험 (문진 스키마는 설치된 openit-survey-schema 패키지에서 읽는다)
-python -m pytest -q
+# 2) 시험 (문진 스키마는 설치된 openit-survey-schema 패키지에서 읽는다). 정식 전체 시험은 일회용 PostgreSQL을 띄워 pytest 전체를 돌린다(SetupEnvReport.test_command)
+bash scripts/test-all.sh
+python -m pytest -q   # 빠른 확인용: PostgreSQL 시험은 건너뛴다
 # 3) 이미지 빌드 + 스모크(/healthz, /readyz, 토큰 거부, 비root, 라벨). 호스트 포트는 Docker가 배정
 GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh   # BuildImageRequest 파일 필수, 값은 deploy/scripts/lib.sh 기준 표에서 정해진다. 없으면 사용법을 보이고 실패
 # 4) 실행 (이미지의 기본 진입점은 Dockerfile의 `CMD ... serve`. 아래는 코드 진입점)

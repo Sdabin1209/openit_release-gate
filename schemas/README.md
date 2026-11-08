@@ -3,7 +3,7 @@
 타입 하나에 파일 하나이고 파일 이름이 타입 이름이다. `examples/<타입>.valid*.json`은 통과해야 하고 `<타입>.invalid*.json`은 거부되어야 한다
 (`tests/test_structure.py`가 모두 확인한다). 코드 타입과 검증 함수는 여기서 **생성**한다(`release_gate/types/`, 명령은 README 4절). 컴포넌트는 입력을 받으면 `validate(타입, 값)` 하나로 검사한다.
 
-영역 사이 타입(GateSubmission, GateDecision, ReleaseManifest, ReviewReport, ActivePointer 등)은 복사하지 않고 `boundary-contracts v3.4.17`을 쓴다(`validate_contract`).
+영역 사이 타입(GateSubmission, GateDecision, ReleaseManifest, ReviewReport, ActivePointer 등)은 복사하지 않고 설치된 `boundary-contracts`(태그는 `requirements.txt`가 정본)를 쓴다(`validate_contract`).
 내부 스키마 안에서 계약 타입이 필요한 자리(예: 참조 3개)는 "계약 ArtifactRef" 같은 설명과 최소 모양만 두고 값은 경계에서 계약으로 검증된 것으로 본다.
 
 ## 타입 목록
@@ -49,5 +49,5 @@
 | 16 | release_reader | 정리된 어댑터 사본(PRUNED) | 파일 시스템 상태다 |
 | 17 | wiring/engine | 필수 자동 검사가 등록되어 있음 | 구성(코드 조립)의 검사다. 데이터가 아니다. 생성자에서 거부한다 |
 | 18 | main.py (진입점) | 환경 변수의 필수·범위(`_seconds` > 0, `_opt_int` ≥ 최소, 보존 일수, `역할=토큰` 형식) | 설정 읽기다(업무 컴포넌트가 아니다). 설정 파일은 계약 GateJobConfig로 검증한다 |
-| 19 | link_questions, link_models | 팩토리의 URL·토큰 존재 | 설정 읽기(연결 정보)다. 값은 환경 변수와 비밀 파일에서 온다 |
+| 19 | link_questions, link_models | 이웃 클라이언트 생성 함수의 URL·토큰 존재 | 설정 읽기(연결 정보)다. 값은 환경 변수와 비밀 파일에서 온다 |
 | 20 | gate_policy | 정책 파일을 읽을 수 있음(경로가 있는데 없거나 못 읽으면 시작 거부, fail-closed) | 파일 입출력이다. 읽은 내용의 모양은 계약 GatePolicy로 검증한다 |

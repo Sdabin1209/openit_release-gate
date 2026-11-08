@@ -1,5 +1,11 @@
 # 변경 이력
 
+## (미배포) 전수 점검(sweep-1222): 롤백 요청 해시의 역할, 낡은 문서·주석 정정
+
+- **동작 차이**: `POST /v1/rollback`이 본문 `requested_by_role`을 토큰 역할로 덮어쓸 때 내부 접두사(`w:`)가 붙은 값(`w:operator`)으로 덮었다. 접두사를 뗀 역할(`operator`)로 덮는다. 요청 해시(`request_hash`)가 이 본문으로 계산되므로, 이 변경 이전에 같은 `request_id`로 저장된 롤백 영수증은 같은 요청을 다시 보내면 CONFLICT(`같은 request_id에 다른 요청`)가 된다(새 `request_id`로 보내면 된다. 미배포 단계라 저장된 영수증은 시험 데이터뿐이다).
+- 문서·주석을 현재 코드에 맞췄다: runbook의 잡 설정 예시(`i1_factory`·`i1_options` 폐기, `i1`·`i3`의 `token_secret`), 없어진 `GATE_READ_TOKEN_FILE`, 정식 시험 명령(`scripts/test-all.sh`), design.md의 `report_hash` 설명과 접수 역할, boundary.md의 계약 MAJOR·`/metrics`·잡 목록, components.md의 백업·복구 컴포넌트 행, 복사해 두었던 이웃·계약 버전 숫자(STATUS, components.md, schemas/README), `Store`·`ReleaseFiles`의 docstring 위치, db/init-openit.sh 주석, ADR-0013·0023의 빠진 항목(대안·결과·맥락).
+- 안 쓰는 import 제거(main.py, decision_builder.py). 설치처를 특정하는 표현("병원 규정")을 "설치처 규정"으로.
+
 ## (미배포) 영역 DB 이미지 release-gate-db (D126, 계약 v3.4.11)
 
 - `db/`(Dockerfile·진입점·초기화·생성기), `deploy-database.json`(DatabaseDeclaration), `scripts/build-image.sh`의 variant `db`(`build-db-image.sh`), 스모크 `scripts/smoke-db.sh`, ADR-0024.

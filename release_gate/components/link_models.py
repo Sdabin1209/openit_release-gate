@@ -2,7 +2,7 @@
 
 작업 셋: list_versions(ids) -> ModelInventory (감시할 패키지의 모든 버전 요약), read_subject(subject) -> SubjectModels
 (두 매니페스트와 평가 보고서), open_adapter(ref, dest) -> 경로. UNAVAILABLE과 인증 실패는 그대로 올린다(FAULT_POLICY 9).
-`http_model_registry`는 설정의 팩토리 이름(`release_gate.factories:http_model_registry`)이 가리키는 HTTP 클라이언트 생성기다.
+`http_model_registry`는 I3 HTTP 클라이언트 생성기다. 설정(GateJobConfig i3)이 있으면 main.client_from_settings가 인자로, 없으면 환경 변수로 만든다(설정에 팩토리 이름은 없다, 계약 4.0.0 D135).
 """
 from __future__ import annotations
 

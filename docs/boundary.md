@@ -2,7 +2,7 @@
 
 ## 소유하는 저장소
 
-릴리스 레지스트리(레코드: `GATE_DATABASE_URL`이 있으면 이 영역 전용 PostgreSQL 데이터베이스·계정, 없으면 `GATE_DATA_DIR`의 SQLite `registry.sqlite3`. 번들 파일: `GATE_DATA_DIR/releases/` 디렉터리). PostgreSQL이 멈추면 쓰기와 읽기가 UNAVAILABLE(재시도 가능)이고 `/readyz`는 503이다(대기 상한은 아래 "DB 대기 상한"). 쓰는 프로세스는 이 영역의 gate-service(접수, 자동 검사, 승인 결정, 판정, 릴리스, 포인터)와 같은 코드의 run-once 잡(`collect`, `judge`)이다. 다른 영역에는 읽기만 준다(I4, 읽기 전용 연결 또는 읽기 토큰).
+릴리스 레지스트리(레코드: `GATE_DATABASE_URL`이 있으면 이 영역 전용 PostgreSQL 데이터베이스·계정, 없으면 `GATE_DATA_DIR`의 SQLite `registry.sqlite3`. 번들 파일: `GATE_DATA_DIR/releases/` 디렉터리). PostgreSQL이 멈추면 쓰기와 읽기가 UNAVAILABLE(재시도 가능)이고 `/readyz`는 503이다(대기 상한은 아래 "DB 대기 상한"). 쓰는 프로세스는 이 영역의 gate-service(접수, 자동 검사, 승인 결정, 판정, 릴리스, 포인터)와 같은 코드의 run-once 잡(`collect`, `judge`, `prune`, `backup`, `restore`)이다. 다른 영역에는 읽기만 준다(I4, 읽기 전용 연결 또는 읽기 토큰).
 
 ## 제공하는 SDK와 서비스
 
@@ -11,7 +11,7 @@
 | I4 ReleaseReader | `release_gate.ReleaseReaderImpl` (`boundary_contracts.sdk.ReleaseReader` Protocol 구현) | 실제: `open_release_reader(data_dir)`(읽기 전용). 메모리: `memory_registry(...).reader` |
 | I5 GateService | `release_gate.GateServiceImpl` (`GateService` Protocol 구현), HTTP 면 | `POST /v1/submissions`, `/v1/activate`, `/v1/rollback`, `GET /v1/submissions/{id}/review-report`, `POST /v1/approvals`(쓰기 토큰은 역할에 묶임, 오류 상태 코드는 CONVENTIONS 9절). 메모리: `memory_registry(...).service`. activate·rollback의 역할은 토큰에서, 행위자는 게이트웨이가 붙인 `X-Openit-User`에서 정한다(D85, PUBLIC_API E). 본문의 `requested_by_role`은 무시한다. 헤더가 없으면 401(서비스 역할 토큰 제외). 행위자는 활성 포인터와 롤백 영수증의 `ext["release-gate"]`(`requested_by`, `requested_by_role`)에 남고 `GET /v1/active-pointer`에 나온다 |
 | I4 읽기 HTTP (HTTP.md) | `GET /v1/active-pointer` (`{"item"}`), `/v1/releases`, `/v1/releases/<id>`, `/v1/releases/<id>/question-bank`(`?question_set_id=` 세트 하나. 매니페스트에 둘 이상이면 필수, 없으면 400 `INVALID_RECORD`(details.reason `QUESTION_SET_REQUIRED`), 하나면 생략 가능. `{release_id, question_set_id, content_hash, question_bank}`, PASS가 아니면 412, 없으면 404), `/v1/releases/<id>/bundle`(tar: manifest.json, question_banks/<문항 세트 ID>.json(세트마다), adapters/LORA_A/…, adapters/LORA_B/…; PASS 아니면 412, 해시 불일치 422), `/v1/decisions?question_set_id=&question_set_version=&lora_a_id=&lora_a_version=&lora_b_id=&lora_b_version=&submission_id=`, `/v1/decisions/<id>` | 읽기 토큰(역할별). 목록은 `{items, next_cursor}`, `cursor`/`limit`(기본 100, 최대 500), 최신부터. 서버도 번들을 보내기 전에 모든 해시를 검증한다 |
-| 상태 | `GET /healthz`, `GET /readyz` | 인증 없음 |
+| 상태 | `GET /healthz`, `GET /readyz`, `GET /metrics`(Prometheus 텍스트, 내부망 전용이라 `deploy-exposure.json`에 경로가 없다) | 인증 없음 |
 
 I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `HttpGateService`로 호출하는 `tests/test_http_clients.py`가 시험한다. 메모리·SQLite·PostgreSQL 구현은 같은 클래스를 다른 `Store` 위에 올린 것이고 같은 적합성 시험(`tests/test_conformance.py`, 매개변수 `memory`·`sqlite`·`postgres`)을 통과한다. PostgreSQL 시험은 `TEST_DATABASE_URL`이 있을 때만 돈다. 이웃은 `memory_registry`로 혼자 시험하되, 판정을 만들려면 I1·I3 대역과 시험용 정책이 필요하다(`tests/fakes.py`, `tests/conftest.py::World.make_release` 참고).
 
@@ -24,9 +24,9 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 | 입력 | 쓰는 것 | 지원 버전 |
 | --- | --- | --- |
 | I1 QuestionReader | `get_question_bank`, `get_reviews` (`latest`, `list_ids`는 수집기) | 문진 스키마 정수 버전: deploy가 명시하는 값(`GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION`, 필수, 코드 기본값 없음)이 배포된 스키마의 `CONTRACT_VERSION`과 같아야 한다. 다르면 CONTRACT_COMPAT가 반려한다 |
-| I3 ModelRegistry | `get_manifest`, `open_adapter` (`list_ids`, `list_versions`는 수집기) | 경계 계약 `2.0` (MAJOR 2, v1 매니페스트는 CONTRACT_COMPAT가 반려). `system_prompt {path, sha256}` 필수(D75): 어댑터 디렉터리 안의 파일과 해시를 확인하고 릴리스 매니페스트로 복사한다. `list_ids`, `lineage.question_sets`(참고) 사용 |
+| I3 ModelRegistry | `get_manifest`, `open_adapter` (`list_ids`, `list_versions`는 수집기) | 경계 계약 MAJOR는 설치된 계약 패키지의 MAJOR다(`PIPELINE_SCHEMA_VERSION`에서 읽는다, 코드에 숫자를 박지 않는다). 다른 MAJOR의 매니페스트는 CONTRACT_COMPAT가 반려한다. `system_prompt {path, sha256}` 필수(D75): 어댑터 디렉터리 안의 파일과 해시를 확인하고 릴리스 매니페스트로 복사한다. `list_ids`, `lineage.question_sets`(참고) 사용 |
 | I9 model-runtime, LoRA-A 출력 규칙 | 코드는 쓰지 않는다. model-runtime은 설치된 패키지의 버전 문자열, 규칙 세대는 설치된 계약의 `ActionExtractionRules.rules_version`을 `action_rules_version`으로 릴리스 매니페스트에 기록하고 호환 검사에 쓴다 | 환경 변수 `GATE_MODEL_RUNTIME_VERSION` |
-| I5 호출 | 후보 제출, 활성화, `RollbackRequest` | 경계 계약 MAJOR 2 |
+| I5 호출 | 후보 제출, 활성화, `RollbackRequest` | 설치된 계약 패키지의 MAJOR(위와 같다) |
 
 입력은 `boundary_contracts.sdk`의 Protocol을 따르는 객체로만 받는다(생성자 인자). 운영에서는 wiring 이 `GATE_I1_URL`·`GATE_I3_URL` 과 토큰으로 HTTP 클라이언트(`HttpQuestionReader`, `HttpModelRegistry`, boundary-contracts 설치본의 `clients`)를 만든다(계약 4.0.0 D135, 설정에 공장 없음). 시험에서는 `tests/`의 대역(직접 호출)과 HTTP 서버+실제 클라이언트 두 경로를 모두 쓴다. 이웃 코드를 가져오지 않는다.
 
@@ -47,7 +47,7 @@ I4·I5의 서버 적합성은 우리 서버를 띄워 `HttpReleaseReader`, `Http
 
 ## 감사 지적 처리 (전수 점검 2026-10-28)
 
-- 우아한 종료(A4): SIGTERM·SIGINT에 `/readyz`를 `shutting_down`(503)으로 바꾸고 새 연결을 거부, 처리 중 요청을 `GATE_SHUTDOWN_GRACE_SECONDS`(기본 20)까지 기다린 뒤 주기 작업을 멈추고 저장소를 닫는다. 확인한 것: 실제 `serve` 프로세스가 SIGTERM에 종료 코드 0으로 끝남, 처리 중 요청이 완료됨(`tests/test_audit_fixes.py`). **최악 종료 시간(코드 `main.py` `run_until_signal`, `components/link_http_server.py` `graceful_stop`을 읽고 계산; 실측 아님)**: 요청 대기 최대 grace(20초) + 주기 작업 `loop.join` 최대 10초 = 정상 경로 최악 약 30.5초(shutdown 폴링 0.5초 포함). `graceful_stop` 자체가 멈추는 비정상 경로에서는 `stopped.wait(grace+5)`가 25초까지 늘어 하드 상한은 25 + 10 = 35초다. 따라서 deploy의 `stop_grace_period`는 **35초 이상(여유를 두어 40초 권장)**이어야 하고, 현재 25초(compose.yaml)면 주기 작업이 길 때 SIGKILL이 먼저 온다(주기 작업이 트랜잭션이면 롤백되나 확인하지 못했다). 확인하지 못한 것: 컨테이너에서 PID 1로 받는 경우, 실제 종료 시간 측정.
+- 우아한 종료(A4): SIGTERM·SIGINT에 `/readyz`를 `shutting_down`(503)으로 바꾸고 새 연결을 거부, 처리 중 요청을 `GATE_SHUTDOWN_GRACE_SECONDS`(기본 20)까지 기다린 뒤 주기 작업을 멈추고 저장소를 닫는다. 확인한 것: 실제 `serve` 프로세스가 SIGTERM에 종료 코드 0으로 끝남, 처리 중 요청이 완료됨(`tests/test_audit_fixes.py`). **최악 종료 시간(코드 `main.py` `run_until_signal`, `components/link_http_server.py` `graceful_stop`을 읽고 계산; 실측 아님)**: 요청 대기 최대 grace(20초) + 주기 작업 `loop.join` 최대 10초 = 정상 경로 최악 약 30.05초(`graceful_stop` 폴링 간격 0.05초 포함). `graceful_stop` 자체가 멈추는 비정상 경로에서는 `stopped.wait(grace+5)`가 25초까지 늘어 하드 상한은 25 + 10 = 35초다. 따라서 deploy의 `stop_grace_period`는 **35초 이상(여유를 두어 40초 권장)**이어야 하고, deploy의 값이 그보다 짧으면 주기 작업이 길 때 SIGKILL이 먼저 온다(현재 값은 deploy의 문서를 본다. 이 문서에 복사하지 않는다)(주기 작업이 트랜잭션이면 롤백되나 확인하지 못했다). 확인하지 못한 것: 컨테이너에서 PID 1로 받는 경우, 실제 종료 시간 측정.
 - 락 보유(A7): 번들 복사는 저장소 락·트랜잭션 밖에서 한다(락 안은 rename뿐). 복사 1초 동안 `get_pointer`·`list_releases`가 0.4초 넘게 막히지 않음을 시험(지연 주입). 실제 큰 어댑터로는 **측정 안 함**.
 - 큰 어댑터(G3): 활성화·롤백 검증·번들 GET은 복사 없이 제자리에서 해시를 계산한다(해시 계산 비용 O(크기)는 남는다. 캐시는 안전성을 약화하므로 두지 않음). 승인 때 I3에서 받은 어댑터는 같은 파일 시스템에서 복사 없이 옮긴다. 번들 GET은 검증 후 tar 임시 파일 한 벌을 만든다.
 - 목록(G2): `GET /v1/submissions`는 접수·상태·최신 판정을 JOIN 한 쿼리를 묶음 단위로 읽는다(접수 15건에서 쿼리 2개 이하 시험). 상태·판정 인덱스를 추가했다.

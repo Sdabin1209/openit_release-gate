@@ -4,6 +4,7 @@
 
 ```
 bash scripts/setup-env.sh && . .venv/bin/activate      # 멱등. requirements.txt·requirements.lock·requirements-libs.txt(태그 고정)로 설치
+bash scripts/test-all.sh                                 # 정식 전체 시험(환경 보고 SetupEnvReport.test_command): 일회용 PostgreSQL을 띄워 TEST_DATABASE_URL로 넘기고 pytest 전체를 돌린 뒤 내린다
 python -m pytest -q                                      # 단위, 적합성(메모리·SQLite, TEST_DATABASE_URL이 있으면 PostgreSQL도), HTTP
 TEST_DATABASE_URL="$(scripts/dev-postgres.sh up)" python -m pytest -q   # PostgreSQL 포함. 없으면 그 시험은 SKIP이고 PASS로 세지 않는다
 scripts/dev-postgres.sh down                             # 시험용 postgres:16 정리 (../deploy/scripts/dev-postgres.sh 가 있으면 그것을 쓴다)
@@ -12,7 +13,7 @@ GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh          # BuildImageRequest �
 
 ## 환경 변수 (gate-service)
 
-이름·형식의 정본은 계약 `GateEnv`다. 기동할 때 `GATE_` 접두 변수와 `PORT`를 이 스키마로 검증하고 어긋나면 **변수 이름만** 적고 종료 코드 2로 끝난다(값은 싣지 않는다). `serve`는 읽기·쓰기 토큰 필수 조건까지, 잡(collect, judge, prune)은 이름·형식·필수 변수만 본다. 선언에 없는 `GATE_*` 이름은 거부된다.
+이름·형식의 정본은 계약 `GateEnv`다. 기동할 때 `GATE_` 접두 변수와 `PORT`를 이 스키마로 검증하고 어긋나면 **변수 이름만** 적고 종료 코드 2로 끝난다(값은 싣지 않는다). `serve`는 읽기·쓰기 토큰 필수 조건까지, 잡(collect, judge, prune은 GateJobEnv, backup·restore는 GateBackupEnv)은 이름·형식·필수 변수만 본다. 선언에 없는 `GATE_*` 이름은 거부된다.
 
 | 이름 | 뜻 |
 | --- | --- |
@@ -24,7 +25,7 @@ GATE_BUILD_REQUEST=<요청 JSON> scripts/smoke.sh          # BuildImageRequest �
 | `GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION` | **필수**(코드 기본값 없음, 계약 3.2.0 GateEnv). 지원하는 문진 스키마 정수 버전. deploy가 명시한다. 기본값을 설치된 스키마로 두면 CONTRACT_COMPAT의 "지원 == 배포" 비교가 항상 참이 되어 무력화된다. 없으면 기동 거부 |
 | `GATE_MODEL_RUNTIME_VERSION` | 선택(덮어쓰기). 계보의 `action_rules_version` 기준은 설정이 아니라 설치된 계약의 규칙 데이터(`rules_version`)다. 없으면 model-runtime은 **설치된 패키지의 실제 버전**을 읽고, 읽지 못하면 값이 없는 것으로 보고, 승인(매니페스트 생성)은 FAILED_PRECONDITION(RUNTIME_VERSION_UNKNOWN)으로 거부하며 이웃(I1·I3)이 연결된 `serve`는 시작하지 않는다. 이 값이 릴리스 매니페스트에 기록되고 학습 때 버전과의 일치 검사(CONTRACT_COMPAT)에 쓰인다. `/readyz`에 보인다 |
 | `GATE_POLICY_FILE` | gate_policy JSON. 설정하지 않으면 기본 정책. 설정했는데 파일이 없거나 읽지 못하면 PolicyError로 기동 거부(fail-closed) |
-| `GATE_READ_TOKENS`, `GATE_WRITE_TOKENS` (또는 `*_FILE`) | 필수. 비밀이므로 `GATE_READ_TOKENS_FILE`, `GATE_WRITE_TOKENS_FILE`로 파일 경로를 주는 것이 표준이다(아래 "비밀은 NAME_FILE로"). `역할=토큰,역할=토큰` 형식으로 역할에 묶는다. 읽기 예: `survey-service=…,ops-feedback=…,question-authoring=…,model-lab=…`, 쓰기 예: `operator=…,ops-feedback=…,question-authoring=…,model-lab=…,release-approver=…` (승인 요청은 `release-approver` 쓰기 토큰 + gateway가 붙인 `X-Openit-User` 필요). 토큰이 없거나 틀리면 401(`WWW-Authenticate: Bearer`), 읽기 토큰으로 쓰기 경로를 부르거나 쓰기 토큰으로 읽기 면을 부르면 403이다(boundary-contracts CONVENTIONS.md "401과 403"). `/healthz`, `/readyz`는 인증이 없다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
+| `GATE_READ_TOKENS`, `GATE_WRITE_TOKENS` (또는 `*_FILE`) | 필수. 비밀이므로 `GATE_READ_TOKENS_FILE`, `GATE_WRITE_TOKENS_FILE`로 파일 경로를 주는 것이 표준이다(아래 "비밀은 NAME_FILE로"). `역할=토큰,역할=토큰` 형식으로 역할에 묶는다. 읽기 예: `survey-service=…,ops-feedback=…,question-authoring=…,model-lab=…`, 쓰기 예: `operator=…,ops-feedback=…,release-approver=…`(제출은 `operator`와 `release-gate-collector`만 할 수 있다: 계약 3.4.6, question-authoring·model-lab의 쓰기 토큰은 쓸 곳이 없다) (승인 요청은 `release-approver` 쓰기 토큰 + gateway가 붙인 `X-Openit-User` 필요). 토큰이 없거나 틀리면 401(`WWW-Authenticate: Bearer`), 읽기 토큰으로 쓰기 경로를 부르거나 쓰기 토큰으로 읽기 면을 부르면 403이다(boundary-contracts CONVENTIONS.md "401과 403"). `/healthz`, `/readyz`는 인증이 없다. 비밀 값은 이미지와 리포지토리에 넣지 않는다 |
 | `GATE_REQUEST_TIMEOUT_SECONDS`, `GATE_MAX_CONNECTIONS`, `GATE_SHUTDOWN_GRACE_SECONDS`, `GATE_MAX_PENDING_SUBMISSIONS` | 연결 무활동 timeout(30, 정수 초, waitress channel_timeout), 동시 연결 상한(64, 넘으면 새 연결은 대기, waitress connection_limit), 종료 유예(20), 결정 전 접수 상한(기본 없음). 근거는 docs/adr/0008 |
 | `GATE_REQUEST_DEADLINE_SECONDS` | 사람용(`/v1/*`) 요청 하나의 서버 쪽 전체 마감(기본 170.0초, D120·D125, ADR-0020). 넘기면 503 UNAVAILABLE이고 같은 요청을 다시 보내면 된다 |
 | `GATE_RETAIN_KEEP_RELEASES`, `GATE_RETAIN_REJECTED_DAYS`, `GATE_RETAIN_ATTEMPTS_DAYS` | 보존(기본 3, 90, 365). 무기한 값은 거부. `python -m release_gate prune [--dry-run]`를 스케줄러가 주기로 부른다(서버는 스스로 지우지 않음). docs/adr/0009 |
@@ -71,10 +72,8 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 ```json
 {
   "data_dir": "/data",
-  "i1_factory": "release_gate.factories:http_question_reader",
-  "i1_options": {"base_url": "http://question-authoring:8080", "token": {"secret": "GATE_I1_TOKEN"}},
-  "i3_factory": "release_gate.factories:http_model_registry",
-  "i3_options": {"base_url": "http://model-registry:8080"},
+  "i1": {"kind": "http", "base_url": "http://question-authoring:8080", "token_secret": "GATE_I1_TOKEN"},
+  "i3": {"kind": "http", "base_url": "http://model-registry:8080", "token_secret": "GATE_I3_TOKEN", "timeout_seconds": 10},
   "watch": {"question_sets": ["qs-main"], "lora_a": ["lora-a"], "lora_b": ["lora-b"]},
   "policy_file": "/etc/gate/policy.json"
 }
@@ -112,7 +111,7 @@ curl -X POST -H "Authorization: Bearer $APPROVER" -d '{"submission_id":"'$SID'",
 
 | 비밀 | 파일 경로 변수 | 내용 |
 | --- | --- | --- |
-| 읽기 토큰 | `GATE_READ_TOKENS_FILE` | `역할=토큰,역할=토큰` (이전 호환 `GATE_READ_TOKEN_FILE`: 토큰 하나) |
+| 읽기 토큰 | `GATE_READ_TOKENS_FILE` | `역할=토큰,역할=토큰` |
 | 쓰기 토큰 | `GATE_WRITE_TOKENS_FILE` | `역할=토큰,역할=토큰` |
 | I1 토큰 | `GATE_I1_TOKEN_FILE` | 토큰 하나 |
 | I3 토큰 | `GATE_I3_TOKEN_FILE` | 토큰 하나 |
@@ -124,7 +123,7 @@ docker run -v /srv/secrets/gate:/run/secrets:ro \
 
 - 파일은 컨테이너의 비root 사용자가 읽을 수 있어야 한다(모드 0644 이상 또는 해당 uid 소유). 이미지와 리포지토리에는 넣지 않는다.
 - 파일이 없거나 비어 있으면 값 없이 이유만 담긴 오류로 시작이 중단된다. 비밀 값은 로그, `/readyz`, 오류 본문, 예외 메시지에 나오지 않는다(`tests/test_secrets.py`, `scripts/smoke.sh`가 `inspect`·`exec env`·로그에 평문이 없음을 확인한다).
-- 설정 파일(JSON)에는 비밀 값을 적을 수 없다. `i1_options`, `i3_options`에서 `token`, `secret`, `password` 등 비밀 같은 키에 문자열을 직접 적으면 시작을 거부한다(오류에는 키 경로만 나온다). 비밀은 이름으로만 받는다: `{"secret": "GATE_I1_TOKEN"}`(옛 `{"env": "이름"}`도 같은 뜻). 둘 다 `read_secret(이름)`으로 풀려서 `이름_FILE` 파일이 우선이고 없으면 환경 변수다.
+- 설정 파일(JSON)에는 비밀 값을 적을 수 없다. 계약 `GateJobConfig`가 모르는 키를 거부하므로 `token`, `secret`, `password` 같은 키는 설정에 둘 수 없고 시작을 거부한다(오류에는 키 경로와 위반 종류만 나온다). 비밀은 이름으로만 받는다: `i1`·`i3`의 `token_secret`에 비밀의 이름(예: `GATE_I1_TOKEN`)을 적는다. 값은 `read_secret(이름)`으로 풀려서 `이름_FILE` 파일이 우선이고 없으면 환경 변수다.
 
 ## TLS와 배치 (U99)
 

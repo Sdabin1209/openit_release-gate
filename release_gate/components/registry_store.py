@@ -78,11 +78,12 @@ def _same(a: dict, b: dict, what: str) -> None:
 
 
 class Store:
+    """저장소 인터페이스. 구현은 모든 메서드를 원자적으로 처리한다."""
+
     deadline_source = None      # 현재 요청의 마감을 돌려주는 함수. wiring이 넣는다(D120). 문장·트랜잭션 시작 전에 확인한다
 
     def _check_deadline(self) -> None:
         _deadline_check(self.deadline_source)
-    """저장소 인터페이스. 구현은 모든 메서드를 원자적으로 처리한다."""
 
     kind = "memory"   # /readyz에 보이는 DB 종류: memory, sqlite, postgresql (접속 정보는 싣지 않는다)
 
@@ -392,8 +393,8 @@ def _deadline_check(source) -> None:
 
 
 class ReleaseFiles:
-    protection_rule = None   # (store, keep) -> 보호할 release_id 집합. wiring이 retention.protected_ids를 넣는다
     """번들 파일(<root>/releases/<release_id>/)을 다루는 공통 부분. SQLite·PostgreSQL 구현이 같은 파일 규칙을 쓴다(파일은 DB 대상이 아니다)."""
+    protection_rule = None   # (store, keep) -> 보호할 release_id 집합. wiring이 retention.protected_ids를 넣는다
     root: Path
 
     @property

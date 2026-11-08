@@ -166,7 +166,7 @@ def build_routes(r, engine, read_roles: frozenset, write_roles: frozenset, strea
     def rollback(req):
         user = actor(req)
         # 자기 신고 역할은 받지 않는다: 토큰 역할로 채우고(있던 값은 덮어쓴다) 서비스가 계약 RollbackRequest로 검사한다
-        return ok(r.service.request_rollback(dict(obj(req), requested_by_role=req.role), requested_by_role=req.role[2:], requested_by=user))
+        return ok(r.service.request_rollback(dict(obj(req), requested_by_role=req.role[2:]), requested_by_role=req.role[2:], requested_by=user))
 
     def submit(req):
         b = obj(req)

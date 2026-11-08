@@ -4,6 +4,9 @@
   serve                      gate-service (HTTP + 판정 진행 루프)
   collect --config <파일>     후보 수집기를 한 번 실행하고 끝난다(run-once, 멱등). 스케줄러가 부른다(D39)
   judge   --config <파일>     자동 검사 전의 접수를 검사해 승인 요청(AWAITING_APPROVAL)으로 보내거나 반려하고 끝난다(run-once, 멱등)
+  prune   [--config <파일>] [--dry-run]   보존 정책대로 정리하고 끝난다(run-once, 멱등)
+  backup                     DB와 릴리스 묶음을 restic 저장소에 올리고 끝난다(run-once, 계약 BackupJobResult)
+  restore [--snapshot <ID>]  스냅숏을 빈 DB·빈 묶음 디렉터리에 되살리고 끝난다(사람이 요청할 때 한 번)
 설정 파일(JSON)의 형식과 환경 변수는 docs/runbook.md.
 """
 from __future__ import annotations
@@ -20,8 +23,7 @@ import sys
 import threading
 import time
 
-from boundary_contracts import load_schema, read_secret, validator
-from jsonschema import Draft202012Validator
+from boundary_contracts import read_secret, validator
 from boundary_contracts.errors import BoundaryError
 
 from .components.gate_policy import GatePolicy, PolicyError

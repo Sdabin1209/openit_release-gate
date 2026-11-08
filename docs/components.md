@@ -1,6 +1,6 @@
 # 컴포넌트 분해 (D117, DESIGN.md)
 
-입력은 계약(boundary-contracts v3.4.17, `INTERFACES.md` I1·I3·I4·I5, `HTTP.md`)과 `docs/brief.md`다. 일(브리프 1절)을 업무 단계로 나눴다.
+입력은 계약(boundary-contracts 설치본, 태그는 `requirements.txt`가 정본이다. `INTERFACES.md` I1·I3·I4·I5, `HTTP.md`)과 `docs/brief.md`다. 일(브리프 1절)을 업무 단계로 나눴다.
 후보 수집 -> 접수 -> (대상 읽기) -> 자동 검사 4종 -> 검사 종합 -> 승인 요청 보고서 -> 사람의 결정 기록 -> 판정 기록 -> 어댑터 점검 -> 릴리스 구성 -> 저장 -> 활성 포인터 -> 읽기·롤백 -> 보존 정리.
 기존 코드는 정의의 근거가 아니라 빠진 규칙·거부 조건을 찾는 대조 자료로만 썼다(대조해 옮긴 거부 지점은 `schemas/README.md`).
 컴포넌트는 서로를 가져오지 않는다. 저장소·시계·검증 함수·이웃 읽기는 `wiring/`이 주입한다. 계약 타입은 `schemas/`에 복사하지 않고 계약을 쓴다(표의 "계약"). 표의 타입 이름은 `schemas/<이름>.json`이다.
@@ -26,6 +26,7 @@
 | 활성 포인터 제어 | `components/pointer_control.py` | 계약 RollbackRequest / ActivateRequest 값 (+저장소·검증 포트) | 계약 ActivePointer, RollbackReceipt | 활성화와 롤백. 추가만 하는 이력 위에서 비교 후 교체로 바꾼다 |
 | 릴리스 읽기·검증 | `components/release_reader.py` | 릴리스 ID (+저장소 포트) | ReleaseBundle, 계약 ReleaseManifest, GateDecision | I4 읽기와 묶음의 모든 해시 검증, 번들 tar 쓰기 |
 | 보존 정리 | `components/retention.py` | RetentionPolicy (+저장소 포트) | 정리 결과(계약 GateJobResult의 prune 항목) | 보존 정책대로 반려 접수·오래된 어댑터 사본·시도 기록을 정리한다. 승인·활성 이력은 지우지 않는다 |
+| 백업·복구 잡 | `components/backup_job.py` | 환경(`OPENIT_BACKUP_*`, `GATE_DATABASE_URL_FILE`, `GATE_DATA_DIR`), 선택 스냅숏 ID | 계약 BackupJobResult | DB(PostgreSQL COPY 또는 SQLite 백업 API)와 `releases/`를 restic 한 스냅숏으로 올리고(`backup`), 빈 DB·빈 릴리스 디렉터리에만 되살린다(`restore`). 비밀은 파일로 받고 출력에 싣지 않는다(ADR-0022) |
 | 정책 읽기 | `components/gate_policy.py` | 정책 파일 경로 | ResolvedPolicy | 정책 파일을 계약 GatePolicy로 검증해 판정 기록용 버전과 검사 인자를 낸다. 틀린 파일은 시작을 거부 |
 
 ## 저장소 컴포넌트

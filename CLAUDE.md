@@ -29,5 +29,5 @@
 ## 개발 명령
 
 - 환경: `bash scripts/setup-env.sh && . .venv/bin/activate`(멱등, 핀 파일로만 설치)
-- 시험: `python -m pytest -q`. 이미지: `scripts/smoke.sh`(표준 `docker`, 데몬에 못 닿으면 중단).
+- 시험: `bash scripts/test-all.sh`(정식 전체 시험: 일회용 PostgreSQL을 띄워 pytest 전체를 돌린다. `python -m pytest -q`는 PostgreSQL 시험을 건너뛴다). 이미지: `scripts/smoke.sh`(표준 `docker`, 데몬에 못 닿으면 중단).
 - 출고는 사람이 정한다(D53): 자동 PASS를 만들지 않는다. 합격 임계치를 코드나 정책에 넣지 않는다. PASS는 `release-approver`의 APPROVE 뒤에만 나온다.

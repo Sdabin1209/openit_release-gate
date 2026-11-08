@@ -1,6 +1,6 @@
 """보존·정리(A6, C3; D88 U4). 값은 모두 설정이고 **무기한 보존은 허용하지 않는다**(None·0·음수는 시작을 거부한다).
 
-기본(잠정, 병원 규정이 다르면 설정만 바꾼다):
+기본(잠정, 설치처 규정이 다르면 설정만 바꾼다):
 - 반려됐거나 승인되지 않은 접수(자동 반려, 사람 반려, 오래 결정 없이 남은 접수)와 그 판정·반려 기록: 90일 뒤 삭제 (`GATE_RETAIN_REJECTED_DAYS`)
 - 승인·활성 이력은 **불변 보존**: PASS 판정, 승인(APPROVE), 릴리스 매니페스트, 포인터 이력, 롤백 영수증은 지우지 않는다
 - 쓰이지 않는 릴리스 번들의 어댑터 사본(디스크를 차지하는 것): 활성·직전 활성(롤백 대상)·최근 N개(`GATE_RETAIN_KEEP_RELEASES`, 기본 3)를 뺀 나머지.
@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from ..types.validators import validate
 
 
-# 90일·365일은 D88 U4(잠정 기본값, 병원 규정 확정은 OPEN_GAPS). 3은 활성+직전(롤백 대상)에 여유를 둔 설계 판단으로 근거 기록 없음(docs/adr/0009)
+# 90일·365일은 D88 U4(잠정 기본값, 설치처 규정 확정은 OPEN_GAPS). 3은 활성+직전(롤백 대상)에 여유를 둔 설계 판단으로 근거 기록 없음(docs/adr/0009)
 DEFAULT_KEEP_RELEASES = 3
 DEFAULT_REJECTED_DAYS = 90
 DEFAULT_ATTEMPTS_DAYS = 365

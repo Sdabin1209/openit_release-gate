@@ -6,7 +6,6 @@ D53: 승인 없는 PASS를 만들지 않는다(assert_decision_rule이 한 번 �
 from __future__ import annotations
 
 from boundary_contracts import PIPELINE_SCHEMA_VERSION
-from boundary_contracts.errors import BoundaryError
 
 from ..types.validators import validate, validate_contract
 

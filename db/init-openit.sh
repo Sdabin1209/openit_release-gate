@@ -42,4 +42,4 @@ done < /etc/openit/accounts.tsv
 psql_s <<SQL
 REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
 SQL
-rm -f "$SECRETS"/*      # 암호 사본을 지운다(폴더는 root 소유라 postgres가 지울 수 없다)
+rm -f "$SECRETS"/*      # 암호 사본을 지운다(폴더와 파일 모두 postgres 소유라 이 스크립트가 지울 수 있다)
