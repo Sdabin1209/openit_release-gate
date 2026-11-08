@@ -94,11 +94,15 @@ def _start(tmp: Path, mutate=None):
     port = int(hit[0].rsplit(":", 1)[1])
     db = Db(name, port, certs / "root.pem")
     try:
-        for _ in range(240):      # 기동 확인: 횟수로 제한한다(시간을 재지 않는다)
+        # 왜 HANG_GUARD_SECONDS: 기동 대기는 판정이 아니라 영원히 멈추지 않게 하는 장치다. 이전 값(240회 x 0.5초 = 120초)은 근거 없는 짧은 상한이라
+        # 병행 부하에서 정상 기동 전에 걸렸다(2026-11-08, initdb 가 끝나고 서버가 뜨기 전). 공통 상수(conftest, 정상 경로의 수만 배)로 맞춘다. 횟수로 제한한다(시간을 재지 않는다)
+        for _ in range(int(HANG_GUARD_SECONDS / 0.5)):
             try:
                 db.connect().close()
                 return db, cleanup
             except psycopg.Error:
+                if _sh("docker", "inspect", "-f", "{{.State.Running}}", name).stdout.strip() != "true":
+                    break      # 컨테이너가 죽었으면 더 기다리지 않고 로그를 보인다
                 subprocess.run(["sleep", "0.5"])
         logs = _sh("docker", "logs", name)
         raise AssertionError("DB가 뜨지 않았다: " + (logs.stderr + logs.stdout)[-800:])
@@ -193,7 +197,7 @@ def check_renewed_certificate_is_served(db):
     # 컨테이너의 마운트는 읽기 전용 사본이 아니라 같은 호스트 폴더라 파일 내용을 바꾸면 안에서 보인다. 키 먼저, 인증서 나중(실제 갱신기와 같은 순서 가정 없이 해시가 둘을 함께 본다)
     (certs / "tls.key").write_bytes((certs / "new.key").read_bytes())
     (certs / "tls.crt").write_bytes((certs / "new.crt").read_bytes())
-    for _ in range(40):      # 확인 주기(5초)보다 충분히 길게: 횟수로 제한한다
+    for _ in range(HANG_GUARD_SECONDS):      # 확인 주기(5초)보다 충분히 길게, 공통 매달림 감시 상수(conftest)로: 횟수로 제한한다
         if _served_serial(db.port) != before:
             break
         subprocess.run(["sleep", "1"])

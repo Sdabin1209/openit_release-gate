@@ -318,15 +318,15 @@ def serve() -> None:
     # D120: 사람용 요청마다 서버 쪽 요청 전체 마감(기본 170초: 측정 최악 승인 128초 위의 여유, gateway 응답 헤더 180초 안, D125·ADR-0020). 저장소와 이웃 읽기가 남은 시간을 상한으로 쓴다
     deadlines = RequestDeadlines(SystemClock(), _seconds("GATE_REQUEST_DEADLINE_SECONDS", DEFAULT_REQUEST_DEADLINE_SECONDS))
     reg.store.deadline_source = deadlines.current
-    tasks, judging, engine = [], "disabled (I1/I3 미연결: 자동 검사와 승인 결정 불가)", None
-    if questions is not None and models is not None:
-        if not config.model_runtime_version:
-            # 왜: 승인(릴리스 매니페스트 생성)이 되는 서비스는 이웃 버전을 모른 채 뜨지 않는다(결정표 2절). 환경 변수로 덮어쓸 수 있다
-            raise SystemExit("model-runtime 버전을 읽지 못했다(설치되지 않음). GATE_MODEL_RUNTIME_VERSION을 주거나 설치한다")
-        engine = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry(), deadline_source=deadlines.current)
-        tasks.append(engine.process_pending)
-        reg.service.submit_check = engine.verify_subject      # HTTP.md I5: 제출 때 참조 해시를 대조해 422로 거절한다
-        judging = "enabled"
+    # 왜 이웃 없는 분기가 없나: I1·I3 는 필수다(계약 4.0.0 D135 HttpClientSettings, deploy-inputs.json 이 두 토큰 파일을 필수로 선언).
+    # _neighbors 가 주소·토큰이 없으면 SystemExit 로 시작을 거부하므로 여기서 questions·models 는 항상 있다(tests/test_serve_requires_neighbors.py).
+    if not config.model_runtime_version:
+        # 왜: 승인(릴리스 매니페스트 생성)이 되는 서비스는 이웃 버전을 모른 채 뜨지 않는다(결정표 2절). 환경 변수로 덮어쓸 수 있다
+        raise SystemExit("model-runtime 버전을 읽지 못했다(설치되지 않음). GATE_MODEL_RUNTIME_VERSION을 주거나 설치한다")
+    engine = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry(), deadline_source=deadlines.current)
+    tasks = [engine.process_pending]
+    reg.service.submit_check = engine.verify_subject      # HTTP.md I5: 제출 때 참조 해시를 대조해 422로 거절한다
+    judging = "enabled"
     # 60초: 최초 구현의 기본값, 근거 기록 없음, 측정 안 함(docs/adr/0006)
     loop = Loop(_seconds("GATE_POLL_SECONDS", 60.0), tasks)
     retention = _retention_policy()           # 잘못된 값이면 시작을 거부한다
@@ -384,8 +384,6 @@ def collect(cfg: dict) -> int:
     """후보 수집기 한 번. 같은 조합은 게이트가 기존 접수를 돌려주므로 여러 번 실행해도 접수는 늘지 않는다."""
     _, _, _, reg = _build(cfg)
     questions, models = _neighbors(cfg)
-    if questions is None or models is None:
-        raise SystemExit("I1·I3 클라이언트가 필요하다(설정 i1·i3 또는 GATE_I1_URL·GATE_I3_URL 과 토큰)")
     w = cfg.get("watch") or {}
     c = CandidateCollector(questions, models, reg.service, question_set_ids=w.get("question_sets") or None,
                            lora_a_ids=w.get("lora_a") or None, lora_b_ids=w.get("lora_b") or None)
@@ -411,8 +409,6 @@ def judge(cfg: dict) -> int:
     schemas, survey, config, reg = _build(cfg)
     policy = GatePolicy.from_file(cfg.get("policy_file") or os.environ.get("GATE_POLICY_FILE"))
     questions, models = _neighbors(cfg)
-    if questions is None or models is None:
-        raise SystemExit("I1·I3 클라이언트가 필요하다(설정 i1·i3 또는 GATE_I1_URL·GATE_I3_URL 과 토큰)")
     ds = GateEngine(reg.store, schemas, survey, config, policy, questions, models, CheckRegistry()).process_pending()
     emit({"job": "judge", "status": "ok", "decisions": [d["decision_id"] for d in ds]})
     return 0
