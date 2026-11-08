@@ -23,7 +23,9 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 \
 
 # 백업 잡(release_gate backup)이 쓰는 restic(백업 저장소 프로토콜의 표준 클라이언트, ADR-0022). 배포판 패키지, 버전은 이미지 빌드 때의 배포판 값이다
 RUN apt-get update && apt-get install -y --no-install-recommends restic ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin gate \
+# 왜 uid/gid 를 명시: 자동 배정(--system)은 배포판 기본값에 기대고, deploy-inputs.json 의 process.uid/gid(10001/999)와 우연히 같았다. tests/test_pins_and_ids.py 가 선언과 대조한다.
+RUN groupadd --system --gid 999 gate \
+ && useradd --system --uid 10001 --gid 999 --home-dir /nonexistent --shell /usr/sbin/nologin gate \
  && mkdir -p /data /opt/contracts/survey-schema && chown gate /data
 WORKDIR /src
 COPY release-gate/requirements.lock ./release-gate/requirements.lock

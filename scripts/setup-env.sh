@@ -27,6 +27,8 @@ run() {
 run "계약 패키지와 잠금 의존 설치" "${PIP[@]}" --upgrade -r requirements.txt >&2
 # model-runtime: 태그 핀(requirements-libs.txt), 의존은 위에서 이미 맞췄으므로 --no-deps. 같은 버전이어도 소스가 다를 수 있어 다시 설치한다.
 run "model-runtime 설치" "${PIP[@]}" --no-deps --force-reinstall -r requirements-libs.txt >&2
+# 시험 도구는 잠금 파일(requirements-test.txt)로 먼저 고정하고, 아래 editable 설치는 이미 맞는 버전을 그대로 둔다
+run "시험 도구 잠금 설치" "${PIP[@]}" -r requirements-test.txt >&2
 run "이 리포와 시험 도구 설치" "${PIP[@]}" -e '.[test]' >&2
 
 # 왜 두 번째 venv: 타입 생성 도구(datamodel-code-generator)는 개발 전용이라 이미지·런타임 환경(.venv)에 넣지 않는다. 시험(test_structure)이 생성 결과를 다시 만들어 대조하므로 시험 명령이 돌려면 있어야 한다.

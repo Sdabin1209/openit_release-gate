@@ -1,0 +1,8 @@
+# 시험 도구 잠금(개발 전용, 이미지에 넣지 않는다). scripts/setup-env.sh 가 -e '.[test]' 보다 먼저 설치한다.
+# 왜 == 핀: pyproject 의 test extra 는 이름만 갖는다(범위는 배포 메타데이터). 시험이 날마다 다른 pytest 로 돌지 않게 전이 의존까지 고정한다(requirements-tools.txt 와 같은 방식).
+# 값의 출처: 2026-11-08 이 리포 .venv(Python 3.12)에서 시험이 통과한 상태의 `pip list`. Python 3.11 미만용 전이 의존(exceptiongroup, tomli)은 넣지 않았다(이미지·.venv 는 3.12).
+iniconfig==2.3.1
+packaging==26.3
+pluggy==1.7.0
+Pygments==2.21.0
+pytest==9.2.0
