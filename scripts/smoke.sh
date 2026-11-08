@@ -26,13 +26,16 @@ trap cleanup EXIT
 result="$(DOCKER="$DOCKER" bash "$here/scripts/build-image.sh" "$GATE_BUILD_REQUEST")" || { echo "FAIL: 이미지 빌드"; exit 1; }
 tag="$(printf '%s\n' "$result" | tail -1 | "${PYTHON:-python3}" -c 'import json,sys; print(json.load(sys.stdin)["image"])')"
 # 비밀은 환경 변수가 아니라 파일로 준다(NAME_FILE, D84). 비root 사용자가 읽도록 0644
-printf 'survey-service=smoke-read' > "$sdir/read_tokens"; printf 'operator=smoke-write' > "$sdir/write_tokens"; chmod 755 "$sdir"; chmod 644 "$sdir"/*
+printf 'survey-service=smoke-read' > "$sdir/read_tokens"; printf 'operator=smoke-write' > "$sdir/write_tokens"
+# 왜 I1·I3 주소와 토큰도 주나: 서비스는 이웃 클라이언트(계약 4.0.0 D135, deploy-inputs.json 이 두 토큰 파일을 필수로 선언)를 기동 때 만들고 없으면 멈춘다(2026-11-08 스모크에서 확인). 기동 때는 이웃을 부르지 않으므로 닿지 않는 주소와 임시 값이면 된다
+printf 'smoke-i1' > "$sdir/i1_token"; printf 'smoke-i3' > "$sdir/i3_token"; chmod 755 "$sdir"; chmod 644 "$sdir"/*
 # 왜 이미지에서 읽나: GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION은 코드 기본값이 없고 deploy가 명시한다(계약 3.2.0 GateEnv). 스모크는 deploy 대신 이미지의 문진 스키마 값을 준다
 supported="$("$DOCKER" run --rm --entrypoint cat "$tag" /opt/contracts/survey-schema/CONTRACT_VERSION | tr -d '\r\n ')"
 # ContainerInputs declares /data persistent. Docker copies the image directory's
 # ownership into a fresh named volume; an unowned tmpfs hides that ownership.
 "$DOCKER" run -d --name "$name" --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true -v "$data_volume:/data" -e GATE_SUPPORTED_RUNTIME_CONTRACT_VERSION="$supported" -p 127.0.0.1::8080 -v "$sdir:/run/secrets:ro" \
-  -e GATE_READ_TOKENS_FILE=/run/secrets/read_tokens -e GATE_WRITE_TOKENS_FILE=/run/secrets/write_tokens "$tag" >/dev/null
+  -e GATE_READ_TOKENS_FILE=/run/secrets/read_tokens -e GATE_WRITE_TOKENS_FILE=/run/secrets/write_tokens \
+  -e GATE_I1_URL=http://127.0.0.1:9 -e GATE_I3_URL=http://127.0.0.1:9 -e GATE_I1_TOKEN_FILE=/run/secrets/i1_token -e GATE_I3_TOKEN_FILE=/run/secrets/i3_token "$tag" >/dev/null
 
 # 호스트 포트는 Docker가 배정한다(다른 영역의 스모크와 겹치지 않게 고정 포트를 쓰지 않는다)
 port="$("$DOCKER" port "$name" 8080/tcp | head -1 | tr -d '\r' | sed 's/.*://')"
@@ -59,8 +62,8 @@ code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: applica
 [ "$code" = 403 ] || { echo "FAIL: 읽기 토큰으로 쓰기가 됐다($code)"; exit 1; }
 uid="$("$DOCKER" exec "$name" id -u | tr -d '\r')"; [ "$uid" != 0 ] || { echo "FAIL: root로 실행 중"; exit 1; }
 # 비밀이 환경 변수·inspect·exec env에 평문으로 없어야 한다
-if "$DOCKER" inspect "$name" | grep -q 'smoke-read\|smoke-write'; then echo "FAIL: inspect에 비밀 노출"; exit 1; fi
-if "$DOCKER" exec "$name" env | grep -q 'smoke-read\|smoke-write'; then echo "FAIL: exec env에 비밀 노출"; exit 1; fi
-if "$DOCKER" logs "$name" 2>&1 | grep -q 'smoke-read\|smoke-write'; then echo "FAIL: 로그에 비밀 노출"; exit 1; fi
+if "$DOCKER" inspect "$name" | grep -q 'smoke-read\|smoke-write\|smoke-i1\|smoke-i3'; then echo "FAIL: inspect에 비밀 노출"; exit 1; fi
+if "$DOCKER" exec "$name" env | grep -q 'smoke-read\|smoke-write\|smoke-i1\|smoke-i3'; then echo "FAIL: exec env에 비밀 노출"; exit 1; fi
+if "$DOCKER" logs "$name" 2>&1 | grep -q 'smoke-read\|smoke-write\|smoke-i1\|smoke-i3'; then echo "FAIL: 로그에 비밀 노출"; exit 1; fi
 "$DOCKER" inspect -f '{{json .Config.Labels}}' "$tag"
 echo "SMOKE OK (uid=$uid)"
